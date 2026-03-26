@@ -1,0 +1,76 @@
+services:
+  screeps:
+    image: ghcr.io/jomik/screeps-server:edge
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "21025:21025"
+      - "21026:21026"
+    volumes:
+      - ./config.yml:/screeps/config.yml:ro
+      - screeps-user:/home/node
+      - screeps-data:/data
+      - screeps-mods:/screeps/mods
+    environment:
+      MONGO_HOST: mongo
+      REDIS_HOST: redis
+      STEAM_KEY: ${STEAM_KEY:?Missing STEAM_KEY in .env}
+    restart: unless-stopped
+
+  client:
+    image: node:24-alpine
+    command:
+      - npx
+      - --yes
+      - screepers-steamless-client
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --package
+      - /steam/package.nw
+    depends_on:
+      screeps:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    volumes:
+      - npm-cache:/root/.npm
+      - ${SCREEPS_PACKAGE_NW_PATH:?Missing SCREEPS_PACKAGE_NW_PATH in .env}:/steam/package.nw:ro
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:4.4.30
+    healthcheck:
+      test: ["CMD", "mongo", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    volumes:
+      - mongo-data:/data/db
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+volumes:
+  npm-cache:
+  screeps-data:
+  screeps-mods:
+  screeps-user:
+  mongo-data:
+  redis-data:
