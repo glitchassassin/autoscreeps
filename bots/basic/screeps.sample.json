@@ -1,0 +1,9 @@
+{
+  "pserver": {
+    "host": "http://127.0.0.1:21025",
+    "username": "your-username",
+    "password": "your-password",
+    "branch": "basic",
+    "active": true
+  }
+}
