@@ -1,4 +1,4 @@
-import { runDuelExperiment } from "../../lib/runner.js";
+import { runDuelExperiment } from "../../lib/runner.ts";
 
 type DuelCommandOptions = {
   scenario: string;

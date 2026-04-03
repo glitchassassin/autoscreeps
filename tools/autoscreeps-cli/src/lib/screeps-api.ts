@@ -1,4 +1,4 @@
-import type { AuthSession, RoomSummary, UserWorldStatus } from "./contracts.js";
+import type { AuthSession, RoomSummary, UserWorldStatus } from "./contracts.ts";
 
 type RegisterPayload = {
   username: string;
@@ -15,7 +15,11 @@ type RoomObjectsResponse = {
 };
 
 export class ScreepsApiClient {
-  constructor(private readonly baseUrl: string) {}
+  private readonly baseUrl: string;
+
+  constructor(baseUrl: string) {
+    this.baseUrl = baseUrl;
+  }
 
   async waitForReady(timeoutMs = 120000): Promise<void> {
     const start = Date.now();

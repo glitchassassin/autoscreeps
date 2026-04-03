@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { execa } from "execa";
-import type { VariantBuildRecord } from "./contracts.js";
-import { fileExists, sha256, timestamp } from "./utils.js";
+import type { VariantBuildRecord } from "./contracts.ts";
+import { fileExists, sha256, timestamp } from "./utils.ts";
 
 export async function buildVariantPackage(sourceRoot: string, packagePath: string, installMode: "auto" | "ci"): Promise<{ bundle: string; record: VariantBuildRecord }> {
   const packageRoot = resolvePackageRoot(sourceRoot, packagePath);

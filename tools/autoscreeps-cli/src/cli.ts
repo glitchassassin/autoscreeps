@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import { runDuelExperimentCommand } from "./commands/experiment/run-duel.js";
-import { listExperimentsCommand } from "./commands/experiment/list.js";
-import { showExperimentCommand } from "./commands/experiment/show.js";
+import { runDuelExperimentCommand } from "./commands/experiment/run-duel.ts";
+import { listExperimentsCommand } from "./commands/experiment/list.ts";
+import { showExperimentCommand } from "./commands/experiment/show.ts";
 
 async function main(): Promise<void> {
   const program = new Command();

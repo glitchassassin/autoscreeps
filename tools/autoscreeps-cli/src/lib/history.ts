@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { EventRecord, RunDetails, RunIndexEntry, RunMetrics, RunRecord, VariantRecord } from "./contracts.js";
-import { createRunId, ensureDirectory } from "./utils.js";
+import type { EventRecord, RunDetails, RunIndexEntry, RunMetrics, RunRecord, VariantRecord } from "./contracts.ts";
+import { createRunId, ensureDirectory } from "./utils.ts";
 
 const indexFileName = "index.jsonl";
 

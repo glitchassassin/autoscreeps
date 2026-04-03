@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { appendIndexEntry, createRunWorkspace, listRuns, readRunDetails, writeRunRecord, writeVariantRecords } from "../src/lib/history.js";
-import { RunRecord, VariantRecord } from "../src/lib/contracts.js";
+import { appendIndexEntry, createRunWorkspace, listRuns, readRunDetails, writeRunRecord, writeVariantRecords } from "../src/lib/history.ts";
+import type { RunRecord, VariantRecord } from "../src/lib/contracts.ts";
 
 const tempPaths: string[] = [];
 

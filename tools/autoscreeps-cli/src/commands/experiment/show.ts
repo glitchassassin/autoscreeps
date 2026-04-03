@@ -1,5 +1,5 @@
-import { readRunDetails } from "../../lib/history.js";
-import { resolveRepoRoot } from "../../lib/git.js";
+import { readRunDetails } from "../../lib/history.ts";
+import { resolveRepoRoot } from "../../lib/git.ts";
 
 export async function showExperimentCommand(runId: string): Promise<void> {
   const repoRoot = await resolveRepoRoot(process.cwd());

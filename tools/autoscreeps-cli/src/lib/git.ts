@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { execa } from "execa";
-import type { WorkspaceVariantSnapshot } from "./contracts.js";
-import { fileExists, sha256 } from "./utils.js";
+import type { WorkspaceVariantSnapshot } from "./contracts.ts";
+import { fileExists, sha256 } from "./utils.ts";
 
 export type VariantSource =
   | { kind: "workspace"; raw: "workspace" }

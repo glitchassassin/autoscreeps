@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { waitForTargetGameTime } from "../src/lib/runner.js";
+import { waitForTargetGameTime } from "../src/lib/runner.ts";
 
 describe("waitForTargetGameTime", () => {
   it("returns once the target tick is reached", async () => {

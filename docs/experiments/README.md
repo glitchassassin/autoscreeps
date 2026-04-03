@@ -8,6 +8,7 @@ Use `tools/autoscreeps-cli` to run local Screeps experiments against the Docker-
 - Install the CLI dependencies:
 
 ```sh
+nvm use
 cd tools/autoscreeps-cli
 npm install
 ```
@@ -17,8 +18,9 @@ npm install
 This compares the committed `main` version of `bots/basic` against the current workspace version of the same package:
 
 ```sh
+nvm use
 cd tools/autoscreeps-cli
-npm run dev -- experiment run duel \
+node src/cli.ts experiment run duel \
   --scenario ../../experiments/scenarios/duel-basic.yaml \
   --baseline-source git:main \
   --baseline-package bots/basic \
@@ -33,15 +35,17 @@ The sample scenario imports `random_1x2`, assigns `E2N2` to `baseline`, and assi
 - List recorded runs:
 
 ```sh
+nvm use
 cd tools/autoscreeps-cli
-npm run dev -- experiment list
+node src/cli.ts experiment list
 ```
 
 - Show one recorded run:
 
 ```sh
+nvm use
 cd tools/autoscreeps-cli
-npm run dev -- experiment show <run-id>
+node src/cli.ts experiment show <run-id>
 ```
 
 Run history is written to `.autoscreeps/runs/` at the repository root.

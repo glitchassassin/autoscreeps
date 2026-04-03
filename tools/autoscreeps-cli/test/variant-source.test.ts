@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseVariantSource } from "../src/lib/git.js";
+import { parseVariantSource } from "../src/lib/git.ts";
 
 describe("parseVariantSource", () => {
   it("accepts workspace variants", () => {

@@ -59,7 +59,11 @@ const cliProbeScript = [
 ].join(" ");
 
 export class ScreepsServerCli {
-  constructor(private readonly options: CliOptions) {}
+  private readonly options: CliOptions;
+
+  constructor(options: CliOptions) {
+    this.options = options;
+  }
 
   async waitForReady(timeoutMs = 120000): Promise<void> {
     const start = Date.now();

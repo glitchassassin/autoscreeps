@@ -1,14 +1,14 @@
 import crypto from "node:crypto";
 import path from "node:path";
-import { buildVariantPackage } from "./build.js";
-import type { EventRecord, RunDetails, RunIndexEntry, RunMetrics, RunRecord, VariantRecord, VariantRole } from "./contracts.js";
-import { resetPrivateServer, restartScreepsService } from "./docker.js";
-import { createWorkspaceSnapshot, parseVariantSource, resolveRepoRoot, withGitWorktree } from "./git.js";
-import { appendEvent, appendIndexEntry, createRunWorkspace, writeMetrics, writeRunRecord, writeVariantRecords } from "./history.js";
-import { loadScenario } from "./scenario.js";
-import { ScreepsApiClient } from "./screeps-api.js";
-import { ScreepsServerCli } from "./server-cli.js";
-import { timestamp } from "./utils.js";
+import { buildVariantPackage } from "./build.ts";
+import type { EventRecord, RunDetails, RunIndexEntry, RunMetrics, RunRecord, VariantRecord, VariantRole } from "./contracts.ts";
+import { resetPrivateServer, restartScreepsService } from "./docker.ts";
+import { createWorkspaceSnapshot, parseVariantSource, resolveRepoRoot, withGitWorktree } from "./git.ts";
+import { appendEvent, appendIndexEntry, createRunWorkspace, writeMetrics, writeRunRecord, writeVariantRecords } from "./history.ts";
+import { loadScenario } from "./scenario.ts";
+import { ScreepsApiClient } from "./screeps-api.ts";
+import { ScreepsServerCli } from "./server-cli.ts";
+import { timestamp } from "./utils.ts";
 
 type DuelVariantInput = {
   source: string;
