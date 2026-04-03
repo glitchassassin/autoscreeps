@@ -8,3 +8,7 @@ export async function resetPrivateServer(repoRoot: string): Promise<void> {
 export async function restartScreepsService(repoRoot: string): Promise<void> {
   await execa("docker", ["compose", "restart", "screeps"], { cwd: repoRoot, stdio: "pipe" });
 }
+
+export async function copyFileToScreepsService(repoRoot: string, localPath: string, containerPath: string): Promise<void> {
+  await execa("docker", ["compose", "cp", localPath, `screeps:${containerPath}`], { cwd: repoRoot, stdio: "pipe" });
+}

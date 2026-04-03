@@ -96,6 +96,10 @@ export class ScreepsServerCli {
     await this.evaluate(`utils.importMap(${JSON.stringify(mapId)})`);
   }
 
+  async importMapFile(filePath: string): Promise<void> {
+    await this.evaluate(`utils.importMapFile(${JSON.stringify(filePath)})`);
+  }
+
   async setUserCpu(username: string, cpu: number): Promise<void> {
     const serializedUsername = JSON.stringify(username);
     const serializedCpu = JSON.stringify(cpu);

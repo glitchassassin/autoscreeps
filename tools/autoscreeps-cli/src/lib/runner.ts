@@ -2,9 +2,10 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { buildVariantPackage } from "./build.ts";
 import type { EventRecord, RunDetails, RunIndexEntry, RunMetrics, RunRecord, VariantRecord, VariantRole } from "./contracts.ts";
-import { resetPrivateServer, restartScreepsService } from "./docker.ts";
+import { copyFileToScreepsService, resetPrivateServer, restartScreepsService } from "./docker.ts";
 import { createWorkspaceSnapshot, parseVariantSource, resolveRepoRoot, withGitWorktree } from "./git.ts";
 import { appendEvent, appendIndexEntry, createRunWorkspace, writeMetrics, writeRunRecord, writeVariantRecords } from "./history.ts";
+import { generateExperimentMap } from "./map-generator.ts";
 import { loadScenario } from "./scenario.ts";
 import { ScreepsApiClient } from "./screeps-api.ts";
 import { ScreepsServerCli } from "./server-cli.ts";
@@ -36,6 +37,10 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
   const repoRoot = await resolveRepoRoot(input.cwd);
   const scenario = await loadScenario(input.scenarioPath);
   const { runId, runDir, historyRoot } = await createRunWorkspace(repoRoot);
+  const world = await resolveExperimentWorld({
+    scenario: scenario.config,
+    runDir
+  });
   const runRecord: RunRecord = {
     id: runId,
     type: "duel",
@@ -47,14 +52,14 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
     scenarioPath: path.relative(repoRoot, scenario.path),
     scenarioName: scenario.config.name,
     rooms: {
-      baseline: scenario.config.rooms[0],
-      candidate: scenario.config.rooms[1]
+      baseline: world.rooms.baseline,
+      candidate: world.rooms.candidate
     },
     run: {
       tickDuration: scenario.config.run.tickDuration,
       maxTicks: scenario.config.run.maxTicks,
       pollIntervalMs: scenario.config.run.pollIntervalMs,
-      map: scenario.config.map ?? null,
+      map: world.label,
       startGameTime: null,
       endGameTime: null
     },
@@ -113,9 +118,23 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
 
     await cli.pauseSimulation();
     await cli.setTickDuration(runRecord.run.tickDuration);
-    if (runRecord.run.map) {
-      await logEvent(runDir, "info", "server.map", "Importing scenario map.", { map: runRecord.run.map });
-      await cli.importMap(runRecord.run.map);
+    if (world.import.kind === "map-id") {
+      await logEvent(runDir, "info", "server.map", "Importing scenario map.", { map: world.label });
+      await cli.importMap(world.import.value);
+      await logEvent(runDir, "info", "server.restart", "Restarting the Screeps service after map import.");
+      await restartScreepsService(repoRoot);
+      await Promise.all([api.waitForReady(), cli.waitForReady()]);
+      await cli.pauseSimulation();
+      await cli.setTickDuration(runRecord.run.tickDuration);
+    }
+
+    if (world.import.kind === "map-file") {
+      await logEvent(runDir, "info", "server.map", "Importing generated scenario map file.", {
+        map: world.label,
+        file: path.relative(repoRoot, world.import.hostFilePath)
+      });
+      await copyFileToScreepsService(repoRoot, world.import.hostFilePath, world.import.containerFilePath);
+      await cli.importMapFile(world.import.containerFilePath);
       await logEvent(runDir, "info", "server.restart", "Restarting the Screeps service after map import.");
       await restartScreepsService(repoRoot);
       await Promise.all([api.waitForReady(), cli.waitForReady()]);
@@ -274,6 +293,53 @@ async function logEvent(runDir: string, level: EventRecord["level"], event: stri
 
 function createPassword(): string {
   return crypto.randomBytes(12).toString("hex");
+}
+
+type ResolvedExperimentWorld = {
+  label: string | null;
+  rooms: {
+    baseline: string;
+    candidate: string;
+  };
+  import:
+    | { kind: "map-id"; value: string }
+    | { kind: "map-file"; hostFilePath: string; containerFilePath: string };
+};
+
+async function resolveExperimentWorld(input: {
+  scenario: Awaited<ReturnType<typeof loadScenario>>["config"];
+  runDir: string;
+}): Promise<ResolvedExperimentWorld> {
+  const { scenario, runDir } = input;
+
+  if (scenario.mapGenerator) {
+    const generatedMap = await generateExperimentMap(scenario.mapGenerator, runDir);
+    return {
+      label: generatedMap.label,
+      rooms: generatedMap.rooms,
+      import: {
+        kind: "map-file",
+        hostFilePath: generatedMap.hostFilePath,
+        containerFilePath: "/data/generated-map.json"
+      }
+    };
+  }
+
+  if (!scenario.map || !scenario.rooms) {
+    throw new Error("Scenario is missing required map or rooms configuration.");
+  }
+
+  return {
+    label: scenario.map,
+    rooms: {
+      baseline: scenario.rooms[0],
+      candidate: scenario.rooms[1]
+    },
+    import: {
+      kind: "map-id",
+      value: scenario.map
+    }
+  };
 }
 
 function delay(ms: number): Promise<void> {

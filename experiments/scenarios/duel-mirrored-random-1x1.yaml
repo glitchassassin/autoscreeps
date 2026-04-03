@@ -1,0 +1,12 @@
+version: 1
+name: duel-mirrored-random-1x1
+description: Run a duel on two mirrored copies of the same random 1x1 sector.
+reset: full
+mapGenerator:
+  type: mirrored-random-1x1
+run:
+  tickDuration: 250
+  maxTicks: 200
+  pollIntervalMs: 1000
+  maxWallClockMs: 300000
+  maxStalledPolls: 30

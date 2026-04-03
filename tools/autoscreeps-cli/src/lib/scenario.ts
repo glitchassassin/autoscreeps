@@ -3,13 +3,23 @@ import path from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
 
+const roomSelectionStrategySchema = z.object({
+  type: z.enum(["max-plains-two-sources", "center-most-controller"])
+});
+
+const mapGeneratorSchema = z.object({
+  type: z.literal("mirrored-random-1x1"),
+  roomSelectionStrategy: roomSelectionStrategySchema.optional()
+});
+
 export const scenarioSchema = z.object({
   version: z.literal(1),
   name: z.string().min(1),
   description: z.string().optional(),
   reset: z.enum(["full"]).default("full"),
   map: z.string().min(1).optional(),
-  rooms: z.tuple([z.string().min(1), z.string().min(1)]),
+  mapGenerator: mapGeneratorSchema.optional(),
+  rooms: z.tuple([z.string().min(1), z.string().min(1)]).optional(),
   run: z.object({
     tickDuration: z.number().int().positive().default(250),
     maxTicks: z.number().int().positive(),
@@ -28,6 +38,22 @@ export const scenarioSchema = z.object({
       cliHost: "127.0.0.1",
       cliPort: 21026
     })
+}).superRefine((value, context) => {
+  if (!value.map && !value.mapGenerator) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "A scenario must declare either map or mapGenerator.",
+      path: ["map"]
+    });
+  }
+
+  if (!value.rooms && !value.mapGenerator) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "A scenario without mapGenerator must declare explicit rooms.",
+      path: ["rooms"]
+    });
+  }
 });
 
 export type ScenarioConfig = z.infer<typeof scenarioSchema>;

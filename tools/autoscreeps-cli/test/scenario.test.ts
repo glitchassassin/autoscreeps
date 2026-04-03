@@ -22,6 +22,7 @@ describe("loadScenario", () => {
       [
         "version: 1",
         "name: basic-duel",
+        "map: random_1x2",
         "rooms:",
         "  - W5N5",
         "  - W6N5",
