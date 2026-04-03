@@ -67,7 +67,7 @@ Each run also creates a spectator login for monitoring the world in the browser 
 - username: `spectator`
 - password: `passw0rd`
 
-The runner sets that account to `cpu: 0`, so it can watch experiments without claiming a room.
+The runner gives that account a preset badge, marks it as banned, and uses the admin-utils spawn whitelist so only the experiment users can claim rooms.
 
 ## Inspect Results
 

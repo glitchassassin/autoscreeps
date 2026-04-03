@@ -1,4 +1,4 @@
-import type { AuthSession, RoomSummary, UserWorldStatus } from "./contracts.ts";
+import type { AuthSession, RoomSummary, UserBadge, UserWorldStatus } from "./contracts.ts";
 
 type RegisterPayload = {
   username: string;
@@ -78,6 +78,13 @@ export class ScreepsApiClient {
         room,
         name: "auto"
       })
+    });
+  }
+
+  async setBadge(session: AuthSession, badge: UserBadge): Promise<void> {
+    await this.requestAuthedJson(session, "/api/user/badge", {
+      method: "POST",
+      body: JSON.stringify({ badge })
     });
   }
 

@@ -100,10 +100,18 @@ export class ScreepsServerCli {
     await this.evaluate(`utils.importMapFile(${JSON.stringify(filePath)})`);
   }
 
-  async setUserCpu(username: string, cpu: number): Promise<void> {
+  async setUserBanned(username: string, banned: boolean): Promise<void> {
     const serializedUsername = JSON.stringify(username);
-    const serializedCpu = JSON.stringify(cpu);
-    const expression = `storage.db.users.findOne({ username: ${serializedUsername} }).then(function (user) { if (!user) { throw new Error("User not found: " + ${serializedUsername}); } return storage.db.users.update({ _id: user._id }, { $set: { cpu: ${serializedCpu}, active: ${serializedCpu} > 0 ? 10000 : 0 } }); })`;
+    const serializedBanned = JSON.stringify(banned);
+    const expression = `storage.db.users.findOne({ username: ${serializedUsername} }).then(function (user) { if (!user) { throw new Error("User not found: " + ${serializedUsername}); } return storage.db.users.update({ _id: user._id }, { $set: { banned: ${serializedBanned}, active: ${serializedBanned} ? 0 : user.active } }); })`;
+
+    await this.evaluate(expression);
+  }
+
+  async setSpawnWhitelist(usernames: string[]): Promise<void> {
+    const normalizedUsernames = usernames.map((username) => username.toLowerCase());
+    const serializedUsernames = JSON.stringify(normalizedUsernames);
+    const expression = `Promise.resolve().then(function () { var whitelist = ${serializedUsernames}; return storage.env.set(storage.env.keys.WHITELIST, JSON.stringify(whitelist)).then(function () { return storage.db.users.find().then(function (users) { return Promise.all(users.map(function (user) { var blocked = !(user.allowed || !user.banned || whitelist.length === 0 || (user.username && whitelist.indexOf(user.username.toLowerCase()) !== -1)); return storage.db.users.update({ _id: user._id }, { $set: { blocked: blocked } }); })); }); }); })`;
 
     await this.evaluate(expression);
   }

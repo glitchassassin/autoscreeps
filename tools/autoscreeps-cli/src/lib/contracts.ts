@@ -74,6 +74,15 @@ export type AuthSession = {
   token: string;
 };
 
+export type UserBadge = {
+  type: number;
+  color1: string;
+  color2: string;
+  color3: string;
+  param: number;
+  flip: boolean;
+};
+
 export type RoomSummary = {
   room: string;
   totalObjects: number;

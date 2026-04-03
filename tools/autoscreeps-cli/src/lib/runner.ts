@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import { buildVariantPackage } from "./build.ts";
-import type { EventRecord, RunDetails, RunIndexEntry, RunMetrics, RunRecord, VariantRecord, VariantRole } from "./contracts.ts";
+import type { EventRecord, RunDetails, RunIndexEntry, RunMetrics, RunRecord, UserBadge, VariantRecord, VariantRole } from "./contracts.ts";
 import { copyFileToScreepsService, resetPrivateServer, restartScreepsService } from "./docker.ts";
 import { createWorkspaceSnapshot, parseVariantSource, resolveRepoRoot, withGitWorktree } from "./git.ts";
 import { appendEvent, appendIndexEntry, createRunWorkspace, writeMetrics, writeRunRecord, writeVariantRecords } from "./history.ts";
@@ -31,6 +31,15 @@ type PreparedVariant = {
 const spectatorCredentials = {
   username: "spectator",
   password: "passw0rd"
+};
+
+const spectatorBadge: UserBadge = {
+  type: 24,
+  color1: "#0b132b",
+  color2: "#3a86ff",
+  color3: "#f1faee",
+  param: 12,
+  flip: false
 };
 
 export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails> {
@@ -147,8 +156,9 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
       password: spectatorCredentials.password,
       modules: { main: "" }
     });
-    await cli.setUserCpu(spectatorCredentials.username, 0);
-    await logEvent(runDir, "info", "spectator.ready", "Created the spectator account and disabled spawning.", {
+    const spectatorSession = await api.signIn(spectatorCredentials.username, spectatorCredentials.password);
+    await api.setBadge(spectatorSession, spectatorBadge);
+    await logEvent(runDir, "info", "spectator.ready", "Created the spectator account and set its badge.", {
       username: spectatorCredentials.username
     });
 
@@ -167,7 +177,9 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
       password: credentials.candidate.password,
       modules: preparedCandidate.modules
     });
-    await logEvent(runDir, "info", "users.registered", "Registered baseline and candidate users.");
+    await cli.setUserBanned(spectatorCredentials.username, true);
+    await cli.setSpawnWhitelist([credentials.baseline.username, credentials.candidate.username]);
+    await logEvent(runDir, "info", "users.registered", "Registered baseline and candidate users and applied the spawn whitelist.");
 
     const baselineSession = await api.signIn(credentials.baseline.username, credentials.baseline.password);
     const candidateSession = await api.signIn(credentials.candidate.username, credentials.candidate.password);
