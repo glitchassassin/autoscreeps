@@ -22,10 +22,8 @@ describe("loadScenario", () => {
       [
         "version: 1",
         "name: basic-duel",
-        "map: random_1x2",
-        "rooms:",
-        "  - W5N5",
-        "  - W6N5",
+        "mapGenerator:",
+        "  type: mirrored-random-1x1",
         "run:",
         "  maxTicks: 200"
       ].join("\n"),
@@ -35,6 +33,7 @@ describe("loadScenario", () => {
     const scenario = await loadScenario(scenarioPath);
 
     expect(scenario.config.name).toBe("basic-duel");
+    expect(scenario.config.mapGenerator?.type).toBe("mirrored-random-1x1");
     expect(scenario.config.reset).toBe("full");
     expect(scenario.config.run.tickDuration).toBe(250);
     expect(scenario.config.server.httpUrl).toBe("http://127.0.0.1:21025");

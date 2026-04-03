@@ -28,11 +28,7 @@ node src/cli.ts experiment run duel \
   --candidate-package bots/basic
 ```
 
-The sample scenario imports `random_1x2`, assigns `E2N2` to `baseline`, and assigns `E3N2` to `candidate`.
-
-## Run A Mirrored Random 1x1 Duel
-
-This generates a local map file by fetching a random `1x1` map from `maps.screepspl.us`, placing one copy on the `W` side and one on the `E` side, using `W0` and `E0` as the two separating highway columns, walling the touching room edges, and assigning one matching controller room to each bot.
+The sample scenario generates a local map file by fetching a random `1x1` map from `maps.screepspl.us`, placing one copy on the `W` side and one on the `E` side, using `W0` and `E0` as the two separating highway columns, walling the touching room edges, and assigning one matching controller room to each bot.
 
 By default the runner picks a room with:
 
@@ -49,17 +45,6 @@ mapGenerator:
   type: mirrored-random-1x1
   roomSelectionStrategy:
     type: center-most-controller
-```
-
-```sh
-nvm use
-cd tools/autoscreeps-cli
-node src/cli.ts experiment run duel \
-  --scenario ../../experiments/scenarios/duel-mirrored-random-1x1.yaml \
-  --baseline-source git:main \
-  --baseline-package bots/basic \
-  --candidate-source workspace \
-  --candidate-package bots/basic
 ```
 
 Each run also creates a spectator login for monitoring the world in the browser client:

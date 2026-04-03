@@ -1,0 +1,12 @@
+version: 1
+name: duel-basic-2000
+description: Run a basic head-to-head experiment on mirrored copies of a random 1x1 sector for 2000 ticks.
+reset: full
+mapGenerator:
+  type: mirrored-random-1x1
+run:
+  tickDuration: 250
+  maxTicks: 2000
+  pollIntervalMs: 1000
+  maxWallClockMs: 900000
+  maxStalledPolls: 60

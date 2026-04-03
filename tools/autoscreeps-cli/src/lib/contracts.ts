@@ -71,6 +71,7 @@ export type UserWorldStatus = {
 
 export type AuthSession = {
   username: string;
+  password: string;
   token: string;
 };
 

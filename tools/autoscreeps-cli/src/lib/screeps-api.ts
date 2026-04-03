@@ -67,6 +67,7 @@ export class ScreepsApiClient {
 
     return {
       username,
+      password,
       token: response.token
     };
   }
@@ -133,7 +134,7 @@ export class ScreepsApiClient {
   }
 
   private async requestAuthedJson<T>(session: AuthSession, pathname: string, init?: RequestInit): Promise<T> {
-    const response = await this.sendRequest(pathname, {
+    let response = await this.sendRequest(pathname, {
       ...init,
       headers: {
         ...(init?.headers ?? {}),
@@ -141,6 +142,19 @@ export class ScreepsApiClient {
         "X-Token": session.token
       }
     });
+
+    if (response.status === 401) {
+      const refreshedSession = await this.signIn(session.username, session.password);
+      session.token = refreshedSession.token;
+      response = await this.sendRequest(pathname, {
+        ...init,
+        headers: {
+          ...(init?.headers ?? {}),
+          "X-Username": session.username,
+          "X-Token": session.token
+        }
+      });
+    }
 
     const rotatedToken = response.headers.get("x-token");
     if (rotatedToken) {
