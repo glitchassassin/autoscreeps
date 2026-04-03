@@ -29,7 +29,7 @@ export default defineConfig(({ mode }) => {
       emptyOutDir: true,
       minify: false,
       sourcemap: true,
-      target: "es2020",
+      target: "es2018",
       lib: {
         entry: path.resolve(rootDir, "src/main.ts"),
         formats: ["cjs"],
