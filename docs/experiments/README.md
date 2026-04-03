@@ -30,6 +30,13 @@ node src/cli.ts experiment run duel \
 
 The sample scenario imports `random_1x2`, assigns `E2N2` to `baseline`, and assigns `E3N2` to `candidate`.
 
+Each run also creates a spectator login for monitoring the world in the browser client:
+
+- username: `spectator`
+- password: `passw0rd`
+
+The runner sets that account to `cpu: 0`, so it can watch experiments without claiming a room.
+
 ## Inspect Results
 
 - List recorded runs:

@@ -27,6 +27,11 @@ type PreparedVariant = {
   modules: Record<string, string>;
 };
 
+const spectatorCredentials = {
+  username: "spectator",
+  password: "passw0rd"
+};
+
 export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails> {
   const repoRoot = await resolveRepoRoot(input.cwd);
   const scenario = await loadScenario(input.scenarioPath);
@@ -117,6 +122,16 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
       await cli.pauseSimulation();
       await cli.setTickDuration(runRecord.run.tickDuration);
     }
+
+    await api.registerUser({
+      username: spectatorCredentials.username,
+      password: spectatorCredentials.password,
+      modules: { main: "" }
+    });
+    await cli.setUserCpu(spectatorCredentials.username, 0);
+    await logEvent(runDir, "info", "spectator.ready", "Created the spectator account and disabled spawning.", {
+      username: spectatorCredentials.username
+    });
 
     const credentials = {
       baseline: { username: "baseline", password: createPassword() },

@@ -96,6 +96,14 @@ export class ScreepsServerCli {
     await this.evaluate(`utils.importMap(${JSON.stringify(mapId)})`);
   }
 
+  async setUserCpu(username: string, cpu: number): Promise<void> {
+    const serializedUsername = JSON.stringify(username);
+    const serializedCpu = JSON.stringify(cpu);
+    const expression = `storage.db.users.findOne({ username: ${serializedUsername} }).then(function (user) { if (!user) { throw new Error("User not found: " + ${serializedUsername}); } return storage.db.users.update({ _id: user._id }, { $set: { cpu: ${serializedCpu}, active: ${serializedCpu} > 0 ? 10000 : 0 } }); })`;
+
+    await this.evaluate(expression);
+  }
+
   async getGameTime(): Promise<number> {
     const value = await this.evaluate<string>("storage.env.get(storage.env.keys.GAMETIME)");
     const gameTime = Number(value);
