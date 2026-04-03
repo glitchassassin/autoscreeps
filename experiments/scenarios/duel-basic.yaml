@@ -1,0 +1,14 @@
+version: 1
+name: duel-basic
+description: Run a basic head-to-head experiment on the default local world.
+reset: full
+map: random_1x2
+rooms:
+  - E2N2
+  - E3N2
+run:
+  tickDuration: 250
+  maxTicks: 200
+  pollIntervalMs: 1000
+  maxWallClockMs: 300000
+  maxStalledPolls: 30

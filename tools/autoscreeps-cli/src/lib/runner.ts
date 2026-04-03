@@ -1,0 +1,305 @@
+import crypto from "node:crypto";
+import path from "node:path";
+import { buildVariantPackage } from "./build.js";
+import type { EventRecord, RunDetails, RunIndexEntry, RunMetrics, RunRecord, VariantRecord, VariantRole } from "./contracts.js";
+import { resetPrivateServer, restartScreepsService } from "./docker.js";
+import { createWorkspaceSnapshot, parseVariantSource, resolveRepoRoot, withGitWorktree } from "./git.js";
+import { appendEvent, appendIndexEntry, createRunWorkspace, writeMetrics, writeRunRecord, writeVariantRecords } from "./history.js";
+import { loadScenario } from "./scenario.js";
+import { ScreepsApiClient } from "./screeps-api.js";
+import { ScreepsServerCli } from "./server-cli.js";
+import { timestamp } from "./utils.js";
+
+type DuelVariantInput = {
+  source: string;
+  packagePath: string;
+};
+
+export type DuelRunInput = {
+  cwd: string;
+  scenarioPath: string;
+  baseline: DuelVariantInput;
+  candidate: DuelVariantInput;
+};
+
+type PreparedVariant = {
+  record: VariantRecord;
+  modules: Record<string, string>;
+};
+
+export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails> {
+  const repoRoot = await resolveRepoRoot(input.cwd);
+  const scenario = await loadScenario(input.scenarioPath);
+  const { runId, runDir, historyRoot } = await createRunWorkspace(repoRoot);
+  const runRecord: RunRecord = {
+    id: runId,
+    type: "duel",
+    status: "running",
+    createdAt: timestamp(),
+    startedAt: null,
+    finishedAt: null,
+    repoRoot,
+    scenarioPath: path.relative(repoRoot, scenario.path),
+    scenarioName: scenario.config.name,
+    rooms: {
+      baseline: scenario.config.rooms[0],
+      candidate: scenario.config.rooms[1]
+    },
+    run: {
+      tickDuration: scenario.config.run.tickDuration,
+      maxTicks: scenario.config.run.maxTicks,
+      pollIntervalMs: scenario.config.run.pollIntervalMs,
+      map: scenario.config.map ?? null,
+      startGameTime: null,
+      endGameTime: null
+    },
+    server: {
+      httpUrl: scenario.config.server.httpUrl,
+      cliHost: scenario.config.server.cliHost,
+      cliPort: scenario.config.server.cliPort
+    },
+    error: null
+  };
+
+  await writeRunRecord(runDir, runRecord);
+  await logEvent(runDir, "info", "run.created", "Created experiment run workspace.", { runId });
+
+  let variants: Record<VariantRole, VariantRecord> | null = null;
+  let metrics: RunMetrics | null = null;
+
+  try {
+    const preparedBaseline = await prepareVariant({
+      repoRoot,
+      runDir,
+      role: "baseline",
+      source: input.baseline.source,
+      packagePath: input.baseline.packagePath
+    });
+    const preparedCandidate = await prepareVariant({
+      repoRoot,
+      runDir,
+      role: "candidate",
+      source: input.candidate.source,
+      packagePath: input.candidate.packagePath
+    });
+
+    variants = {
+      baseline: preparedBaseline.record,
+      candidate: preparedCandidate.record
+    };
+    await writeVariantRecords(runDir, variants);
+    await logEvent(runDir, "info", "variants.prepared", "Prepared source snapshots and builds for both variants.");
+
+    runRecord.startedAt = timestamp();
+    await writeRunRecord(runDir, runRecord);
+
+    await logEvent(runDir, "info", "server.reset", "Resetting and restarting the private server stack.");
+    await resetPrivateServer(repoRoot);
+
+    const api = new ScreepsApiClient(runRecord.server.httpUrl);
+    const cli = new ScreepsServerCli({
+      repoRoot,
+      host: runRecord.server.cliHost,
+      port: runRecord.server.cliPort
+    });
+
+    await Promise.all([api.waitForReady(), cli.waitForReady()]);
+    await logEvent(runDir, "info", "server.ready", "Private server HTTP and CLI endpoints are ready.");
+
+    await cli.pauseSimulation();
+    await cli.setTickDuration(runRecord.run.tickDuration);
+    if (runRecord.run.map) {
+      await logEvent(runDir, "info", "server.map", "Importing scenario map.", { map: runRecord.run.map });
+      await cli.importMap(runRecord.run.map);
+      await logEvent(runDir, "info", "server.restart", "Restarting the Screeps service after map import.");
+      await restartScreepsService(repoRoot);
+      await Promise.all([api.waitForReady(), cli.waitForReady()]);
+      await cli.pauseSimulation();
+      await cli.setTickDuration(runRecord.run.tickDuration);
+    }
+
+    const credentials = {
+      baseline: { username: "baseline", password: createPassword() },
+      candidate: { username: "candidate", password: createPassword() }
+    };
+
+    await api.registerUser({
+      username: credentials.baseline.username,
+      password: credentials.baseline.password,
+      modules: preparedBaseline.modules
+    });
+    await api.registerUser({
+      username: credentials.candidate.username,
+      password: credentials.candidate.password,
+      modules: preparedCandidate.modules
+    });
+    await logEvent(runDir, "info", "users.registered", "Registered baseline and candidate users.");
+
+    const baselineSession = await api.signIn(credentials.baseline.username, credentials.baseline.password);
+    const candidateSession = await api.signIn(credentials.candidate.username, credentials.candidate.password);
+    await api.placeAutoSpawn(baselineSession, runRecord.rooms.baseline);
+    await api.placeAutoSpawn(candidateSession, runRecord.rooms.candidate);
+    await logEvent(runDir, "info", "rooms.claimed", "Placed auto spawns for the assigned rooms.", runRecord.rooms);
+
+    runRecord.run.startGameTime = await cli.getGameTime();
+    const targetGameTime = runRecord.run.startGameTime + runRecord.run.maxTicks;
+    await cli.resumeSimulation();
+    await logEvent(runDir, "info", "simulation.running", "Simulation resumed.", {
+      startGameTime: runRecord.run.startGameTime,
+      targetGameTime
+    });
+
+    await waitForTargetGameTime({
+      cli,
+      targetGameTime,
+      pollIntervalMs: runRecord.run.pollIntervalMs,
+      maxWallClockMs: scenario.config.run.maxWallClockMs,
+      maxStalledPolls: scenario.config.run.maxStalledPolls
+    });
+
+    await cli.pauseSimulation();
+    runRecord.run.endGameTime = await cli.getGameTime();
+    metrics = {
+      users: {
+        baseline: await api.getWorldStatus(baselineSession),
+        candidate: await api.getWorldStatus(candidateSession)
+      },
+      rooms: {
+        baseline: await api.summarizeRoom(runRecord.rooms.baseline),
+        candidate: await api.summarizeRoom(runRecord.rooms.candidate)
+      }
+    };
+    await writeMetrics(runDir, metrics);
+    await logEvent(runDir, "info", "metrics.captured", "Captured post-run metrics.");
+
+    runRecord.status = "completed";
+    runRecord.finishedAt = timestamp();
+    await writeRunRecord(runDir, runRecord);
+  } catch (error) {
+    runRecord.status = "failed";
+    runRecord.finishedAt = timestamp();
+    runRecord.error = error instanceof Error ? error.stack ?? error.message : String(error);
+    await writeRunRecord(runDir, runRecord);
+    await logEvent(runDir, "error", "run.failed", "Experiment run failed.", { error: runRecord.error });
+  }
+
+  const indexEntry: RunIndexEntry = {
+    id: runRecord.id,
+    type: runRecord.type,
+    status: runRecord.status,
+    createdAt: runRecord.createdAt,
+    finishedAt: runRecord.finishedAt,
+    scenarioName: runRecord.scenarioName,
+    rooms: runRecord.rooms
+  };
+  await appendIndexEntry(historyRoot, indexEntry);
+
+  return {
+    run: runRecord,
+    variants,
+    metrics
+  };
+}
+
+async function prepareVariant(input: {
+  repoRoot: string;
+  runDir: string;
+  role: VariantRole;
+  source: string;
+  packagePath: string;
+}): Promise<PreparedVariant> {
+  const parsedSource = parseVariantSource(input.source);
+
+  if (parsedSource.kind === "workspace") {
+    const patchPath = path.join(input.runDir, `${input.role}.patch`);
+    const snapshot = await createWorkspaceSnapshot(input.repoRoot, patchPath);
+    const { bundle, record } = await buildVariantPackage(input.repoRoot, input.packagePath, "auto");
+
+    return {
+      record: {
+        role: input.role,
+        snapshot,
+        build: record
+      },
+      modules: {
+        main: bundle
+      }
+    };
+  }
+
+  return await withGitWorktree(input.repoRoot, parsedSource.ref, async (worktreeRoot, resolvedSha) => {
+    const { bundle, record } = await buildVariantPackage(worktreeRoot, input.packagePath, "ci");
+    return {
+      record: {
+        role: input.role,
+        snapshot: {
+          kind: "git",
+          source: parsedSource.raw,
+          ref: parsedSource.ref,
+          resolvedSha
+        },
+        build: record
+      },
+      modules: {
+        main: bundle
+      }
+    };
+  });
+}
+
+async function logEvent(runDir: string, level: EventRecord["level"], event: string, message: string, data?: unknown): Promise<void> {
+  await appendEvent(runDir, {
+    timestamp: timestamp(),
+    level,
+    event,
+    message,
+    data
+  });
+}
+
+function createPassword(): string {
+  return crypto.randomBytes(12).toString("hex");
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+type WaitForTargetGameTimeOptions = {
+  cli: Pick<ScreepsServerCli, "getGameTime">;
+  targetGameTime: number;
+  pollIntervalMs: number;
+  maxWallClockMs: number;
+  maxStalledPolls: number;
+};
+
+export async function waitForTargetGameTime(options: WaitForTargetGameTimeOptions): Promise<void> {
+  const startedAt = Date.now();
+  let lastGameTime: number | null = null;
+  let stalledPolls = 0;
+
+  while (true) {
+    const gameTime = await options.cli.getGameTime();
+    if (gameTime >= options.targetGameTime) {
+      return;
+    }
+
+    if (Date.now() - startedAt > options.maxWallClockMs) {
+      throw new Error(`Timed out waiting for game time ${options.targetGameTime}; last observed tick was ${gameTime}.`);
+    }
+
+    if (lastGameTime !== null && gameTime <= lastGameTime) {
+      stalledPolls += 1;
+      if (stalledPolls >= options.maxStalledPolls) {
+        throw new Error(`Game time stalled at ${gameTime} for ${stalledPolls} consecutive polls.`);
+      }
+    } else {
+      stalledPolls = 0;
+    }
+
+    lastGameTime = gameTime;
+    await delay(options.pollIntervalMs);
+  }
+}
