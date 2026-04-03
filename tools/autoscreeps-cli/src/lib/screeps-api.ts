@@ -1,24 +1,44 @@
 import type { AuthSession, RoomSummary, UserBadge, UserWorldStatus } from "./contracts.ts";
 
+type ScreepsApiClientOptions = {
+  requestTimeoutMs?: number;
+};
+
 type RegisterPayload = {
   username: string;
   password: string;
   modules: Record<string, string>;
 };
 
-type RoomObjectsResponse = {
-  objects: Array<{
-    type: string;
+export type RoomObjectRecord = {
+  type: string;
+  user?: string;
+  room?: string;
+  level?: number;
+  progress?: number;
+  progressTotal?: number;
+  energy?: number;
+  energyCapacity?: number;
+  store?: Record<string, number>;
+  storeCapacityResource?: Record<string, number>;
+  reservation?: {
     user?: string;
-  }>;
+  };
+  [key: string]: unknown;
+};
+
+export type RoomObjectsResponse = {
+  objects: RoomObjectRecord[];
   users: Record<string, { username: string }>;
 };
 
 export class ScreepsApiClient {
   private readonly baseUrl: string;
+  private readonly requestTimeoutMs: number | null;
 
-  constructor(baseUrl: string) {
+  constructor(baseUrl: string, options: ScreepsApiClientOptions = {}) {
     this.baseUrl = baseUrl;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? null;
   }
 
   async waitForReady(timeoutMs = 120000): Promise<void> {
@@ -93,8 +113,21 @@ export class ScreepsApiClient {
     return await this.requestAuthedJson<UserWorldStatus>(session, "/api/user/world-status");
   }
 
+  async getGameTime(): Promise<number> {
+    const response = await this.requestJson<{ time: number }>("/api/game/time");
+    const time = Number(response.time);
+    if (!Number.isFinite(time)) {
+      throw new Error(`Expected a numeric game time, received '${response.time}'.`);
+    }
+    return time;
+  }
+
+  async getRoomObjects(room: string): Promise<RoomObjectsResponse> {
+    return await this.requestJson<RoomObjectsResponse>(`/api/game/room-objects?room=${encodeURIComponent(room)}`);
+  }
+
   async summarizeRoom(room: string): Promise<RoomSummary> {
-    const response = await this.requestJson<RoomObjectsResponse>(`/api/game/room-objects?room=${encodeURIComponent(room)}`);
+    const response = await this.getRoomObjects(room);
     const typeCounts: Record<string, number> = {};
     const owners: Record<string, number> = {};
     const controllerOwners = new Set<string>();
@@ -171,7 +204,8 @@ export class ScreepsApiClient {
     };
     const request = new Request(new URL(pathname, this.baseUrl), {
       ...init,
-      headers
+      headers,
+      signal: init?.signal ?? (this.requestTimeoutMs === null ? undefined : AbortSignal.timeout(this.requestTimeoutMs))
     });
 
     return await fetch(request);

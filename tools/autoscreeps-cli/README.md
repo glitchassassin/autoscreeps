@@ -7,6 +7,7 @@ Use Node 24 for this package. The repository root includes `.nvmrc`, so `nvm use
 ## Commands
 
 - `autoscreeps experiment run duel`
+- `autoscreeps experiment watch [run-id]`
 - `autoscreeps experiment list`
 - `autoscreeps experiment show <run-id>`
 
@@ -23,3 +24,7 @@ node src/cli.ts experiment run duel \
 ```
 
 Run history is written under `.autoscreeps/runs/` at the repository root.
+
+`autoscreeps experiment watch` follows the newest run automatically and switches to a newer run when one starts.
+
+`autoscreeps experiment watch <run-id>` pins the watcher to a specific run.

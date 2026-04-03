@@ -189,18 +189,34 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
 
     runRecord.run.startGameTime = await cli.getGameTime();
     const targetGameTime = runRecord.run.startGameTime + runRecord.run.maxTicks;
+    await writeRunRecord(runDir, runRecord);
     await cli.resumeSimulation();
     await logEvent(runDir, "info", "simulation.running", "Simulation resumed.", {
       startGameTime: runRecord.run.startGameTime,
       targetGameTime
     });
 
+    let lastReportedGameTime: number | null = null;
+
     await waitForTargetGameTime({
       cli,
       targetGameTime,
       pollIntervalMs: runRecord.run.pollIntervalMs,
       maxWallClockMs: scenario.config.run.maxWallClockMs,
-      maxStalledPolls: scenario.config.run.maxStalledPolls
+      maxStalledPolls: scenario.config.run.maxStalledPolls,
+      onProgress: async ({ gameTime }) => {
+        if (gameTime === lastReportedGameTime) {
+          return;
+        }
+
+        lastReportedGameTime = gameTime;
+        await logEvent(runDir, "info", "simulation.progress", "Simulation advanced.", {
+          gameTime,
+          targetGameTime,
+          completedTicks: Math.max(gameTime - runRecord.run.startGameTime!, 0),
+          remainingTicks: Math.max(targetGameTime - gameTime, 0)
+        });
+      }
     });
 
     await cli.pauseSimulation();
@@ -366,6 +382,7 @@ type WaitForTargetGameTimeOptions = {
   pollIntervalMs: number;
   maxWallClockMs: number;
   maxStalledPolls: number;
+  onProgress?: (sample: { gameTime: number }) => Promise<void> | void;
 };
 
 export async function waitForTargetGameTime(options: WaitForTargetGameTimeOptions): Promise<void> {
@@ -378,6 +395,8 @@ export async function waitForTargetGameTime(options: WaitForTargetGameTimeOption
     if (gameTime >= options.targetGameTime) {
       return;
     }
+
+    await options.onProgress?.({ gameTime });
 
     if (Date.now() - startedAt > options.maxWallClockMs) {
       throw new Error(`Timed out waiting for game time ${options.targetGameTime}; last observed tick was ${gameTime}.`);

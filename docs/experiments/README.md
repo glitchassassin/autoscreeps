@@ -72,6 +72,22 @@ cd tools/autoscreeps-cli
 node src/cli.ts experiment show <run-id>
 ```
 
+- Watch the newest run and auto-switch if a newer run begins:
+
+```sh
+nvm use
+cd tools/autoscreeps-cli
+node src/cli.ts experiment watch
+```
+
+- Watch one specific run without auto-switching:
+
+```sh
+nvm use
+cd tools/autoscreeps-cli
+node src/cli.ts experiment watch <run-id>
+```
+
 Run history is written to `.autoscreeps/runs/` at the repository root.
 
 ## Change The Compared Bots

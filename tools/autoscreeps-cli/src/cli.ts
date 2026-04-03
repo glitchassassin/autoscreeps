@@ -4,6 +4,7 @@ import { Command } from "commander";
 import { runDuelExperimentCommand } from "./commands/experiment/run-duel.ts";
 import { listExperimentsCommand } from "./commands/experiment/list.ts";
 import { showExperimentCommand } from "./commands/experiment/show.ts";
+import { watchExperimentCommand } from "./commands/experiment/watch.ts";
 
 async function main(): Promise<void> {
   const program = new Command();
@@ -33,6 +34,12 @@ async function main(): Promise<void> {
     .description("Show a recorded experiment run")
     .argument("<run-id>", "Run identifier")
     .action(showExperimentCommand);
+
+  experiment
+    .command("watch")
+    .description("Watch live status for experiment runs")
+    .argument("[run-id]", "Run identifier to pin")
+    .action(watchExperimentCommand);
 
   await program.parseAsync();
 }

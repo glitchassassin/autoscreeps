@@ -32,4 +32,25 @@ describe("waitForTargetGameTime", () => {
       maxStalledPolls: 3
     })).rejects.toThrow("Game time stalled at 5");
   });
+
+  it("reports progress while waiting", async () => {
+    const cli = {
+      getGameTime: vi.fn()
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(2)
+    };
+    const onProgress = vi.fn();
+
+    await expect(waitForTargetGameTime({
+      cli,
+      targetGameTime: 2,
+      pollIntervalMs: 1,
+      maxWallClockMs: 100,
+      maxStalledPolls: 3,
+      onProgress
+    })).resolves.toBeUndefined();
+
+    expect(onProgress).toHaveBeenCalledTimes(1);
+    expect(onProgress).toHaveBeenCalledWith({ gameTime: 1 });
+  });
 });

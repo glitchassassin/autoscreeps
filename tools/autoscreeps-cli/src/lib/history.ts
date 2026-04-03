@@ -1,3 +1,4 @@
+import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { EventRecord, RunDetails, RunIndexEntry, RunMetrics, RunRecord, VariantRecord } from "./contracts.ts";
@@ -5,8 +6,16 @@ import { createRunId, ensureDirectory } from "./utils.ts";
 
 const indexFileName = "index.jsonl";
 
+export function resolveHistoryRoot(repoRoot: string): string {
+  return path.join(repoRoot, ".autoscreeps", "runs");
+}
+
+export function resolveRunDir(repoRoot: string, runId: string): string {
+  return path.join(resolveHistoryRoot(repoRoot), runId);
+}
+
 export async function createRunWorkspace(repoRoot: string): Promise<{ historyRoot: string; runId: string; runDir: string }> {
-  const historyRoot = path.join(repoRoot, ".autoscreeps", "runs");
+  const historyRoot = resolveHistoryRoot(repoRoot);
   const runId = createRunId();
   const runDir = path.join(historyRoot, runId);
 
@@ -41,7 +50,7 @@ export async function appendIndexEntry(historyRoot: string, entry: RunIndexEntry
 }
 
 export async function listRuns(repoRoot: string): Promise<RunIndexEntry[]> {
-  const historyRoot = path.join(repoRoot, ".autoscreeps", "runs");
+  const historyRoot = resolveHistoryRoot(repoRoot);
   const filePath = path.join(historyRoot, indexFileName);
 
   try {
@@ -60,8 +69,40 @@ export async function listRuns(repoRoot: string): Promise<RunIndexEntry[]> {
   }
 }
 
+export async function listRunRecords(repoRoot: string): Promise<RunRecord[]> {
+  const historyRoot = resolveHistoryRoot(repoRoot);
+
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(historyRoot, { withFileTypes: true });
+  } catch (error) {
+    const fileError = error as NodeJS.ErrnoException;
+    if (fileError.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+
+  const runs = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map(async (entry) => {
+        try {
+          return (await readJson(path.join(historyRoot, entry.name, "run.json"))) as RunRecord;
+        } catch (error) {
+          if (shouldIgnoreTransientJsonError(error)) {
+            return null;
+          }
+          throw error;
+        }
+      })
+  );
+
+  return runs.filter((run): run is RunRecord => run !== null).sort(compareRunsNewestFirst);
+}
+
 export async function readRunDetails(repoRoot: string, runId: string): Promise<RunDetails> {
-  const runDir = path.join(repoRoot, ".autoscreeps", "runs", runId);
+  const runDir = resolveRunDir(repoRoot, runId);
   const run = (await readJson(path.join(runDir, "run.json"))) as RunRecord;
   const variantsPath = path.join(runDir, "variants.json");
   const metricsPath = path.join(runDir, "metrics.json");
@@ -94,10 +135,51 @@ export async function readRunDetails(repoRoot: string, runId: string): Promise<R
   };
 }
 
+export async function readEventTail(runDir: string, limit: number): Promise<EventRecord[]> {
+  const filePath = path.join(runDir, "events.jsonl");
+
+  try {
+    const raw = await fs.readFile(filePath, "utf8");
+    const events: EventRecord[] = [];
+
+    for (const line of raw.split("\n")) {
+      if (line.length === 0) {
+        continue;
+      }
+
+      try {
+        events.push(JSON.parse(line) as EventRecord);
+      } catch (error) {
+        if (error instanceof SyntaxError) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    return events.slice(-limit);
+  } catch (error) {
+    const fileError = error as NodeJS.ErrnoException;
+    if (fileError.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+}
+
 async function writeJson(filePath: string, value: unknown): Promise<void> {
   await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
 async function readJson(filePath: string): Promise<unknown> {
   return JSON.parse(await fs.readFile(filePath, "utf8")) as unknown;
+}
+
+function shouldIgnoreTransientJsonError(error: unknown): boolean {
+  const fileError = error as NodeJS.ErrnoException;
+  return fileError.code === "ENOENT" || error instanceof SyntaxError;
+}
+
+function compareRunsNewestFirst(left: RunRecord, right: RunRecord): number {
+  return Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.id.localeCompare(left.id);
 }
