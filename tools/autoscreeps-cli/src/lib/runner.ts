@@ -7,19 +7,23 @@ import type {
   RunIndexEntry,
   RunMetrics,
   RunRecord,
+  RunSample,
   RunTerminationReason,
   TerminalOutcome,
   UserBadge,
+  UserSampleMetrics,
   UserWorldStatus,
   VariantRecord,
   VariantRole
 } from "./contracts.ts";
+import { autoscreepsTelemetrySegmentId, buildTelemetryByRole } from "./bot-telemetry.ts";
 import { copyFileToScreepsService, resetPrivateServer, restartScreepsService } from "./docker.ts";
 import { createWorkspaceSnapshot, parseVariantSource, resolveRepoRoot, withGitWorktree } from "./git.ts";
-import { appendEvent, appendIndexEntry, createRunWorkspace, writeMetrics, writeRunRecord, writeVariantRecords } from "./history.ts";
+import { appendEvent, appendIndexEntry, appendRunSample, createRunWorkspace, writeMetrics, writeRunRecord, writeVariantRecords } from "./history.ts";
 import { generateExperimentMap } from "./map-generator.ts";
+import { buildRunSummaryMetrics, shouldCaptureRunSample } from "./run-samples.ts";
 import { loadScenario } from "./scenario.ts";
-import type { TerminalCondition, TerminalConditionSet } from "./scenario.ts";
+import type { ScenarioConfig, TerminalCondition, TerminalConditionSet } from "./scenario.ts";
 import { ScreepsApiClient, type StatsResponse } from "./screeps-api.ts";
 import { ScreepsServerCli } from "./server-cli.ts";
 import { timestamp } from "./utils.ts";
@@ -31,10 +35,19 @@ type DuelVariantInput = {
 
 export type DuelRunInput = {
   cwd: string;
-  scenarioPath: string;
   baseline: DuelVariantInput;
   candidate: DuelVariantInput;
-};
+} & (
+  | {
+    scenarioPath: string;
+  }
+  | {
+    scenario: {
+      path: string;
+      config: ScenarioConfig;
+    };
+  }
+);
 
 type PreparedVariant = {
   record: VariantRecord;
@@ -58,12 +71,7 @@ const spectatorBadge: UserBadge = {
 const variantRoles: VariantRole[] = ["baseline", "candidate"];
 const controllerLevels = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
-type UserTerminalStats = {
-  ownedControllers: number;
-  combinedRCL: number;
-  maxOwnedControllerLevel: number | null;
-  rcl: Record<string, number>;
-};
+type UserTerminalStats = UserSampleMetrics;
 
 type TerminalEvaluation = {
   status: "won" | "failed";
@@ -72,7 +80,7 @@ type TerminalEvaluation = {
 
 export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails> {
   const repoRoot = await resolveRepoRoot(input.cwd);
-  const scenario = await loadScenario(input.scenarioPath);
+  const scenario = "scenario" in input ? input.scenario : await loadScenario(input.scenarioPath);
   const { runId, runDir, historyRoot } = await createRunWorkspace(repoRoot);
   const world = await resolveExperimentWorld({
     scenario: scenario.config,
@@ -95,6 +103,7 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
     run: {
       tickDuration: scenario.config.run.tickDuration,
       maxTicks: scenario.config.run.maxTicks,
+      sampleEveryTicks: scenario.config.run.sampleEveryTicks,
       pollIntervalMs: scenario.config.run.pollIntervalMs,
       map: world.label,
       startGameTime: null,
@@ -219,10 +228,12 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
 
     runRecord.run.startGameTime = await cli.getGameTime();
     const targetGameTime = runRecord.run.startGameTime + runRecord.run.maxTicks;
+    const sampleEveryTicks = scenario.config.run.sampleEveryTicks;
     const terminalOutcomes: Record<VariantRole, TerminalOutcome | null> = {
       baseline: null,
       candidate: null
     };
+    const samples: RunSample[] = [];
     await writeRunRecord(runDir, runRecord);
     await cli.resumeSimulation();
     await logEvent(runDir, "info", "simulation.running", "Simulation resumed.", {
@@ -231,6 +242,7 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
     });
 
     let lastReportedGameTime: number | null = null;
+    let lastSampleGameTime: number | null = null;
 
     const waitResult = await waitForSimulation({
       cli,
@@ -245,9 +257,26 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
 
         lastReportedGameTime = gameTime;
 
-        if (runRecord.run.terminalConditions) {
-          const stats = await api.getStats();
+        const captureSample = shouldCaptureRunSample(runRecord.run.startGameTime!, lastSampleGameTime, gameTime, sampleEveryTicks);
+        let stats: StatsResponse | null = null;
+        let telemetryData: Record<VariantRole, string | null> | null = null;
 
+        if (runRecord.run.terminalConditions || captureSample) {
+          stats = await api.getStats();
+        }
+
+        if (captureSample) {
+          const [baselineTelemetry, candidateTelemetry] = await Promise.all([
+            api.getMemorySegment(baselineSession, autoscreepsTelemetrySegmentId),
+            api.getMemorySegment(candidateSession, autoscreepsTelemetrySegmentId)
+          ]);
+          telemetryData = {
+            baseline: baselineTelemetry,
+            candidate: candidateTelemetry
+          };
+        }
+
+        if (runRecord.run.terminalConditions) {
           for (const role of variantRoles) {
             if (terminalOutcomes[role] !== null) {
               continue;
@@ -255,7 +284,7 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
 
             const evaluation = evaluateTerminalConditions(
               runRecord.run.terminalConditions,
-              summarizeUserTerminalStats(stats, credentials[role].username)
+              summarizeUserTerminalStats(stats!, credentials[role].username)
             );
             if (!evaluation) {
               continue;
@@ -272,6 +301,13 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
               terminal: terminalOutcomes[role]
             });
           }
+        }
+
+        if (captureSample && stats) {
+          const sample = buildRunSample(gameTime, stats, credentials, telemetryData);
+          samples.push(sample);
+          lastSampleGameTime = gameTime;
+          await appendRunSample(runDir, sample);
         }
 
         await logEvent(runDir, "info", "simulation.progress", "Simulation advanced.", {
@@ -323,6 +359,21 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
       api.summarizeRoom(runRecord.rooms.baseline),
       api.summarizeRoom(runRecord.rooms.candidate)
     ]);
+
+    if (samples[samples.length - 1]?.gameTime !== endGameTime) {
+      const [baselineTelemetry, candidateTelemetry] = await Promise.all([
+        api.getMemorySegment(baselineSession, autoscreepsTelemetrySegmentId),
+        api.getMemorySegment(candidateSession, autoscreepsTelemetrySegmentId)
+      ]);
+      const finalSample = buildRunSample(endGameTime, finalStats, credentials, {
+        baseline: baselineTelemetry,
+        candidate: candidateTelemetry
+      });
+      samples.push(finalSample);
+      lastSampleGameTime = endGameTime;
+      await appendRunSample(runDir, finalSample);
+    }
+
     metrics = {
       users: {
         baseline: buildUserRunMetrics(baselineWorldStatus, summarizeUserTerminalStats(finalStats, credentials.baseline.username), terminalOutcomes.baseline),
@@ -331,7 +382,8 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
       rooms: {
         baseline: baselineRoomSummary,
         candidate: candidateRoomSummary
-      }
+      },
+      summary: buildRunSummaryMetrics(samples, sampleEveryTicks)
     };
     await writeMetrics(runDir, metrics);
     await logEvent(runDir, "info", "metrics.captured", "Captured post-run metrics.");
@@ -503,6 +555,27 @@ function buildUserRunMetrics(
     rcl: stats.rcl,
     terminal
   };
+}
+
+function buildRunSample(
+  gameTime: number,
+  stats: StatsResponse,
+  credentials: Record<VariantRole, { username: string }>,
+  telemetryData: Record<VariantRole, string | null> | null
+): RunSample {
+  const sample: RunSample = {
+    gameTime,
+    users: {
+      baseline: summarizeUserTerminalStats(stats, credentials.baseline.username),
+      candidate: summarizeUserTerminalStats(stats, credentials.candidate.username)
+    }
+  };
+
+  if (telemetryData) {
+    sample.telemetry = buildTelemetryByRole(telemetryData);
+  }
+
+  return sample;
 }
 
 export function evaluateTerminalConditions(

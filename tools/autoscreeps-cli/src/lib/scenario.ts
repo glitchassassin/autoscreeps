@@ -3,12 +3,13 @@ import path from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
 
-const roomSelectionStrategySchema = z.object({
+export const roomSelectionStrategySchema = z.object({
   type: z.enum(["max-plains-two-sources", "center-most-controller"])
 });
 
-const mapGeneratorSchema = z.object({
+export const mapGeneratorSchema = z.object({
   type: z.literal("mirrored-random-1x1"),
+  sourceMapId: z.string().min(1).optional(),
   roomSelectionStrategy: roomSelectionStrategySchema.optional()
 });
 
@@ -29,6 +30,16 @@ export const terminalConditionSetSchema = z.object({
   message: "terminalConditions must declare at least one win or fail condition."
 });
 
+export const scenarioRunSchema = z.object({
+  tickDuration: z.number().int().positive().default(250),
+  maxTicks: z.number().int().positive(),
+  sampleEveryTicks: z.number().int().positive().default(25),
+  pollIntervalMs: z.number().int().positive().default(1000),
+  maxWallClockMs: z.number().int().positive().default(300000),
+  maxStalledPolls: z.number().int().positive().default(30),
+  terminalConditions: terminalConditionSetSchema.optional()
+});
+
 export const scenarioSchema = z.object({
   version: z.literal(1),
   name: z.string().min(1),
@@ -37,14 +48,7 @@ export const scenarioSchema = z.object({
   map: z.string().min(1).optional(),
   mapGenerator: mapGeneratorSchema.optional(),
   rooms: z.tuple([z.string().min(1), z.string().min(1)]).optional(),
-  run: z.object({
-    tickDuration: z.number().int().positive().default(250),
-    maxTicks: z.number().int().positive(),
-    pollIntervalMs: z.number().int().positive().default(1000),
-    maxWallClockMs: z.number().int().positive().default(300000),
-    maxStalledPolls: z.number().int().positive().default(30),
-    terminalConditions: terminalConditionSetSchema.optional()
-  }),
+  run: scenarioRunSchema,
   server: z
     .object({
       httpUrl: z.string().url().default("http://127.0.0.1:21025"),

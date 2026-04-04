@@ -47,6 +47,27 @@ export type TerminalOutcome = {
   condition: TerminalCondition | null;
 };
 
+export type BotTelemetrySnapshot = {
+  schemaVersion: number;
+  gameTime: number;
+  colonyMode?: string;
+  totalCreeps?: number;
+  roleCounts?: Record<string, number>;
+  spawn?: {
+    queueDepth: number;
+    isSpawning: boolean;
+    nextRole: string | null;
+    unmetDemand: Record<string, number>;
+  };
+  sources?: {
+    total: number;
+    staffed: number;
+    assignments: Record<string, number>;
+  };
+  milestones?: Record<string, number | null>;
+  counters?: Record<string, number>;
+};
+
 export type RunRecord = {
   id: string;
   type: "duel";
@@ -64,6 +85,7 @@ export type RunRecord = {
   run: {
     tickDuration: number;
     maxTicks: number;
+    sampleEveryTicks: number;
     pollIntervalMs: number;
     map: string | null;
     startGameTime: number | null;
@@ -115,9 +137,40 @@ export type RoomSummary = {
   spawnOwners: string[];
 };
 
+export type UserSampleMetrics = {
+  ownedControllers: number;
+  combinedRCL: number;
+  maxOwnedControllerLevel: number | null;
+  rcl: Record<string, number>;
+};
+
+export type RunSample = {
+  gameTime: number;
+  users: Record<VariantRole, UserSampleMetrics>;
+  telemetry?: Record<VariantRole, BotTelemetrySnapshot | null>;
+};
+
+export type UserRunSummaryMetrics = {
+  sampleCount: number;
+  firstSeenGameTime: number | null;
+  controllerLevelMilestones: Record<string, number | null>;
+  maxCombinedRCL: number;
+  maxOwnedControllers: number;
+  telemetrySampleCount: number;
+  spawnIdlePct: number | null;
+  sourceCoveragePct: number | null;
+  sourceUptimePct: number | null;
+};
+
+export type RunSummaryMetrics = {
+  sampleEveryTicks: number;
+  users: Record<VariantRole, UserRunSummaryMetrics>;
+};
+
 export type RunMetrics = {
   users: Record<VariantRole, UserRunMetrics>;
   rooms: Record<VariantRole, RoomSummary>;
+  summary?: RunSummaryMetrics;
 };
 
 export type RunIndexEntry = {
@@ -137,6 +190,7 @@ export type RunDetails = {
   run: RunRecord;
   variants: Record<VariantRole, VariantRecord> | null;
   metrics: RunMetrics | null;
+  samples?: RunSample[] | null;
 };
 
 export type EventRecord = {

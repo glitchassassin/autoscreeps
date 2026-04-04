@@ -3,6 +3,7 @@ import path from "node:path";
 
 export type MapGeneratorConfig = {
   type: "mirrored-random-1x1";
+  sourceMapId?: string;
   roomSelectionStrategy?: RoomSelectionStrategy;
 };
 
@@ -53,7 +54,7 @@ export async function generateExperimentMap(config: MapGeneratorConfig, runDir: 
     throw new Error(`Unsupported map generator type '${config.type}'.`);
   }
 
-  const mapId = await pickRandomMapId(1, 1);
+  const mapId = config.sourceMapId ?? await pickRandomMapId(1, 1);
   const remoteMap = await fetchJson<RemoteMapFile>(mapFileUrl(mapId));
   const generatedMap = buildMirroredMap(remoteMap.rooms, config.roomSelectionStrategy);
   const hostFilePath = path.join(runDir, "generated-map.json");

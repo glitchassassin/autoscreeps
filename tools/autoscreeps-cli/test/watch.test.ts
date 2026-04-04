@@ -189,6 +189,7 @@ function createRunRecord(runId: string, createdAt: string) {
     run: {
       tickDuration: 250,
       maxTicks: 100,
+      sampleEveryTicks: 25,
       pollIntervalMs: 1000,
       map: null,
       startGameTime: null,

@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { EventRecord, RunDetails, RunIndexEntry, RunMetrics, RunRecord, VariantRecord } from "./contracts.ts";
+import type { EventRecord, RunDetails, RunIndexEntry, RunMetrics, RunRecord, RunSample, VariantRecord } from "./contracts.ts";
 import { createRunId, ensureDirectory } from "./utils.ts";
 
 const indexFileName = "index.jsonl";
@@ -38,6 +38,10 @@ export async function writeVariantRecords(runDir: string, variants: Record<"base
 
 export async function writeMetrics(runDir: string, metrics: RunMetrics): Promise<void> {
   await writeJson(path.join(runDir, "metrics.json"), metrics);
+}
+
+export async function appendRunSample(runDir: string, sample: RunSample): Promise<void> {
+  await fs.appendFile(path.join(runDir, "samples.jsonl"), `${JSON.stringify(sample)}\n`, "utf8");
 }
 
 export async function appendEvent(runDir: string, event: EventRecord): Promise<void> {
@@ -106,9 +110,11 @@ export async function readRunDetails(repoRoot: string, runId: string): Promise<R
   const run = (await readJson(path.join(runDir, "run.json"))) as RunRecord;
   const variantsPath = path.join(runDir, "variants.json");
   const metricsPath = path.join(runDir, "metrics.json");
+  const samplesPath = path.join(runDir, "samples.jsonl");
 
   let variants: Record<"baseline" | "candidate", VariantRecord> | null = null;
   let metrics: RunMetrics | null = null;
+  let samples: RunSample[] | null = null;
 
   try {
     variants = (await readJson(variantsPath)) as Record<"baseline" | "candidate", VariantRecord>;
@@ -128,10 +134,20 @@ export async function readRunDetails(repoRoot: string, runId: string): Promise<R
     }
   }
 
+  try {
+    samples = await readJsonLines<RunSample>(samplesPath);
+  } catch (error) {
+    const fileError = error as NodeJS.ErrnoException;
+    if (fileError.code !== "ENOENT") {
+      throw error;
+    }
+  }
+
   return {
     run,
     variants,
-    metrics
+    metrics,
+    samples
   };
 }
 
@@ -139,24 +155,7 @@ export async function readEventTail(runDir: string, limit: number): Promise<Even
   const filePath = path.join(runDir, "events.jsonl");
 
   try {
-    const raw = await fs.readFile(filePath, "utf8");
-    const events: EventRecord[] = [];
-
-    for (const line of raw.split("\n")) {
-      if (line.length === 0) {
-        continue;
-      }
-
-      try {
-        events.push(JSON.parse(line) as EventRecord);
-      } catch (error) {
-        if (error instanceof SyntaxError) {
-          continue;
-        }
-        throw error;
-      }
-    }
-
+    const events = await readJsonLines<EventRecord>(filePath);
     return events.slice(-limit);
   } catch (error) {
     const fileError = error as NodeJS.ErrnoException;
@@ -173,6 +172,28 @@ async function writeJson(filePath: string, value: unknown): Promise<void> {
 
 async function readJson(filePath: string): Promise<unknown> {
   return JSON.parse(await fs.readFile(filePath, "utf8")) as unknown;
+}
+
+async function readJsonLines<T>(filePath: string): Promise<T[]> {
+  const raw = await fs.readFile(filePath, "utf8");
+  const items: T[] = [];
+
+  for (const line of raw.split("\n")) {
+    if (line.length === 0) {
+      continue;
+    }
+
+    try {
+      items.push(JSON.parse(line) as T);
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return items;
 }
 
 function shouldIgnoreTransientJsonError(error: unknown): boolean {

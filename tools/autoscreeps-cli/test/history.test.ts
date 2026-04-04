@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { appendIndexEntry, createRunWorkspace, listRunRecords, listRuns, readEventTail, readRunDetails, resolveRunDir, writeRunRecord, writeVariantRecords } from "../src/lib/history.ts";
+import { appendIndexEntry, appendRunSample, createRunWorkspace, listRunRecords, listRuns, readEventTail, readRunDetails, resolveRunDir, writeRunRecord, writeVariantRecords } from "../src/lib/history.ts";
 import type { RunRecord, VariantRecord } from "../src/lib/contracts.ts";
 
 const tempPaths: string[] = [];
@@ -35,6 +35,7 @@ describe("history", () => {
       run: {
         tickDuration: 250,
         maxTicks: 100,
+        sampleEveryTicks: 25,
         pollIntervalMs: 1000,
         map: null,
         startGameTime: 1,
@@ -92,6 +93,23 @@ describe("history", () => {
 
     await writeRunRecord(runDir, run);
     await writeVariantRecords(runDir, variants);
+    await appendRunSample(runDir, {
+      gameTime: 1,
+      users: {
+        baseline: {
+          ownedControllers: 1,
+          combinedRCL: 1,
+          maxOwnedControllerLevel: 1,
+          rcl: { "1": 1 }
+        },
+        candidate: {
+          ownedControllers: 1,
+          combinedRCL: 1,
+          maxOwnedControllerLevel: 1,
+          rcl: { "1": 1 }
+        }
+      }
+    });
     await appendIndexEntry(historyRoot, {
       id: runId,
       type: "duel",
@@ -109,6 +127,25 @@ describe("history", () => {
     expect(listed[0]?.id).toBe(runId);
     expect(details.run.id).toBe(runId);
     expect(details.variants.baseline.snapshot.kind).toBe("git");
+    expect(details.samples).toEqual([
+      {
+        gameTime: 1,
+        users: {
+          baseline: {
+            ownedControllers: 1,
+            combinedRCL: 1,
+            maxOwnedControllerLevel: 1,
+            rcl: { "1": 1 }
+          },
+          candidate: {
+            ownedControllers: 1,
+            combinedRCL: 1,
+            maxOwnedControllerLevel: 1,
+            rcl: { "1": 1 }
+          }
+        }
+      }
+    ]);
   });
 
   it("lists run records by run.json and ignores incomplete files", async () => {
@@ -174,6 +211,7 @@ function createRunRecord(repoRoot: string, runId: string, createdAt: string): Ru
     run: {
       tickDuration: 250,
       maxTicks: 100,
+      sampleEveryTicks: 25,
       pollIntervalMs: 1000,
       map: null,
       startGameTime: null,

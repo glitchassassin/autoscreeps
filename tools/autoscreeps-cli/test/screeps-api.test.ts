@@ -45,4 +45,28 @@ describe("ScreepsApiClient", () => {
     expect(thirdRequest.url).toBe("http://127.0.0.1:21025/api/user/world-status");
     expect(thirdRequest.headers.get("X-Token")).toBe("fresh-token");
   });
+
+  it("reads an authenticated memory segment and returns null when absent", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('{"data":"{\\"schemaVersion\\":1}"}', { status: 200 }))
+      .mockResolvedValueOnce(new Response('{"data":null}', { status: 200 }));
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const api = new ScreepsApiClient("http://127.0.0.1:21025");
+    const session = {
+      username: "baseline",
+      password: "secret",
+      token: "token"
+    };
+
+    await expect(api.getMemorySegment(session, 42)).resolves.toBe('{"schemaVersion":1}');
+    await expect(api.getMemorySegment(session, 42)).resolves.toBeNull();
+
+    const firstRequest = fetchMock.mock.calls[0]?.[0] as Request;
+    expect(firstRequest.url).toBe("http://127.0.0.1:21025/api/user/memory-segment?segment=42");
+    expect(firstRequest.headers.get("X-Username")).toBe("baseline");
+    expect(firstRequest.headers.get("X-Token")).toBe("token");
+  });
 });

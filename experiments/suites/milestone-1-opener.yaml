@@ -1,0 +1,76 @@
+version: 1
+name: milestone-1-opener
+description: Fixed-map opener benchmark suite for milestone 1.
+cases:
+  - id: train-a-2k
+    cohort: train
+    scenario: ../scenarios/duel-basic.yaml
+    overrides:
+      mapGenerator:
+        sourceMapId: 3a278e6d
+      run:
+        tickDuration: 25
+        maxTicks: 2000
+        pollIntervalMs: 250
+        maxWallClockMs: 1800000
+        maxStalledPolls: 240
+  - id: train-b-2k
+    cohort: train
+    scenario: ../scenarios/duel-basic.yaml
+    overrides:
+      mapGenerator:
+        sourceMapId: e665861f
+      run:
+        tickDuration: 25
+        maxTicks: 2000
+        pollIntervalMs: 250
+        maxWallClockMs: 1800000
+        maxStalledPolls: 240
+  - id: train-c-5k
+    cohort: train
+    scenario: ../scenarios/duel-basic.yaml
+    overrides:
+      mapGenerator:
+        sourceMapId: 446a0e3a
+      run:
+        tickDuration: 25
+        maxTicks: 5000
+        pollIntervalMs: 250
+        maxWallClockMs: 1800000
+        maxStalledPolls: 240
+  - id: train-d-5k
+    cohort: train
+    scenario: ../scenarios/duel-basic.yaml
+    overrides:
+      mapGenerator:
+        sourceMapId: 3454fc1f
+      run:
+        tickDuration: 25
+        maxTicks: 5000
+        pollIntervalMs: 250
+        maxWallClockMs: 1800000
+        maxStalledPolls: 240
+  - id: holdout-a-2k
+    cohort: holdout
+    scenario: ../scenarios/duel-basic.yaml
+    overrides:
+      mapGenerator:
+        sourceMapId: bf4049e8
+      run:
+        tickDuration: 25
+        maxTicks: 2000
+        pollIntervalMs: 250
+        maxWallClockMs: 1800000
+        maxStalledPolls: 240
+  - id: holdout-b-5k
+    cohort: holdout
+    scenario: ../scenarios/duel-basic.yaml
+    overrides:
+      mapGenerator:
+        sourceMapId: f857e984
+      run:
+        tickDuration: 25
+        maxTicks: 5000
+        pollIntervalMs: 250
+        maxWallClockMs: 1800000
+        maxStalledPolls: 240

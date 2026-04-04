@@ -43,6 +43,10 @@ export type StatsResponse = {
   users: StatsUserRecord[];
 };
 
+type MemorySegmentResponse = {
+  data?: string | null;
+};
+
 export class ScreepsApiClient {
   private readonly baseUrl: string;
   private readonly requestTimeoutMs: number | null;
@@ -122,6 +126,15 @@ export class ScreepsApiClient {
 
   async getWorldStatus(session: AuthSession): Promise<UserWorldStatus> {
     return await this.requestAuthedJson<UserWorldStatus>(session, "/api/user/world-status");
+  }
+
+  async getMemorySegment(session: AuthSession, segment: number): Promise<string | null> {
+    const response = await this.requestAuthedJson<MemorySegmentResponse>(
+      session,
+      `/api/user/memory-segment?segment=${encodeURIComponent(String(segment))}`
+    );
+
+    return typeof response.data === "string" ? response.data : null;
   }
 
   async getGameTime(): Promise<number> {

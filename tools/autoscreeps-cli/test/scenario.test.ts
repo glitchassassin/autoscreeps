@@ -42,11 +42,43 @@ describe("loadScenario", () => {
     expect(scenario.config.mapGenerator?.type).toBe("mirrored-random-1x1");
     expect(scenario.config.reset).toBe("full");
     expect(scenario.config.run.tickDuration).toBe(250);
+    expect(scenario.config.run.sampleEveryTicks).toBe(25);
     expect(scenario.config.run.terminalConditions).toEqual({
       win: [{ type: "any-owned-controller-level-at-least", level: 2 }],
       fail: [{ type: "no-owned-controllers" }]
     });
     expect(scenario.config.server.httpUrl).toBe("http://127.0.0.1:21025");
+  });
+
+  it("parses an explicit sourceMapId for deterministic generation", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "autoscreeps-scenario-"));
+    tempPaths.push(tempDir);
+    const scenarioPath = path.join(tempDir, "scenario.yaml");
+
+    await fs.writeFile(
+      scenarioPath,
+      [
+        "version: 1",
+        "name: deterministic-duel",
+        "mapGenerator:",
+        "  type: mirrored-random-1x1",
+        "  sourceMapId: shard3-e0s0",
+        "run:",
+        "  maxTicks: 200",
+        "  terminalConditions:",
+        "    win:",
+        "      - type: any-owned-controller-level-at-least",
+        "        level: 2"
+      ].join("\n"),
+      "utf8"
+    );
+
+    const scenario = await loadScenario(scenarioPath);
+
+    expect(scenario.config.mapGenerator).toEqual({
+      type: "mirrored-random-1x1",
+      sourceMapId: "shard3-e0s0"
+    });
   });
 
   it("rejects empty terminal conditions", async () => {
