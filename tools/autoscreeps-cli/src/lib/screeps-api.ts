@@ -32,6 +32,17 @@ export type RoomObjectsResponse = {
   users: Record<string, { username: string }>;
 };
 
+export type StatsUserRecord = {
+  username: string;
+  rooms: number;
+  combinedRCL: number;
+  rcl: Record<string, number>;
+};
+
+export type StatsResponse = {
+  users: StatsUserRecord[];
+};
+
 export class ScreepsApiClient {
   private readonly baseUrl: string;
   private readonly requestTimeoutMs: number | null;
@@ -124,6 +135,10 @@ export class ScreepsApiClient {
 
   async getRoomObjects(room: string): Promise<RoomObjectsResponse> {
     return await this.requestJson<RoomObjectsResponse>(`/api/game/room-objects?room=${encodeURIComponent(room)}`);
+  }
+
+  async getStats(): Promise<StatsResponse> {
+    return await this.requestJson<StatsResponse>("/stats");
   }
 
   async summarizeRoom(room: string): Promise<RoomSummary> {

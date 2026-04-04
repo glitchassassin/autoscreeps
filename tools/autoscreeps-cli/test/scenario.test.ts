@@ -25,7 +25,13 @@ describe("loadScenario", () => {
         "mapGenerator:",
         "  type: mirrored-random-1x1",
         "run:",
-        "  maxTicks: 200"
+        "  maxTicks: 200",
+        "  terminalConditions:",
+        "    win:",
+        "      - type: any-owned-controller-level-at-least",
+        "        level: 2",
+        "    fail:",
+        "      - type: no-owned-controllers"
       ].join("\n"),
       "utf8"
     );
@@ -36,6 +42,34 @@ describe("loadScenario", () => {
     expect(scenario.config.mapGenerator?.type).toBe("mirrored-random-1x1");
     expect(scenario.config.reset).toBe("full");
     expect(scenario.config.run.tickDuration).toBe(250);
+    expect(scenario.config.run.terminalConditions).toEqual({
+      win: [{ type: "any-owned-controller-level-at-least", level: 2 }],
+      fail: [{ type: "no-owned-controllers" }]
+    });
     expect(scenario.config.server.httpUrl).toBe("http://127.0.0.1:21025");
+  });
+
+  it("rejects empty terminal conditions", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "autoscreeps-scenario-"));
+    tempPaths.push(tempDir);
+    const scenarioPath = path.join(tempDir, "scenario.yaml");
+
+    await fs.writeFile(
+      scenarioPath,
+      [
+        "version: 1",
+        "name: basic-duel",
+        "mapGenerator:",
+        "  type: mirrored-random-1x1",
+        "run:",
+        "  maxTicks: 200",
+        "  terminalConditions:",
+        "    win: []",
+        "    fail: []"
+      ].join("\n"),
+      "utf8"
+    );
+
+    await expect(loadScenario(scenarioPath)).rejects.toThrow("terminalConditions must declare at least one win or fail condition");
   });
 });

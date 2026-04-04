@@ -1,6 +1,6 @@
 version: 1
 name: duel-basic-2000
-description: Run a basic head-to-head experiment on mirrored copies of a random 1x1 sector for 2000 ticks.
+description: Run a basic head-to-head experiment on mirrored copies of a random 1x1 sector until each bot reaches RCL2 or loses all controllers, up to 2000 ticks.
 reset: full
 mapGenerator:
   type: mirrored-random-1x1
@@ -10,3 +10,9 @@ run:
   pollIntervalMs: 1000
   maxWallClockMs: 900000
   maxStalledPolls: 60
+  terminalConditions:
+    win:
+      - type: any-owned-controller-level-at-least
+        level: 2
+    fail:
+      - type: no-owned-controllers

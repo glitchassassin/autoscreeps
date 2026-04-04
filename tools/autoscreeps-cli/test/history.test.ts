@@ -38,7 +38,12 @@ describe("history", () => {
         pollIntervalMs: 1000,
         map: null,
         startGameTime: 1,
-        endGameTime: 101
+        endGameTime: 101,
+        terminalConditions: {
+          win: [{ type: "any-owned-controller-level-at-least", level: 2 }],
+          fail: [{ type: "no-owned-controllers" }]
+        },
+        terminationReason: "all-bots-terminal"
       },
       server: {
         httpUrl: "http://127.0.0.1:21025",
@@ -172,7 +177,9 @@ function createRunRecord(repoRoot: string, runId: string, createdAt: string): Ru
       pollIntervalMs: 1000,
       map: null,
       startGameTime: null,
-      endGameTime: null
+      endGameTime: null,
+      terminalConditions: null,
+      terminationReason: null
     },
     server: {
       httpUrl: "http://127.0.0.1:21025",

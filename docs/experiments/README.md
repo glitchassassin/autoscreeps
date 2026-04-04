@@ -54,6 +54,32 @@ Each run also creates a spectator login for monitoring the world in the browser 
 
 The runner gives that account a preset badge, marks it as banned, and uses the admin-utils spawn whitelist so only the experiment users can claim rooms.
 
+## Configure Early Termination
+
+Scenarios can declare terminal conditions under `run.terminalConditions`.
+
+```yaml
+run:
+  tickDuration: 250
+  maxTicks: 2000
+  pollIntervalMs: 1000
+  maxWallClockMs: 900000
+  maxStalledPolls: 60
+  terminalConditions:
+    win:
+      - type: any-owned-controller-level-at-least
+        level: 2
+    fail:
+      - type: no-owned-controllers
+```
+
+- `any-owned-controller-level-at-least` matches when a bot owns any controller at or above the requested RCL.
+- `no-owned-controllers` matches when a bot no longer owns any controllers.
+- The runner only stops early after every bot has reached a terminal outcome.
+- If `maxTicks` is reached first, any bot without a terminal outcome is recorded as `timed_out`.
+
+Recorded runs persist the configured terminal conditions and termination reason in `run.json`, and persist each bot's terminal outcome alongside final world metrics in `metrics.json`.
+
 ## Inspect Results
 
 - List recorded runs:

@@ -192,7 +192,9 @@ function createRunRecord(runId: string, createdAt: string) {
       pollIntervalMs: 1000,
       map: null,
       startGameTime: null,
-      endGameTime: null
+      endGameTime: null,
+      terminalConditions: null,
+      terminationReason: null
     },
     server: {
       httpUrl: "http://127.0.0.1:21025",

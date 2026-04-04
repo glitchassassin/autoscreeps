@@ -1,3 +1,5 @@
+import type { TerminalCondition, TerminalConditionSet } from "./scenario.ts";
+
 export type VariantRole = "baseline" | "candidate";
 
 export type GitVariantSnapshot = {
@@ -35,6 +37,16 @@ export type VariantRecord = {
 
 export type RunStatus = "running" | "completed" | "failed";
 
+export type RunTerminationReason = "all-bots-terminal" | "max-ticks";
+
+export type TerminalOutcomeStatus = "won" | "failed" | "timed_out";
+
+export type TerminalOutcome = {
+  status: TerminalOutcomeStatus;
+  gameTime: number;
+  condition: TerminalCondition | null;
+};
+
 export type RunRecord = {
   id: string;
   type: "duel";
@@ -56,6 +68,8 @@ export type RunRecord = {
     map: string | null;
     startGameTime: number | null;
     endGameTime: number | null;
+    terminalConditions: TerminalConditionSet | null;
+    terminationReason: RunTerminationReason | null;
   };
   server: {
     httpUrl: string;
@@ -67,6 +81,14 @@ export type RunRecord = {
 
 export type UserWorldStatus = {
   status: string;
+};
+
+export type UserRunMetrics = UserWorldStatus & {
+  ownedControllers: number;
+  combinedRCL: number;
+  maxOwnedControllerLevel: number | null;
+  rcl: Record<string, number>;
+  terminal: TerminalOutcome | null;
 };
 
 export type AuthSession = {
@@ -94,7 +116,7 @@ export type RoomSummary = {
 };
 
 export type RunMetrics = {
-  users: Record<VariantRole, UserWorldStatus>;
+  users: Record<VariantRole, UserRunMetrics>;
   rooms: Record<VariantRole, RoomSummary>;
 };
 

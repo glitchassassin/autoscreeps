@@ -1,13 +1,26 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import { buildVariantPackage } from "./build.ts";
-import type { EventRecord, RunDetails, RunIndexEntry, RunMetrics, RunRecord, UserBadge, VariantRecord, VariantRole } from "./contracts.ts";
+import type {
+  EventRecord,
+  RunDetails,
+  RunIndexEntry,
+  RunMetrics,
+  RunRecord,
+  RunTerminationReason,
+  TerminalOutcome,
+  UserBadge,
+  UserWorldStatus,
+  VariantRecord,
+  VariantRole
+} from "./contracts.ts";
 import { copyFileToScreepsService, resetPrivateServer, restartScreepsService } from "./docker.ts";
 import { createWorkspaceSnapshot, parseVariantSource, resolveRepoRoot, withGitWorktree } from "./git.ts";
 import { appendEvent, appendIndexEntry, createRunWorkspace, writeMetrics, writeRunRecord, writeVariantRecords } from "./history.ts";
 import { generateExperimentMap } from "./map-generator.ts";
 import { loadScenario } from "./scenario.ts";
-import { ScreepsApiClient } from "./screeps-api.ts";
+import type { TerminalCondition, TerminalConditionSet } from "./scenario.ts";
+import { ScreepsApiClient, type StatsResponse } from "./screeps-api.ts";
 import { ScreepsServerCli } from "./server-cli.ts";
 import { timestamp } from "./utils.ts";
 
@@ -42,6 +55,21 @@ const spectatorBadge: UserBadge = {
   flip: false
 };
 
+const variantRoles: VariantRole[] = ["baseline", "candidate"];
+const controllerLevels = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+
+type UserTerminalStats = {
+  ownedControllers: number;
+  combinedRCL: number;
+  maxOwnedControllerLevel: number | null;
+  rcl: Record<string, number>;
+};
+
+type TerminalEvaluation = {
+  status: "won" | "failed";
+  condition: TerminalCondition;
+};
+
 export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails> {
   const repoRoot = await resolveRepoRoot(input.cwd);
   const scenario = await loadScenario(input.scenarioPath);
@@ -70,7 +98,9 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
       pollIntervalMs: scenario.config.run.pollIntervalMs,
       map: world.label,
       startGameTime: null,
-      endGameTime: null
+      endGameTime: null,
+      terminalConditions: scenario.config.run.terminalConditions ?? null,
+      terminationReason: null
     },
     server: {
       httpUrl: scenario.config.server.httpUrl,
@@ -189,6 +219,10 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
 
     runRecord.run.startGameTime = await cli.getGameTime();
     const targetGameTime = runRecord.run.startGameTime + runRecord.run.maxTicks;
+    const terminalOutcomes: Record<VariantRole, TerminalOutcome | null> = {
+      baseline: null,
+      candidate: null
+    };
     await writeRunRecord(runDir, runRecord);
     await cli.resumeSimulation();
     await logEvent(runDir, "info", "simulation.running", "Simulation resumed.", {
@@ -198,37 +232,105 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
 
     let lastReportedGameTime: number | null = null;
 
-    await waitForTargetGameTime({
+    const waitResult = await waitForSimulation({
       cli,
       targetGameTime,
       pollIntervalMs: runRecord.run.pollIntervalMs,
       maxWallClockMs: scenario.config.run.maxWallClockMs,
       maxStalledPolls: scenario.config.run.maxStalledPolls,
-      onProgress: async ({ gameTime }) => {
+      onSample: async ({ gameTime }) => {
         if (gameTime === lastReportedGameTime) {
           return;
         }
 
         lastReportedGameTime = gameTime;
+
+        if (runRecord.run.terminalConditions) {
+          const stats = await api.getStats();
+
+          for (const role of variantRoles) {
+            if (terminalOutcomes[role] !== null) {
+              continue;
+            }
+
+            const evaluation = evaluateTerminalConditions(
+              runRecord.run.terminalConditions,
+              summarizeUserTerminalStats(stats, credentials[role].username)
+            );
+            if (!evaluation) {
+              continue;
+            }
+
+            terminalOutcomes[role] = {
+              status: evaluation.status,
+              gameTime,
+              condition: evaluation.condition
+            };
+            await logEvent(runDir, "info", "simulation.terminal", `Variant ${role} reached terminal status ${evaluation.status}.`, {
+              role,
+              gameTime,
+              terminal: terminalOutcomes[role]
+            });
+          }
+        }
+
         await logEvent(runDir, "info", "simulation.progress", "Simulation advanced.", {
           gameTime,
           targetGameTime,
           completedTicks: Math.max(gameTime - runRecord.run.startGameTime!, 0),
           remainingTicks: Math.max(targetGameTime - gameTime, 0)
         });
-      }
+      },
+      isComplete: () => runRecord.run.terminalConditions !== null && variantRoles.every((role) => terminalOutcomes[role] !== null)
     });
 
     await cli.pauseSimulation();
-    runRecord.run.endGameTime = await cli.getGameTime();
+    const endGameTime = await cli.getGameTime();
+    runRecord.run.endGameTime = endGameTime;
+    runRecord.run.terminationReason = waitResult.reason;
+
+    if (waitResult.reason === "all-bots-terminal") {
+      await logEvent(runDir, "info", "simulation.completed", "Simulation stopped because all bots reached a terminal status.", {
+        gameTime: runRecord.run.endGameTime,
+        terminal: terminalOutcomes
+      });
+    } else {
+      if (runRecord.run.terminalConditions) {
+        for (const role of variantRoles) {
+          if (terminalOutcomes[role] !== null) {
+            continue;
+          }
+
+          terminalOutcomes[role] = {
+            status: "timed_out",
+            gameTime: endGameTime,
+            condition: null
+          };
+        }
+      }
+
+      await logEvent(runDir, "info", "simulation.completed", "Simulation stopped after reaching the maximum tick budget.", {
+        gameTime: runRecord.run.endGameTime,
+        targetGameTime,
+        terminal: terminalOutcomes
+      });
+    }
+
+    const [finalStats, baselineWorldStatus, candidateWorldStatus, baselineRoomSummary, candidateRoomSummary] = await Promise.all([
+      api.getStats(),
+      api.getWorldStatus(baselineSession),
+      api.getWorldStatus(candidateSession),
+      api.summarizeRoom(runRecord.rooms.baseline),
+      api.summarizeRoom(runRecord.rooms.candidate)
+    ]);
     metrics = {
       users: {
-        baseline: await api.getWorldStatus(baselineSession),
-        candidate: await api.getWorldStatus(candidateSession)
+        baseline: buildUserRunMetrics(baselineWorldStatus, summarizeUserTerminalStats(finalStats, credentials.baseline.username), terminalOutcomes.baseline),
+        candidate: buildUserRunMetrics(candidateWorldStatus, summarizeUserTerminalStats(finalStats, credentials.candidate.username), terminalOutcomes.candidate)
       },
       rooms: {
-        baseline: await api.summarizeRoom(runRecord.rooms.baseline),
-        candidate: await api.summarizeRoom(runRecord.rooms.candidate)
+        baseline: baselineRoomSummary,
+        candidate: candidateRoomSummary
       }
     };
     await writeMetrics(runDir, metrics);
@@ -376,6 +478,86 @@ function delay(ms: number): Promise<void> {
   });
 }
 
+function summarizeUserTerminalStats(stats: StatsResponse, username: string): UserTerminalStats {
+  const user = stats.users.find((candidate) => candidate.username === username);
+  const rcl = normalizeRclCounts(user?.rcl);
+
+  return {
+    ownedControllers: user?.rooms ?? 0,
+    combinedRCL: user?.combinedRCL ?? 0,
+    maxOwnedControllerLevel: findMaxOwnedControllerLevel(rcl),
+    rcl
+  };
+}
+
+function buildUserRunMetrics(
+  worldStatus: UserWorldStatus,
+  stats: UserTerminalStats,
+  terminal: TerminalOutcome | null
+): RunMetrics["users"][VariantRole] {
+  return {
+    status: worldStatus.status,
+    ownedControllers: stats.ownedControllers,
+    combinedRCL: stats.combinedRCL,
+    maxOwnedControllerLevel: stats.maxOwnedControllerLevel,
+    rcl: stats.rcl,
+    terminal
+  };
+}
+
+export function evaluateTerminalConditions(
+  terminalConditions: TerminalConditionSet,
+  stats: UserTerminalStats
+): TerminalEvaluation | null {
+  const failCondition = terminalConditions.fail.find((condition) => matchesTerminalCondition(condition, stats));
+  if (failCondition) {
+    return {
+      status: "failed",
+      condition: failCondition
+    };
+  }
+
+  const winCondition = terminalConditions.win.find((condition) => matchesTerminalCondition(condition, stats));
+  if (winCondition) {
+    return {
+      status: "won",
+      condition: winCondition
+    };
+  }
+
+  return null;
+}
+
+function matchesTerminalCondition(condition: TerminalCondition, stats: UserTerminalStats): boolean {
+  switch (condition.type) {
+    case "any-owned-controller-level-at-least":
+      return stats.maxOwnedControllerLevel !== null && stats.maxOwnedControllerLevel >= condition.level;
+    case "no-owned-controllers":
+      return stats.ownedControllers === 0;
+  }
+}
+
+function normalizeRclCounts(rcl: Record<string, number> | undefined): Record<string, number> {
+  const normalized: Record<string, number> = {};
+
+  for (const level of controllerLevels) {
+    normalized[String(level)] = rcl?.[String(level)] ?? 0;
+  }
+
+  return normalized;
+}
+
+function findMaxOwnedControllerLevel(rcl: Record<string, number>): number | null {
+  for (let index = controllerLevels.length - 1; index >= 0; index -= 1) {
+    const level = controllerLevels[index]!;
+    if ((rcl[String(level)] ?? 0) > 0) {
+      return level;
+    }
+  }
+
+  return null;
+}
+
 type WaitForTargetGameTimeOptions = {
   cli: Pick<ScreepsServerCli, "getGameTime">;
   targetGameTime: number;
@@ -385,18 +567,43 @@ type WaitForTargetGameTimeOptions = {
   onProgress?: (sample: { gameTime: number }) => Promise<void> | void;
 };
 
-export async function waitForTargetGameTime(options: WaitForTargetGameTimeOptions): Promise<void> {
+type WaitForSimulationOptions = {
+  cli: Pick<ScreepsServerCli, "getGameTime">;
+  targetGameTime: number;
+  pollIntervalMs: number;
+  maxWallClockMs: number;
+  maxStalledPolls: number;
+  onSample?: (sample: { gameTime: number }) => Promise<void> | void;
+  isComplete?: (sample: { gameTime: number }) => Promise<boolean> | boolean;
+};
+
+export type WaitForSimulationResult = {
+  gameTime: number;
+  reason: RunTerminationReason;
+};
+
+export async function waitForSimulation(options: WaitForSimulationOptions): Promise<WaitForSimulationResult> {
   const startedAt = Date.now();
   let lastGameTime: number | null = null;
   let stalledPolls = 0;
 
   while (true) {
     const gameTime = await options.cli.getGameTime();
-    if (gameTime >= options.targetGameTime) {
-      return;
+    await options.onSample?.({ gameTime });
+
+    if (await options.isComplete?.({ gameTime })) {
+      return {
+        gameTime,
+        reason: "all-bots-terminal"
+      };
     }
 
-    await options.onProgress?.({ gameTime });
+    if (gameTime >= options.targetGameTime) {
+      return {
+        gameTime,
+        reason: "max-ticks"
+      };
+    }
 
     if (Date.now() - startedAt > options.maxWallClockMs) {
       throw new Error(`Timed out waiting for game time ${options.targetGameTime}; last observed tick was ${gameTime}.`);
@@ -414,4 +621,15 @@ export async function waitForTargetGameTime(options: WaitForTargetGameTimeOption
     lastGameTime = gameTime;
     await delay(options.pollIntervalMs);
   }
+}
+
+export async function waitForTargetGameTime(options: WaitForTargetGameTimeOptions): Promise<void> {
+  await waitForSimulation({
+    ...options,
+    onSample: async ({ gameTime }) => {
+      if (gameTime < options.targetGameTime) {
+        await options.onProgress?.({ gameTime });
+      }
+    }
+  });
 }

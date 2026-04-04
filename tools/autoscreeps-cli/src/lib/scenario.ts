@@ -12,6 +12,23 @@ const mapGeneratorSchema = z.object({
   roomSelectionStrategy: roomSelectionStrategySchema.optional()
 });
 
+export const terminalConditionSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("any-owned-controller-level-at-least"),
+    level: z.number().int().min(1).max(8)
+  }),
+  z.object({
+    type: z.literal("no-owned-controllers")
+  })
+]);
+
+export const terminalConditionSetSchema = z.object({
+  win: z.array(terminalConditionSchema).default([]),
+  fail: z.array(terminalConditionSchema).default([])
+}).refine((value) => value.win.length > 0 || value.fail.length > 0, {
+  message: "terminalConditions must declare at least one win or fail condition."
+});
+
 export const scenarioSchema = z.object({
   version: z.literal(1),
   name: z.string().min(1),
@@ -25,7 +42,8 @@ export const scenarioSchema = z.object({
     maxTicks: z.number().int().positive(),
     pollIntervalMs: z.number().int().positive().default(1000),
     maxWallClockMs: z.number().int().positive().default(300000),
-    maxStalledPolls: z.number().int().positive().default(30)
+    maxStalledPolls: z.number().int().positive().default(30),
+    terminalConditions: terminalConditionSetSchema.optional()
   }),
   server: z
     .object({
@@ -57,6 +75,8 @@ export const scenarioSchema = z.object({
 });
 
 export type ScenarioConfig = z.infer<typeof scenarioSchema>;
+export type TerminalCondition = z.infer<typeof terminalConditionSchema>;
+export type TerminalConditionSet = z.infer<typeof terminalConditionSetSchema>;
 
 export async function loadScenario(filePath: string): Promise<{ path: string; config: ScenarioConfig }> {
   const absolutePath = path.resolve(filePath);

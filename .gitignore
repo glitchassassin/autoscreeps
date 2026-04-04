@@ -1,3 +1,4 @@
 references/
 .env
 .autoscreeps/
+.playwright-mcp/
