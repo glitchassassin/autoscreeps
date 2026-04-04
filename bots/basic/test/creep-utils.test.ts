@@ -5,6 +5,12 @@ import { installScreepsGlobals } from "./helpers/install-globals";
 describe("harvestNearestSource", () => {
   beforeEach(() => {
     installScreepsGlobals();
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+
+    testGlobal.Game = {
+      creeps: {},
+      getObjectById: vi.fn(() => null)
+    } as unknown as Game;
   });
 
   it("records the selected source id on the creep", () => {
@@ -35,8 +41,24 @@ function makeCreep(source: Source | null): Creep {
       working: false,
       homeRoom: "W0N0"
     },
+    room: {
+      name: "W0N0",
+      find: vi.fn((type: number) => {
+        if (type === FIND_SOURCES_ACTIVE || type === FIND_SOURCES) {
+          return source ? [source] : [];
+        }
+
+        return [];
+      })
+    },
     pos: {
-      findClosestByPath: vi.fn(() => source)
+      findClosestByPath: vi.fn((value: Source[] | number) => {
+        if (Array.isArray(value)) {
+          return value[0] ?? null;
+        }
+
+        return source;
+      })
     },
     harvest: vi.fn(() => OK),
     moveTo: vi.fn()

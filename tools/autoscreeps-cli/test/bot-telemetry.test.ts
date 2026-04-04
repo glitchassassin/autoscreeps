@@ -18,7 +18,9 @@ describe("bot telemetry", () => {
       sources: {
         total: 2,
         staffed: 1,
-        assignments: { sourceA: 1 }
+        assignments: { sourceA: 1 },
+        harvestingStaffed: 1,
+        harvestingAssignments: { sourceA: 1 }
       },
       milestones: { rcl2Tick: 125 },
       counters: { creepDeaths: 3 }
@@ -39,7 +41,9 @@ describe("bot telemetry", () => {
       sources: {
         total: 2,
         staffed: 1,
-        assignments: { sourceA: 1 }
+        assignments: { sourceA: 1 },
+        harvestingStaffed: 1,
+        harvestingAssignments: { sourceA: 1 }
       },
       milestones: { rcl2Tick: 125 },
       counters: { creepDeaths: 3 }

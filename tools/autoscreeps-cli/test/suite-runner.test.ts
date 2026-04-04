@@ -210,6 +210,8 @@ function createSummary(input: {
   spawnIdlePct: number | null;
   sourceCoveragePct: number | null;
   sourceUptimePct: number | null;
+  harvestingSourceCoveragePct?: number | null;
+  harvestingSourceUptimePct?: number | null;
 }): UserRunSummaryMetrics {
   return {
     sampleCount: 4,
@@ -229,6 +231,8 @@ function createSummary(input: {
     telemetrySampleCount: 4,
     spawnIdlePct: input.spawnIdlePct,
     sourceCoveragePct: input.sourceCoveragePct,
-    sourceUptimePct: input.sourceUptimePct
+    sourceUptimePct: input.sourceUptimePct,
+    harvestingSourceCoveragePct: input.harvestingSourceCoveragePct ?? input.sourceCoveragePct,
+    harvestingSourceUptimePct: input.harvestingSourceUptimePct ?? input.sourceUptimePct
   };
 }

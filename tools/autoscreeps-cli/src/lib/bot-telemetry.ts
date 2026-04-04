@@ -50,7 +50,9 @@ export function parseBotTelemetry(value: string | null): BotTelemetrySnapshot | 
     snapshot.sources = {
       total: typeof parsed.sources.total === "number" ? parsed.sources.total : 0,
       staffed: typeof parsed.sources.staffed === "number" ? parsed.sources.staffed : 0,
-      assignments: parsed.sources.assignments
+      assignments: parsed.sources.assignments,
+      harvestingStaffed: typeof parsed.sources.harvestingStaffed === "number" ? parsed.sources.harvestingStaffed : 0,
+      harvestingAssignments: isNumberRecord(parsed.sources.harvestingAssignments) ? parsed.sources.harvestingAssignments : {}
     };
   }
   if (isNullableNumberRecord(parsed.milestones)) {

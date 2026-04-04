@@ -3,7 +3,7 @@ import { ensureTelemetryState } from "./telemetry-state";
 
 export const telemetrySegmentId = 42;
 export const telemetrySampleEveryTicks = 25;
-export const telemetrySchemaVersion = 2;
+export const telemetrySchemaVersion = 3;
 
 export type BotTelemetrySnapshot = {
   schemaVersion: number;
@@ -21,6 +21,8 @@ export type BotTelemetrySnapshot = {
     total: number;
     staffed: number;
     assignments: Record<string, number>;
+    harvestingStaffed: number;
+    harvestingAssignments: Record<string, number>;
   };
   milestones: Record<string, number | null>;
   counters: {
@@ -102,6 +104,7 @@ function countRoles(): Record<WorkerRole, number> {
 
 function summarizeSourceStaffing(): BotTelemetrySnapshot["sources"] {
   const assignments: Record<string, number> = {};
+  const harvestingAssignments: Record<string, number> = {};
   let total = 0;
 
   for (const room of Object.values(Game.rooms)) {
@@ -115,12 +118,18 @@ function summarizeSourceStaffing(): BotTelemetrySnapshot["sources"] {
     }
 
     assignments[sourceId] = (assignments[sourceId] ?? 0) + 1;
+
+    if (!creep.memory.working) {
+      harvestingAssignments[sourceId] = (harvestingAssignments[sourceId] ?? 0) + 1;
+    }
   }
 
   return {
     total,
     staffed: Object.keys(assignments).length,
-    assignments
+    assignments,
+    harvestingStaffed: Object.keys(harvestingAssignments).length,
+    harvestingAssignments
   };
 }
 

@@ -43,6 +43,9 @@ function summarizeVariant(samples: RunSample[], role: VariantRole): UserRunSumma
   let sourceCoverageSamples = 0;
   let totalSourceCoverage = 0;
   let fullyStaffedSamples = 0;
+  let harvestingSourceCoverageSamples = 0;
+  let totalHarvestingSourceCoverage = 0;
+  let fullyHarvestingStaffedSamples = 0;
 
   for (const sample of samples) {
     const stats = sample.users[role];
@@ -78,6 +81,12 @@ function summarizeVariant(samples: RunSample[], role: VariantRole): UserRunSumma
       if (telemetry.sources.staffed >= telemetry.sources.total) {
         fullyStaffedSamples += 1;
       }
+
+      harvestingSourceCoverageSamples += 1;
+      totalHarvestingSourceCoverage += telemetry.sources.harvestingStaffed / telemetry.sources.total;
+      if (telemetry.sources.harvestingStaffed >= telemetry.sources.total) {
+        fullyHarvestingStaffedSamples += 1;
+      }
     }
   }
 
@@ -90,7 +99,9 @@ function summarizeVariant(samples: RunSample[], role: VariantRole): UserRunSumma
     telemetrySampleCount,
     spawnIdlePct: toPercent(spawnIdleSamples, telemetrySampleCount),
     sourceCoveragePct: toPercent(totalSourceCoverage, sourceCoverageSamples),
-    sourceUptimePct: toPercent(fullyStaffedSamples, sourceCoverageSamples)
+    sourceUptimePct: toPercent(fullyStaffedSamples, sourceCoverageSamples),
+    harvestingSourceCoveragePct: toPercent(totalHarvestingSourceCoverage, harvestingSourceCoverageSamples),
+    harvestingSourceUptimePct: toPercent(fullyHarvestingStaffedSamples, harvestingSourceCoverageSamples)
   };
 }
 

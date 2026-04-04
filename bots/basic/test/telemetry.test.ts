@@ -19,9 +19,9 @@ describe("telemetry", () => {
 
     testGlobal.Game = {
       creeps: {
-        harvesterA: { memory: { role: "harvester", sourceId: "source-a" } } as Creep,
-        harvesterB: { memory: { role: "harvester", sourceId: "source-b" } } as Creep,
-        upgraderA: { memory: { role: "upgrader", sourceId: "source-a" } } as Creep
+        harvesterA: { memory: { role: "harvester", working: false, homeRoom: "W0N0", sourceId: "source-a" } } as Creep,
+        harvesterB: { memory: { role: "harvester", working: false, homeRoom: "W0N0", sourceId: "source-b" } } as Creep,
+        upgraderA: { memory: { role: "upgrader", working: true, homeRoom: "W0N0", sourceId: "source-a" } } as Creep
       },
       spawns: {},
       rooms: {
@@ -48,7 +48,7 @@ describe("telemetry", () => {
     const snapshot = createTelemetrySnapshot(spawn, Memory.telemetry!);
 
     expect(snapshot).toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       gameTime: 25,
       colonyMode: "normal",
       totalCreeps: 3,
@@ -70,6 +70,11 @@ describe("telemetry", () => {
         staffed: 2,
         assignments: {
           "source-a": 2,
+          "source-b": 1
+        },
+        harvestingStaffed: 2,
+        harvestingAssignments: {
+          "source-a": 1,
           "source-b": 1
         }
       },
@@ -94,11 +99,12 @@ describe("telemetry", () => {
     const rawSegment = testGlobal.RawMemory.segments[telemetrySegmentId];
     expect(typeof rawSegment).toBe("string");
     expect(JSON.parse(rawSegment as string)).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       gameTime: 25,
       sources: {
         total: 2,
-        staffed: 2
+        staffed: 2,
+        harvestingStaffed: 2
       },
       milestones: {
         firstOwnedSpawnTick: 25,

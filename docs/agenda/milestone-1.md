@@ -132,4 +132,5 @@ Milestone 1 is intentionally limited to economy, recovery, and observability. Ad
 - Harness support for time-series metrics and suite aggregation.
 - Bot telemetry with stable schema.
 - A benchmark report for the current `bots/basic` bot.
+- An experiment log capturing hypotheses, results, and follow-up hypotheses.
 - A selected milestone-one opener architecture that becomes the baseline for milestone 2.

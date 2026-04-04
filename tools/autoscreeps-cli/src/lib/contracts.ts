@@ -63,6 +63,8 @@ export type BotTelemetrySnapshot = {
     total: number;
     staffed: number;
     assignments: Record<string, number>;
+    harvestingStaffed: number;
+    harvestingAssignments: Record<string, number>;
   };
   milestones?: Record<string, number | null>;
   counters?: Record<string, number>;
@@ -160,6 +162,8 @@ export type UserRunSummaryMetrics = {
   spawnIdlePct: number | null;
   sourceCoveragePct: number | null;
   sourceUptimePct: number | null;
+  harvestingSourceCoveragePct: number | null;
+  harvestingSourceUptimePct: number | null;
 };
 
 export type RunSummaryMetrics = {

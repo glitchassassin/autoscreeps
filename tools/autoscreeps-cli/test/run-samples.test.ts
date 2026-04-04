@@ -36,7 +36,7 @@ describe("run samples", () => {
         },
         telemetry: {
           baseline: {
-            schemaVersion: 2,
+            schemaVersion: 3,
             gameTime: 100,
             spawn: {
               queueDepth: 1,
@@ -47,7 +47,9 @@ describe("run samples", () => {
             sources: {
               total: 2,
               staffed: 1,
-              assignments: { sourceA: 1 }
+              assignments: { sourceA: 1 },
+              harvestingStaffed: 1,
+              harvestingAssignments: { sourceA: 1 }
             }
           },
           candidate: null
@@ -71,7 +73,7 @@ describe("run samples", () => {
         },
         telemetry: {
           baseline: {
-            schemaVersion: 2,
+            schemaVersion: 3,
             gameTime: 125,
             spawn: {
               queueDepth: 1,
@@ -82,7 +84,9 @@ describe("run samples", () => {
             sources: {
               total: 2,
               staffed: 2,
-              assignments: { sourceA: 1, sourceB: 1 }
+              assignments: { sourceA: 1, sourceB: 1 },
+              harvestingStaffed: 1,
+              harvestingAssignments: { sourceA: 1 }
             }
           },
           candidate: null
@@ -106,7 +110,7 @@ describe("run samples", () => {
         },
         telemetry: {
           baseline: {
-            schemaVersion: 2,
+            schemaVersion: 3,
             gameTime: 150,
             spawn: {
               queueDepth: 0,
@@ -117,7 +121,9 @@ describe("run samples", () => {
             sources: {
               total: 2,
               staffed: 2,
-              assignments: { sourceA: 2, sourceB: 1 }
+              assignments: { sourceA: 2, sourceB: 1 },
+              harvestingStaffed: 0,
+              harvestingAssignments: {}
             }
           },
           candidate: null
@@ -136,11 +142,15 @@ describe("run samples", () => {
     expect(summary.users.baseline.spawnIdlePct).toBeCloseTo(33.33, 2);
     expect(summary.users.baseline.sourceCoveragePct).toBeCloseTo(83.33, 2);
     expect(summary.users.baseline.sourceUptimePct).toBeCloseTo(66.67, 2);
+    expect(summary.users.baseline.harvestingSourceCoveragePct).toBeCloseTo(33.33, 2);
+    expect(summary.users.baseline.harvestingSourceUptimePct).toBe(0);
     expect(summary.users.candidate.controllerLevelMilestones["2"]).toBeNull();
     expect(summary.users.candidate.maxOwnedControllers).toBe(2);
     expect(summary.users.candidate.telemetrySampleCount).toBe(0);
     expect(summary.users.candidate.spawnIdlePct).toBeNull();
     expect(summary.users.candidate.sourceCoveragePct).toBeNull();
     expect(summary.users.candidate.sourceUptimePct).toBeNull();
+    expect(summary.users.candidate.harvestingSourceCoveragePct).toBeNull();
+    expect(summary.users.candidate.harvestingSourceUptimePct).toBeNull();
   });
 });
