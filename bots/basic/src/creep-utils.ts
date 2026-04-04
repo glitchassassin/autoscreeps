@@ -20,8 +20,11 @@ export function harvestNearestSource(creep: Creep): void {
   const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE) ?? creep.pos.findClosestByPath(FIND_SOURCES);
 
   if (!source) {
+    delete creep.memory.sourceId;
     return;
   }
+
+  creep.memory.sourceId = source.id;
 
   const result = creep.harvest(source);
   if (result === ERR_NOT_IN_RANGE) {

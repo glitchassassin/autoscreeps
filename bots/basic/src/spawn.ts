@@ -4,6 +4,12 @@ type SpawnRequest = {
   name: string;
 };
 
+export type SpawnDemandSummary = {
+  unmetDemand: Record<WorkerRole, number>;
+  nextRole: WorkerRole | null;
+  totalUnmetDemand: number;
+};
+
 const bodyPlans: Array<{ cost: number; body: BodyPartConstant[] }> = [
   { cost: 200, body: ["work", "carry", "move"] },
   { cost: 300, body: ["work", "work", "carry", "move"] },
@@ -34,7 +40,7 @@ export function createSpawnRequest(spawn: StructureSpawn): SpawnRequest | null {
     return null;
   }
 
-  const nextRole = getNextRole();
+  const nextRole = summarizeSpawnDemand().nextRole;
   if (!nextRole) {
     return null;
   }
@@ -70,14 +76,29 @@ export function runSpawnManager(spawn: StructureSpawn): ScreepsReturnCode | null
   return result;
 }
 
-function getNextRole(): WorkerRole | null {
+export function summarizeSpawnDemand(): SpawnDemandSummary {
+  const unmetDemand: Record<WorkerRole, number> = {
+    harvester: 0,
+    upgrader: 0
+  };
+  let nextRole: WorkerRole | null = null;
+  let totalUnmetDemand = 0;
+
   for (const role of Object.keys(desiredCreeps) as WorkerRole[]) {
-    if (countRole(role) < desiredCreeps[role]) {
-      return role;
+    const deficit = Math.max(desiredCreeps[role] - countRole(role), 0);
+    unmetDemand[role] = deficit;
+    totalUnmetDemand += deficit;
+
+    if (nextRole === null && deficit > 0) {
+      nextRole = role;
     }
   }
 
-  return null;
+  return {
+    unmetDemand,
+    nextRole,
+    totalUnmetDemand
+  };
 }
 
 function countRole(role: WorkerRole): number {

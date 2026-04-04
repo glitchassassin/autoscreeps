@@ -16,6 +16,10 @@ export function installScreepsGlobals(): void {
     STRUCTURE_SPAWN: "spawn",
     STRUCTURE_EXTENSION: "extension",
     STRUCTURE_TOWER: "tower",
-    TERRAIN_MASK_WALL: 1
+    TERRAIN_MASK_WALL: 1,
+    RawMemory: {
+      segments: {},
+      setActiveSegments: () => {}
+    }
   });
 }

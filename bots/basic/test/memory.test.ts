@@ -27,6 +27,12 @@ describe("cleanupDeadCreeps", () => {
           working: true,
           homeRoom: "W0N0"
         }
+      },
+      telemetry: {
+        creepDeaths: 0,
+        firstOwnedSpawnTick: null,
+        rcl2Tick: null,
+        rcl3Tick: null
       }
     } as unknown as Memory;
   });
@@ -36,5 +42,6 @@ describe("cleanupDeadCreeps", () => {
 
     expect(Memory.creeps.alive).toBeDefined();
     expect(Memory.creeps.missing).toBeUndefined();
+    expect(Memory.telemetry?.creepDeaths).toBe(1);
   });
 });

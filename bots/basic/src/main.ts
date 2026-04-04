@@ -3,6 +3,7 @@ import { cleanupDeadCreeps } from "./memory";
 import { runHarvester } from "./roles/harvester";
 import { runUpgrader } from "./roles/upgrader";
 import { runSpawnManager } from "./spawn";
+import { recordTelemetry } from "./telemetry";
 
 const roleHandlers: Record<WorkerRole, (creep: Creep) => void> = {
   harvester: runHarvester,
@@ -24,6 +25,8 @@ export function runTick(): void {
       handler(creep);
     }
   }
+
+  recordTelemetry(firstSpawn ?? null);
 }
 
 export const loop = (): void => {

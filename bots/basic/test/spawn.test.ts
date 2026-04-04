@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { chooseBody, createSpawnRequest, runSpawnManager } from "../src/spawn";
+import { chooseBody, createSpawnRequest, runSpawnManager, summarizeSpawnDemand } from "../src/spawn";
 import { installScreepsGlobals } from "./helpers/install-globals";
 
 describe("spawn manager", () => {
@@ -45,6 +45,24 @@ describe("spawn manager", () => {
     const request = createSpawnRequest(spawn);
 
     expect(request?.memory.role).toBe("upgrader");
+  });
+
+  it("summarizes unmet demand across roles", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+
+    testGlobal.Game.creeps = {
+      harvesterA: { memory: { role: "harvester" } } as Creep,
+      upgraderA: { memory: { role: "upgrader" } } as Creep
+    };
+
+    expect(summarizeSpawnDemand()).toEqual({
+      unmetDemand: {
+        harvester: 1,
+        upgrader: 1
+      },
+      nextRole: "harvester",
+      totalUnmetDemand: 2
+    });
   });
 
   it("passes the planned body and memory into spawnCreep", () => {
