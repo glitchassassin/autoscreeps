@@ -222,3 +222,163 @@ node src/cli.ts experiment run suite \
 
 - `reject`
 - Keep the harvest-mode telemetry refinement, but do not keep the sticky-assignment behavior change.
+
+## Entry `exp-2026-04-04-coverage-first-spawn-priorities`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-04`
+
+### Hypothesis
+
+- If the spawn manager prioritizes restoring harvest-mode source coverage before adding more upgraders, the opener should spend less time with an actively uncovered source.
+- That should improve harvest-mode source coverage metrics materially and may improve `T_RCL2` and `spawnIdlePct` without reintroducing sticky source assignment.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Change tested:
+  - surface harvest-mode source metrics directly in suite cohort summaries as `harvestModeMetrics`
+  - temporarily test a minimal coverage-first spawn priority that requested one extra harvester before upgraders when the baseline harvester count existed but harvest-mode source coverage was still incomplete
+  - keep current roles, nearest-source selection, and body plans unchanged
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-04T23-51-45-353Z-6dbfa935`
+  - `train-b-2k`: `2026-04-05T00-00-45-272Z-52a7b70f`
+  - `train-c-5k`: `2026-04-05T00-09-44-866Z-d1ffa2d8`
+  - `train-d-5k`: `2026-04-05T00-31-17-600Z-877cfd78`
+  - `holdout-a-2k`: `2026-04-05T00-34-34-901Z-72bd6675`
+  - `holdout-b-5k`: `2026-04-05T00-43-34-666Z-fc78d4c3`
+
+### Results
+
+- All `6/6` cases completed.
+- Train cohort summary:
+  - `T_RCL2`: regressed from `571.5` to `635` (`+11.11%`)
+  - `spawnIdlePct`: regressed from `12.15%` to `14.07%` (`+15.8%`)
+  - `sourceCoveragePct`: improved from `50.71%` to `72.53%`
+  - `sourceUptimePct`: improved from `1.42%` to `45.07%`
+  - harvest-mode source coverage: improved from `45.23%` to `53.34%`
+  - harvest-mode source uptime: improved from `1.29%` to `15.66%`
+- Holdout cohort summary:
+  - `T_RCL2`: regressed from `458.5` to `488.5` (`+6.54%`)
+  - `spawnIdlePct`: regressed from `11.17%` to `14.05%` (`+25.78%`)
+  - `sourceCoveragePct`: improved from `50.82%` to `52.14%`
+  - `sourceUptimePct`: improved from `1.65%` to `4.28%`
+  - harvest-mode source coverage: improved from `44.21%` to `49.08%`
+  - harvest-mode source uptime: improved from `0.66%` to `2.96%`
+- Gate result:
+  - training passed with `2` improved primary metrics
+  - holdout failed because `T_RCL2` regressed by more than `5%` and `spawnIdlePct` regressed by much more than `5%`
+  - overall suite result: `failed`
+- Notable per-case behavior:
+  - `train-a-2k` improved harvest-mode coverage from `42.41%` to `55.7%`, but `T_RCL2` regressed sharply from `608` to `710`.
+  - Every candidate case finished with `5` creeps in the room versus `4` for baseline, which matches the intended extra-harvester pressure.
+
+### Interpretation
+
+- This experiment improved real harvest-mode source metrics, so unlike sticky assignment it was not just a bookkeeping artifact.
+- However, the added coverage did not translate into a better opener. The extra harvester improved source staffing, but it also delayed controller progress and increased idle-with-demand time.
+- The strongest signal is still the holdout economy outcome:
+  - `T_RCL2` regressed by `6.54%`
+  - `spawnIdlePct` regressed by `25.78%`
+- That makes this coverage-first implementation too expensive in the current direct-harvest opener. The gain in active source coverage is real, but the tradeoff is not promotable.
+- After the evaluation, the coverage-first spawn behavior was reverted. The suite reporting improvement was kept so future experiments can judge harvest-mode metrics directly.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: early upgrader throttling may capture the same source-coverage benefit more cheaply than adding a permanent extra harvester slot.
+- Hypothesis B: if coverage restoration is revisited, it should be time-boxed or conditional rather than increasing steady-state worker count as soon as coverage is incomplete.
+- Hypothesis C: future opener experiments should continue to treat harvest-mode coverage and uptime as the trusted source-utilization signals, but promotion should still hinge on `T_RCL2` and holdout `spawnIdlePct`.
+
+### Decision
+
+- `reject`
+- Do not promote the coverage-first spawn-priority behavior. Keep the new suite summary visibility for harvest-mode metrics, keep the recorded failed result in the log, and continue from the committed baseline opener for the next experiment.
+
+## Backlog Update `2026-04-05-harvester-courier-reframe`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-05`
+
+### Trigger
+
+- A read-through of the Screeps docs clarified the main opener constraint: direct source harvesting is adjacency-bound, sources are obstacles, and generic workers with only small `CARRY` stores necessarily abandon the source when they round-trip energy.
+- That means assignment tuning and extra direct-harvest headcount can improve source metrics at the margin, but they do not address the core source-abandonment problem.
+
+### Deprecated Pending Experiments
+
+- Deprecate `early upgrader throttling` as a standalone primary branch. It may still be reused later as a supporting rule inside a source-resident opener, but it is no longer the main next experiment.
+- Deprecate `conditional or time-boxed coverage restoration` as a standalone branch for the same reason.
+- Deprecate any further assignment-era experiments that try to improve dual-source usage without changing source-side residency or transport.
+
+### New Planned Experiments
+
+- `exp-2026-04-05-active-source-telemetry-refinement`
+  - add stricter active source-use telemetry so future experiments can distinguish harvest-mode travel from source-adjacent harvesting
+- `exp-2026-04-05-source-resident-bootstrap-harvesters`
+  - test runtime-sensed source-resident harvesters before introducing a full logistics split
+- `exp-2026-04-05-source-backlog-handling`
+  - test simple source-side backlog handling for dropped energy or container energy
+- `exp-2026-04-05-bootstrap-miner-courier-opener`
+  - test the first true miner-plus-courier opener as the main architecture candidate
+- `exp-2026-04-05-runtime-source-infrastructure-opportunism`
+  - test runtime-triggered source containers or roads if backlog and travel costs justify them
+
+### Decision
+
+- Move milestone-one opener work onto the harvester/courier path.
+- Keep the committed baseline opener behavior until the new telemetry and the first source-resident experiment are ready.
+
+## Entry `exp-2026-04-05-active-source-telemetry-refinement`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-05`
+
+### Hypothesis
+
+- Harvest-mode source metrics are better than assignment-only metrics, but they still overcount source usage because they include creeps walking toward a source in harvest mode.
+- If telemetry also records source-adjacent active harvesting, future harvester/courier experiments will be easier to evaluate and less likely to mistake travel intent for real source-side presence.
+
+### Experiment
+
+- Variant or branch: `workspace`
+- Bot package: `bots/basic`
+- Change set in progress:
+  - preserve existing assignment and harvest-mode source metrics
+  - add stricter active-harvest source telemetry based on source-adjacent harvest-mode workers
+  - propagate the new metrics through run summaries and suite summaries without changing current promotion gates
+
+### Results
+
+- Change implemented:
+  - bot telemetry schema bumped to `v4`
+  - existing assignment and harvest-mode source metrics were preserved
+  - new source-adjacent active-harvest telemetry was added
+  - run summaries and suite summaries now surface the stricter active-harvest metrics alongside the existing ones
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+- Suite evaluation:
+  - not run yet for this instrumentation-only step
+
+### Interpretation
+
+- The milestone-one tooling can now distinguish three increasingly strict source-use layers:
+  - assignment-based source staffing
+  - harvest-mode source staffing
+  - source-adjacent active harvesting
+- This is a better fit for the harvester/courier path because it gives the next opener experiments a way to measure actual source-side presence rather than just intent.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: if active-harvest coverage is materially lower than harvest-mode coverage, source travel time is still a large part of the opener problem.
+- Hypothesis B: source-resident harvesters should improve active-harvest coverage more directly than any remaining generic-worker tuning.
+
+### Decision
+
+- `keep`
+- Use this telemetry baseline for the upcoming source-resident harvester and courier experiments.

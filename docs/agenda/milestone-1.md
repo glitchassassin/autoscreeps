@@ -62,7 +62,7 @@ Milestone 1 is intentionally limited to economy, recovery, and observability. Ad
 ## Bot Instrumentation
 
 - Add a structured telemetry snapshot written on a fixed cadence such as every `25` ticks.
-- Record colony mode, role counts, body-part counts by role, spawn queue depth, unmet demand by role, and source assignments.
+- Record colony mode, role counts, body-part counts by role, spawn queue depth, unmet demand by role, source staffing, and active source-use signals.
 - Record cumulative counters for harvest, spawn, upgrade, build, repair, pickup, drop, and deaths.
 - Record milestone ticks such as first spawn, `RCL2`, `RCL3`, first extension, first container, recovery start, and recovery end.
 - Record a bounded event ring buffer for state changes such as entering recovery mode or detecting an unstaffed source.
@@ -98,7 +98,7 @@ Milestone 1 is intentionally limited to economy, recovery, and observability. Ad
 ## Milestone-One Hypotheses
 
 - Hypothesis A: fixed role counts are the main reason for poor opener stability. Test a demand-based spawn queue.
-- Hypothesis B: nearest-source worker behavior is the main reason for weak energy throughput. Test source assignment and a static miner plus hauler split.
+- Hypothesis B: round-trip direct harvesting is the main reason for weak energy throughput. Test runtime-sensed source-resident harvesting, courier logistics, and source-side buffering.
 - Hypothesis C: the current bot collapses too easily after early losses. Test explicit recovery mode and emergency spawn priorities.
 
 ## Promotion Rules
@@ -121,7 +121,7 @@ Milestone 1 is intentionally limited to economy, recovery, and observability. Ad
 9. Benchmark the current `bots/basic` bot across the full suite and record the baseline report.
 10. Refactor `bots/basic` into a thin `sense -> plan -> spawn -> act` colony loop without intentionally changing strategy.
 11. Implement and evaluate a demand-based spawn queue.
-12. Implement and evaluate source assignment and static mining logistics.
+12. Implement and evaluate source-resident harvesting and courier logistics.
 13. Implement and evaluate explicit recovery mode and emergency spawn priorities.
 14. Freeze the selected milestone-one baseline for use in milestone 2.
 

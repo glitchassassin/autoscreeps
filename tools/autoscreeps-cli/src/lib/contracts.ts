@@ -65,6 +65,8 @@ export type BotTelemetrySnapshot = {
     assignments: Record<string, number>;
     harvestingStaffed: number;
     harvestingAssignments: Record<string, number>;
+    activeHarvestingStaffed?: number;
+    activeHarvestingAssignments?: Record<string, number>;
   };
   milestones?: Record<string, number | null>;
   counters?: Record<string, number>;
@@ -164,6 +166,8 @@ export type UserRunSummaryMetrics = {
   sourceUptimePct: number | null;
   harvestingSourceCoveragePct: number | null;
   harvestingSourceUptimePct: number | null;
+  activeHarvestingSourceCoveragePct: number | null;
+  activeHarvestingSourceUptimePct: number | null;
 };
 
 export type RunSummaryMetrics = {

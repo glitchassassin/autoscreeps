@@ -3,7 +3,7 @@ import { ensureTelemetryState } from "./telemetry-state";
 
 export const telemetrySegmentId = 42;
 export const telemetrySampleEveryTicks = 25;
-export const telemetrySchemaVersion = 3;
+export const telemetrySchemaVersion = 4;
 
 export type BotTelemetrySnapshot = {
   schemaVersion: number;
@@ -23,6 +23,8 @@ export type BotTelemetrySnapshot = {
     assignments: Record<string, number>;
     harvestingStaffed: number;
     harvestingAssignments: Record<string, number>;
+    activeHarvestingStaffed: number;
+    activeHarvestingAssignments: Record<string, number>;
   };
   milestones: Record<string, number | null>;
   counters: {
@@ -105,10 +107,15 @@ function countRoles(): Record<WorkerRole, number> {
 function summarizeSourceStaffing(): BotTelemetrySnapshot["sources"] {
   const assignments: Record<string, number> = {};
   const harvestingAssignments: Record<string, number> = {};
+  const activeHarvestingAssignments: Record<string, number> = {};
+  const sourcesById = new Map<string, Source>();
   let total = 0;
 
   for (const room of Object.values(Game.rooms)) {
-    total += room.find(FIND_SOURCES).length;
+    for (const source of room.find(FIND_SOURCES)) {
+      total += 1;
+      sourcesById.set(source.id, source);
+    }
   }
 
   for (const creep of Object.values(Game.creeps)) {
@@ -121,6 +128,11 @@ function summarizeSourceStaffing(): BotTelemetrySnapshot["sources"] {
 
     if (!creep.memory.working) {
       harvestingAssignments[sourceId] = (harvestingAssignments[sourceId] ?? 0) + 1;
+
+      const source = sourcesById.get(sourceId);
+      if (source && isAdjacentToSource(creep, source)) {
+        activeHarvestingAssignments[sourceId] = (activeHarvestingAssignments[sourceId] ?? 0) + 1;
+      }
     }
   }
 
@@ -129,8 +141,30 @@ function summarizeSourceStaffing(): BotTelemetrySnapshot["sources"] {
     staffed: Object.keys(assignments).length,
     assignments,
     harvestingStaffed: Object.keys(harvestingAssignments).length,
-    harvestingAssignments
+    harvestingAssignments,
+    activeHarvestingStaffed: Object.keys(activeHarvestingAssignments).length,
+    activeHarvestingAssignments
   };
+}
+
+function isAdjacentToSource(creep: Creep, source: Source): boolean {
+  return positionsAreNear(creep.pos, source.pos);
+}
+
+function positionsAreNear(position: RoomPosition | undefined, target: RoomPosition | undefined): boolean {
+  if (!position || !target) {
+    return false;
+  }
+
+  if (typeof position.isNearTo === "function") {
+    return position.isNearTo(target);
+  }
+
+  if (position.roomName !== target.roomName) {
+    return false;
+  }
+
+  return Math.max(Math.abs(position.x - target.x), Math.abs(position.y - target.y)) <= 1;
 }
 
 function determineColonyMode(primarySpawn: StructureSpawn | null, totalCreeps: number): BotTelemetrySnapshot["colonyMode"] {

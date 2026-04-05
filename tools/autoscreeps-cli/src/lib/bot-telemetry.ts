@@ -52,7 +52,11 @@ export function parseBotTelemetry(value: string | null): BotTelemetrySnapshot | 
       staffed: typeof parsed.sources.staffed === "number" ? parsed.sources.staffed : 0,
       assignments: parsed.sources.assignments,
       harvestingStaffed: typeof parsed.sources.harvestingStaffed === "number" ? parsed.sources.harvestingStaffed : 0,
-      harvestingAssignments: isNumberRecord(parsed.sources.harvestingAssignments) ? parsed.sources.harvestingAssignments : {}
+      harvestingAssignments: isNumberRecord(parsed.sources.harvestingAssignments) ? parsed.sources.harvestingAssignments : {},
+      activeHarvestingStaffed: typeof parsed.sources.activeHarvestingStaffed === "number" ? parsed.sources.activeHarvestingStaffed : undefined,
+      activeHarvestingAssignments: isNumberRecord(parsed.sources.activeHarvestingAssignments)
+        ? parsed.sources.activeHarvestingAssignments
+        : undefined
     };
   }
   if (isNullableNumberRecord(parsed.milestones)) {

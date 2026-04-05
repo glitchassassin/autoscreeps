@@ -21,18 +21,78 @@ describe("suite runner", () => {
 
     const summary = summarizeSuiteResults(manifest, [
       createCaseResult("train-a", "train", createRunDetails({
-        baseline: createSummary({ rcl2: 150, rcl3: 250, spawnIdlePct: 40, sourceCoveragePct: 50, sourceUptimePct: 0 }),
-        candidate: createSummary({ rcl2: 100, rcl3: 200, spawnIdlePct: 10, sourceCoveragePct: 75, sourceUptimePct: 50 })
+        baseline: createSummary({
+          rcl2: 150,
+          rcl3: 250,
+          spawnIdlePct: 40,
+          sourceCoveragePct: 50,
+          sourceUptimePct: 0,
+          harvestingSourceCoveragePct: 45,
+          harvestingSourceUptimePct: 0,
+          activeHarvestingSourceCoveragePct: 20,
+          activeHarvestingSourceUptimePct: 0
+        }),
+        candidate: createSummary({
+          rcl2: 100,
+          rcl3: 200,
+          spawnIdlePct: 10,
+          sourceCoveragePct: 75,
+          sourceUptimePct: 50,
+          harvestingSourceCoveragePct: 60,
+          harvestingSourceUptimePct: 25,
+          activeHarvestingSourceCoveragePct: 40,
+          activeHarvestingSourceUptimePct: 10
+        })
       })),
       createCaseResult("holdout-a", "holdout", createRunDetails({
-        baseline: createSummary({ rcl2: 100, rcl3: 200, spawnIdlePct: 20, sourceCoveragePct: 100, sourceUptimePct: 100 }),
-        candidate: createSummary({ rcl2: 104, rcl3: 200, spawnIdlePct: 21, sourceCoveragePct: 92, sourceUptimePct: 100 })
+        baseline: createSummary({
+          rcl2: 100,
+          rcl3: 200,
+          spawnIdlePct: 20,
+          sourceCoveragePct: 100,
+          sourceUptimePct: 100,
+          harvestingSourceCoveragePct: 60,
+          harvestingSourceUptimePct: 40,
+          activeHarvestingSourceCoveragePct: 35,
+          activeHarvestingSourceUptimePct: 10
+        }),
+        candidate: createSummary({
+          rcl2: 104,
+          rcl3: 200,
+          spawnIdlePct: 21,
+          sourceCoveragePct: 92,
+          sourceUptimePct: 100,
+          harvestingSourceCoveragePct: 57,
+          harvestingSourceUptimePct: 35,
+          activeHarvestingSourceCoveragePct: 30,
+          activeHarvestingSourceUptimePct: 5
+        })
       }))
     ]);
 
     expect(summary.cohorts.train?.primaryMetrics.T_RCL2.improved).toBe(true);
     expect(summary.cohorts.train?.primaryMetrics.sourceCoveragePct.improved).toBe(true);
+    expect(summary.cohorts.train?.harvestModeMetrics.harvestingSourceCoveragePct).toMatchObject({
+      baseline: 45,
+      candidate: 60,
+      improved: true
+    });
     expect(summary.cohorts.holdout?.primaryMetrics.sourceCoveragePct.regressionPct).toBe(8);
+    expect(summary.cohorts.holdout?.harvestModeMetrics.harvestingSourceUptimePct).toMatchObject({
+      baseline: 40,
+      candidate: 35,
+      regressionPct: 12.5
+    });
+    expect(summary.cohorts.train?.activeHarvestMetrics.activeHarvestingSourceCoveragePct).toMatchObject({
+      baseline: 20,
+      candidate: 40,
+      improved: true
+    });
+    expect(summary.cohorts.holdout?.activeHarvestMetrics.activeHarvestingSourceUptimePct).toMatchObject({
+      baseline: 10,
+      candidate: 5,
+      regressionPct: 50
+    });
     expect(summary.gates.training.passed).toBe(true);
     expect(summary.gates.holdout.passed).toBe(false);
     expect(summary.gates.holdout.regressions).toEqual([
@@ -212,6 +272,8 @@ function createSummary(input: {
   sourceUptimePct: number | null;
   harvestingSourceCoveragePct?: number | null;
   harvestingSourceUptimePct?: number | null;
+  activeHarvestingSourceCoveragePct?: number | null;
+  activeHarvestingSourceUptimePct?: number | null;
 }): UserRunSummaryMetrics {
   return {
     sampleCount: 4,
@@ -233,6 +295,8 @@ function createSummary(input: {
     sourceCoveragePct: input.sourceCoveragePct,
     sourceUptimePct: input.sourceUptimePct,
     harvestingSourceCoveragePct: input.harvestingSourceCoveragePct ?? input.sourceCoveragePct,
-    harvestingSourceUptimePct: input.harvestingSourceUptimePct ?? input.sourceUptimePct
+    harvestingSourceUptimePct: input.harvestingSourceUptimePct ?? input.sourceUptimePct,
+    activeHarvestingSourceCoveragePct: input.activeHarvestingSourceCoveragePct ?? input.harvestingSourceCoveragePct ?? input.sourceCoveragePct,
+    activeHarvestingSourceUptimePct: input.activeHarvestingSourceUptimePct ?? input.harvestingSourceUptimePct ?? input.sourceUptimePct
   };
 }

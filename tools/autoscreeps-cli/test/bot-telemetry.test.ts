@@ -4,7 +4,7 @@ import { buildTelemetryByRole, parseBotTelemetry } from "../src/lib/bot-telemetr
 describe("bot telemetry", () => {
   it("parses a valid telemetry payload", () => {
     const parsed = parseBotTelemetry(JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 4,
       gameTime: 250,
       colonyMode: "normal",
       totalCreeps: 4,
@@ -20,14 +20,16 @@ describe("bot telemetry", () => {
         staffed: 1,
         assignments: { sourceA: 1 },
         harvestingStaffed: 1,
-        harvestingAssignments: { sourceA: 1 }
+        harvestingAssignments: { sourceA: 1 },
+        activeHarvestingStaffed: 1,
+        activeHarvestingAssignments: { sourceA: 1 }
       },
       milestones: { rcl2Tick: 125 },
       counters: { creepDeaths: 3 }
     }));
 
     expect(parsed).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 4,
       gameTime: 250,
       colonyMode: "normal",
       totalCreeps: 4,
@@ -43,7 +45,9 @@ describe("bot telemetry", () => {
         staffed: 1,
         assignments: { sourceA: 1 },
         harvestingStaffed: 1,
-        harvestingAssignments: { sourceA: 1 }
+        harvestingAssignments: { sourceA: 1 },
+        activeHarvestingStaffed: 1,
+        activeHarvestingAssignments: { sourceA: 1 }
       },
       milestones: { rcl2Tick: 125 },
       counters: { creepDeaths: 3 }

@@ -25,8 +25,13 @@ export type SuiteCaseResult = {
   details: RunDetails | null;
 };
 
-export type SuiteMetricComparison = {
-  metric: SuitePrimaryMetric;
+export type SuiteHarvestModeMetric = "harvestingSourceCoveragePct" | "harvestingSourceUptimePct";
+export type SuiteActiveHarvestMetric = "activeHarvestingSourceCoveragePct" | "activeHarvestingSourceUptimePct";
+
+type SuiteSummaryMetric = SuitePrimaryMetric | SuiteHarvestModeMetric | SuiteActiveHarvestMetric;
+
+type MetricComparison<Metric extends string> = {
+  metric: Metric;
   direction: "lower-is-better" | "higher-is-better";
   baseline: number | null;
   candidate: number | null;
@@ -36,11 +41,17 @@ export type SuiteMetricComparison = {
   comparable: boolean;
 };
 
+export type SuiteMetricComparison = MetricComparison<SuitePrimaryMetric>;
+export type SuiteHarvestModeMetricComparison = MetricComparison<SuiteHarvestModeMetric>;
+export type SuiteActiveHarvestMetricComparison = MetricComparison<SuiteActiveHarvestMetric>;
+
 export type SuiteCohortSummary = {
   caseCount: number;
   completedCaseCount: number;
   completionPct: number;
   primaryMetrics: Record<SuitePrimaryMetric, SuiteMetricComparison>;
+  harvestModeMetrics: Record<SuiteHarvestModeMetric, SuiteHarvestModeMetricComparison>;
+  activeHarvestMetrics: Record<SuiteActiveHarvestMetric, SuiteActiveHarvestMetricComparison>;
 };
 
 export type SuiteGateSummary = {
@@ -72,6 +83,9 @@ export type SuiteRunResult = {
     gates: SuiteGateSummary;
   };
 };
+
+const suiteHarvestModeMetrics: SuiteHarvestModeMetric[] = ["harvestingSourceCoveragePct", "harvestingSourceUptimePct"];
+const suiteActiveHarvestMetrics: SuiteActiveHarvestMetric[] = ["activeHarvestingSourceCoveragePct", "activeHarvestingSourceUptimePct"];
 
 export async function runExperimentSuite(
   input: SuiteRunInput,
@@ -151,16 +165,24 @@ export function summarizeSuiteResults(manifest: SuiteManifest, cases: SuiteCaseR
 function summarizeCohort(cases: SuiteCaseResult[], metrics: SuitePrimaryMetric[]): SuiteCohortSummary {
   const completedCaseCount = cases.filter((testCase) => testCase.status === "completed").length;
   const primaryMetrics = Object.fromEntries(metrics.map((metric) => [metric, compareMetric(cases, metric)])) as Record<SuitePrimaryMetric, SuiteMetricComparison>;
+  const harvestModeMetrics = Object.fromEntries(
+    suiteHarvestModeMetrics.map((metric) => [metric, compareMetric(cases, metric)])
+  ) as Record<SuiteHarvestModeMetric, SuiteHarvestModeMetricComparison>;
+  const activeHarvestMetrics = Object.fromEntries(
+    suiteActiveHarvestMetrics.map((metric) => [metric, compareMetric(cases, metric)])
+  ) as Record<SuiteActiveHarvestMetric, SuiteActiveHarvestMetricComparison>;
 
   return {
     caseCount: cases.length,
     completedCaseCount,
     completionPct: toPct(completedCaseCount, cases.length) ?? 0,
-    primaryMetrics
+    primaryMetrics,
+    harvestModeMetrics,
+    activeHarvestMetrics
   };
 }
 
-function compareMetric(cases: SuiteCaseResult[], metric: SuitePrimaryMetric): SuiteMetricComparison {
+function compareMetric<Metric extends SuiteSummaryMetric>(cases: SuiteCaseResult[], metric: Metric): MetricComparison<Metric> {
   const direction = metricDirection(metric);
   const baselineValues = collectMetricValues(cases, "baseline", metric);
   const candidateValues = collectMetricValues(cases, "candidate", metric);
@@ -183,7 +205,7 @@ function compareMetric(cases: SuiteCaseResult[], metric: SuitePrimaryMetric): Su
   };
 }
 
-function collectMetricValues(cases: SuiteCaseResult[], role: "baseline" | "candidate", metric: SuitePrimaryMetric): number[] {
+function collectMetricValues(cases: SuiteCaseResult[], role: "baseline" | "candidate", metric: SuiteSummaryMetric): number[] {
   const values: number[] = [];
 
   for (const testCase of cases) {
@@ -233,7 +255,7 @@ function evaluateSuiteGates(
   };
 }
 
-function metricValue(summary: UserRunSummaryMetrics, metric: SuitePrimaryMetric): number | null {
+function metricValue(summary: UserRunSummaryMetrics, metric: SuiteSummaryMetric): number | null {
   switch (metric) {
     case "T_RCL2":
       return summary.controllerLevelMilestones["2"] ?? null;
@@ -245,10 +267,18 @@ function metricValue(summary: UserRunSummaryMetrics, metric: SuitePrimaryMetric)
       return summary.sourceCoveragePct;
     case "sourceUptimePct":
       return summary.sourceUptimePct;
+    case "harvestingSourceCoveragePct":
+      return summary.harvestingSourceCoveragePct;
+    case "harvestingSourceUptimePct":
+      return summary.harvestingSourceUptimePct;
+    case "activeHarvestingSourceCoveragePct":
+      return summary.activeHarvestingSourceCoveragePct;
+    case "activeHarvestingSourceUptimePct":
+      return summary.activeHarvestingSourceUptimePct;
   }
 }
 
-function metricDirection(metric: SuitePrimaryMetric): SuiteMetricComparison["direction"] {
+function metricDirection(metric: SuiteSummaryMetric): SuiteMetricComparison["direction"] {
   switch (metric) {
     case "T_RCL2":
     case "T_RCL3":
@@ -256,6 +286,10 @@ function metricDirection(metric: SuitePrimaryMetric): SuiteMetricComparison["dir
       return "lower-is-better";
     case "sourceCoveragePct":
     case "sourceUptimePct":
+    case "harvestingSourceCoveragePct":
+    case "harvestingSourceUptimePct":
+    case "activeHarvestingSourceCoveragePct":
+    case "activeHarvestingSourceUptimePct":
       return "higher-is-better";
   }
 }

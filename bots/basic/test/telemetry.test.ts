@@ -19,9 +19,18 @@ describe("telemetry", () => {
 
     testGlobal.Game = {
       creeps: {
-        harvesterA: { memory: { role: "harvester", working: false, homeRoom: "W0N0", sourceId: "source-a" } } as Creep,
-        harvesterB: { memory: { role: "harvester", working: false, homeRoom: "W0N0", sourceId: "source-b" } } as Creep,
-        upgraderA: { memory: { role: "upgrader", working: true, homeRoom: "W0N0", sourceId: "source-a" } } as Creep
+        harvesterA: {
+          memory: { role: "harvester", working: false, homeRoom: "W0N0", sourceId: "source-a" },
+          pos: { x: 10, y: 11, roomName: "W0N0" }
+        } as Creep,
+        harvesterB: {
+          memory: { role: "harvester", working: false, homeRoom: "W0N0", sourceId: "source-b" },
+          pos: { x: 23, y: 23, roomName: "W0N0" }
+        } as Creep,
+        upgraderA: {
+          memory: { role: "upgrader", working: true, homeRoom: "W0N0", sourceId: "source-a" },
+          pos: { x: 10, y: 10, roomName: "W0N0" }
+        } as Creep
       },
       spawns: {},
       rooms: {
@@ -30,7 +39,12 @@ describe("telemetry", () => {
             my: true,
             level: 2
           },
-          find: (type: number) => (type === FIND_SOURCES ? [{ id: "source-a" }, { id: "source-b" }] : [])
+          find: (type: number) => (type === FIND_SOURCES
+            ? [
+              { id: "source-a", pos: { x: 10, y: 10, roomName: "W0N0" } },
+              { id: "source-b", pos: { x: 20, y: 20, roomName: "W0N0" } }
+            ]
+            : [])
         } as Room
       },
       time: 25
@@ -48,7 +62,7 @@ describe("telemetry", () => {
     const snapshot = createTelemetrySnapshot(spawn, Memory.telemetry!);
 
     expect(snapshot).toEqual({
-      schemaVersion: 3,
+      schemaVersion: 4,
       gameTime: 25,
       colonyMode: "normal",
       totalCreeps: 3,
@@ -76,6 +90,10 @@ describe("telemetry", () => {
         harvestingAssignments: {
           "source-a": 1,
           "source-b": 1
+        },
+        activeHarvestingStaffed: 1,
+        activeHarvestingAssignments: {
+          "source-a": 1
         }
       },
       milestones: {
@@ -99,12 +117,13 @@ describe("telemetry", () => {
     const rawSegment = testGlobal.RawMemory.segments[telemetrySegmentId];
     expect(typeof rawSegment).toBe("string");
     expect(JSON.parse(rawSegment as string)).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       gameTime: 25,
       sources: {
         total: 2,
         staffed: 2,
-        harvestingStaffed: 2
+        harvestingStaffed: 2,
+        activeHarvestingStaffed: 1
       },
       milestones: {
         firstOwnedSpawnTick: 25,
