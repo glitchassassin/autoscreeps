@@ -169,6 +169,21 @@ describe("watch helpers", () => {
     expect(rendered).not.toContain("\u001b[");
     expect(rendered).not.toContain("+");
   });
+
+  it("keeps the title on the first line when clearing the screen", () => {
+    const rendered = renderDashboard({
+      mode: "follow-latest",
+      details: null,
+      events: [],
+      baseline: null,
+      candidate: null,
+      displayGameTime: null,
+      targetGameTime: null,
+      statsError: null
+    }, { width: 120, colors: false, clear: true });
+
+    expect(rendered.split("\n")[0]).toContain("AUTOSCREEPS EXPERIMENT WATCH");
+  });
 });
 
 function createRunRecord(runId: string, createdAt: string) {

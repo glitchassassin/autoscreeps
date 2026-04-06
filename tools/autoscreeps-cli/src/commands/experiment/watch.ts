@@ -1,3 +1,5 @@
+import { clearScreenDown, cursorTo } from "node:readline";
+
 import type { EventRecord, RunDetails, VariantRecord } from "../../lib/contracts.ts";
 import { listRunRecords, readEventTail, readRunDetails, resolveRunDir } from "../../lib/history.ts";
 import { resolveRepoRoot } from "../../lib/git.ts";
@@ -40,9 +42,20 @@ type RenderDashboardOptions = {
   clear?: boolean;
 };
 
+type DashboardRenderState = {
+  firstFrame: boolean;
+  previousLineCount: number;
+  previousWidth: number;
+};
+
 export async function watchExperimentCommand(runId?: string): Promise<void> {
   const repoRoot = await resolveRepoRoot(process.cwd());
   const mode = runId ? "pinned" : "follow-latest";
+  const renderState: DashboardRenderState = {
+    firstFrame: true,
+    previousLineCount: 0,
+    previousWidth: 0
+  };
 
   if (runId) {
     await readRunDetails(repoRoot, runId);
@@ -50,7 +63,7 @@ export async function watchExperimentCommand(runId?: string): Promise<void> {
 
   while (true) {
     const snapshot = await collectDashboardSnapshot(repoRoot, runId, mode);
-    process.stdout.write(renderDashboard(snapshot));
+    writeDashboardSnapshot(snapshot, renderState);
     await delay(pollIntervalMs);
   }
 }
@@ -130,7 +143,8 @@ async function collectDashboardSnapshot(
 export function renderDashboard(snapshot: DashboardSnapshot, options: RenderDashboardOptions = {}): string {
   const colors = options.colors ?? shouldUseColors();
   const width = Math.max(80, options.width ?? process.stdout.columns ?? 120);
-  const lines: string[] = options.clear === false ? [] : ["\u001b[2J\u001b[H"];
+  const clearPrefix = options.clear === false ? "" : "\u001b[2J\u001b[H";
+  const lines: string[] = [];
 
   lines.push(renderTitleBar(width, colors));
   lines.push("");
@@ -149,7 +163,7 @@ export function renderDashboard(snapshot: DashboardSnapshot, options: RenderDash
       colors
     ));
 
-    return `${lines.join("\n")}\n`;
+    return `${clearPrefix}${lines.join("\n")}\n`;
   }
 
   const { run, variants } = snapshot.details;
@@ -218,7 +232,35 @@ export function renderDashboard(snapshot: DashboardSnapshot, options: RenderDash
   lines.push("");
   lines.push(...buildPanel("Recent Events", [palette.yellow, palette.comment], formatEventRows(snapshot.events, width - 4, colors), width, colors));
 
-  return `${lines.join("\n")}\n`;
+  return `${clearPrefix}${lines.join("\n")}\n`;
+}
+
+function writeDashboardSnapshot(snapshot: DashboardSnapshot, renderState: DashboardRenderState): void {
+  const width = Math.max(80, process.stdout.columns ?? 120);
+  const isTTY = Boolean(process.stdout.isTTY);
+  const frame = renderDashboard(snapshot, {
+    width,
+    clear: isTTY && renderState.firstFrame
+  });
+  const lineCount = countRenderedLines(frame);
+
+  if (isTTY && !renderState.firstFrame) {
+    cursorTo(process.stdout, 0, 0);
+
+    if (width !== renderState.previousWidth) {
+      clearScreenDown(process.stdout);
+    }
+  }
+
+  process.stdout.write(frame);
+
+  if (isTTY && !renderState.firstFrame && width === renderState.previousWidth && lineCount < renderState.previousLineCount) {
+    clearScreenDown(process.stdout);
+  }
+
+  renderState.firstFrame = false;
+  renderState.previousLineCount = lineCount;
+  renderState.previousWidth = width;
 }
 
 function renderTitleBar(width: number, colors: boolean): string {
@@ -584,4 +626,8 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function countRenderedLines(text: string): number {
+  return text.endsWith("\n") ? text.split("\n").length - 1 : text.split("\n").length;
 }
