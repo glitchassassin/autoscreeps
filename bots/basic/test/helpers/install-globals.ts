@@ -13,6 +13,7 @@ export function installScreepsGlobals(): void {
     FIND_SOURCES: 2,
     FIND_SOURCES_ACTIVE: 3,
     FIND_MY_CONSTRUCTION_SITES: 4,
+    FIND_DROPPED_RESOURCES: 5,
     STRUCTURE_SPAWN: "spawn",
     STRUCTURE_EXTENSION: "extension",
     STRUCTURE_TOWER: "tower",

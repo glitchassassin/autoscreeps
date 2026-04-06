@@ -6,6 +6,8 @@ describe("telemetry", () => {
   beforeEach(() => {
     installScreepsGlobals();
     const testGlobal = globalThis as typeof globalThis & { Game: Game; Memory: Memory; RawMemory: RawMemory };
+    const sourceA = { id: "source-a", pos: { x: 10, y: 10, roomName: "W0N0" } } as Source;
+    const sourceB = { id: "source-b", pos: { x: 20, y: 20, roomName: "W0N0" } } as Source;
 
     testGlobal.Memory = {
       creeps: {},
@@ -21,31 +23,40 @@ describe("telemetry", () => {
       creeps: {
         harvesterA: {
           memory: { role: "harvester", working: false, homeRoom: "W0N0", sourceId: "source-a" },
-          pos: { x: 10, y: 11, roomName: "W0N0" }
-        } as Creep,
+          pos: { x: 10, y: 11, roomName: "W0N0" },
+          store: { energy: 0, getFreeCapacity: vi.fn(() => 50) }
+        } as unknown as Creep,
         harvesterB: {
           memory: { role: "harvester", working: false, homeRoom: "W0N0", sourceId: "source-b" },
-          pos: { x: 23, y: 23, roomName: "W0N0" }
-        } as Creep,
+          pos: { x: 23, y: 23, roomName: "W0N0" },
+          store: { energy: 0, getFreeCapacity: vi.fn(() => 50) }
+        } as unknown as Creep,
         upgraderA: {
           memory: { role: "upgrader", working: true, homeRoom: "W0N0", sourceId: "source-a" },
-          pos: { x: 10, y: 10, roomName: "W0N0" }
-        } as Creep
+          pos: { x: 10, y: 10, roomName: "W0N0" },
+          store: { energy: 50, getFreeCapacity: vi.fn(() => 0) }
+        } as unknown as Creep
       },
       spawns: {},
+      getObjectById: vi.fn((id: Id<Source>) => (id === sourceA.id ? sourceA : id === sourceB.id ? sourceB : null)),
       rooms: {
         W0N0: {
           controller: {
             my: true,
             level: 2
           },
-          find: (type: number) => (type === FIND_SOURCES
-            ? [
-              { id: "source-a", pos: { x: 10, y: 10, roomName: "W0N0" } },
-              { id: "source-b", pos: { x: 20, y: 20, roomName: "W0N0" } }
-            ]
-            : [])
-        } as Room
+          find: (type: number) => {
+            if (type === FIND_SOURCES) {
+              return [sourceA, sourceB];
+            }
+            if (type === FIND_DROPPED_RESOURCES) {
+              return [{ id: "drop-a", resourceType: RESOURCE_ENERGY, amount: 75, pos: { x: 10, y: 11, roomName: "W0N0" } }] as Array<Resource<ResourceConstant>>;
+            }
+
+            return [];
+          },
+          getTerrain: () => ({ get: () => 0 })
+        } as unknown as Room
       },
       time: 25
     } as unknown as Game;
@@ -62,7 +73,7 @@ describe("telemetry", () => {
     const snapshot = createTelemetrySnapshot(spawn, Memory.telemetry!);
 
     expect(snapshot).toEqual({
-      schemaVersion: 4,
+      schemaVersion: 5,
       gameTime: 25,
       colonyMode: "normal",
       totalCreeps: 3,
@@ -94,8 +105,53 @@ describe("telemetry", () => {
         activeHarvestingStaffed: 1,
         activeHarvestingAssignments: {
           "source-a": 1
-        }
+        },
+        adjacentHarvesters: {
+          "source-a": 1,
+          "source-b": 0
+        },
+        successfulHarvestTicks: {},
+        dropEnergy: {
+          "source-a": 75,
+          "source-b": 0
+        },
+        oldestDropAge: {
+          "source-a": 0,
+          "source-b": 0
+        },
+        overAssigned: {
+          "source-a": 0,
+          "source-b": 0
+        },
+        backlogEnergy: 75
       },
+      loop: {
+        phaseTicks: {},
+        actionAttempts: {},
+        actionSuccesses: {},
+        actionFailures: {},
+        targetFailures: {},
+        workingStateFlips: {},
+        cargoUtilizationTicks: {},
+        noTargetTicks: {},
+        withEnergyNoSpendTicks: {},
+        noEnergyAvailableTicks: {},
+        sourceAssignmentTicks: {},
+        sourceAdjacencyTicks: {},
+        samePositionTicks: {},
+        energyGained: {},
+        energySpent: {},
+        energySpentOnBuild: 0,
+        energySpentOnUpgrade: 0,
+        deliveredEnergyByTargetType: {},
+        transferSuccessByTargetType: {},
+        workerTaskSelections: {},
+        sourceDropPickupLatencyTotal: 0,
+        sourceDropPickupLatencySamples: 0,
+        pickupToSpendLatencyTotal: 0,
+        pickupToSpendLatencySamples: 0
+      },
+      creeps: {},
       milestones: {
         firstOwnedSpawnTick: null,
         rcl2Tick: null,
@@ -117,13 +173,44 @@ describe("telemetry", () => {
     const rawSegment = testGlobal.RawMemory.segments[telemetrySegmentId];
     expect(typeof rawSegment).toBe("string");
     expect(JSON.parse(rawSegment as string)).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       gameTime: 25,
       sources: {
         total: 2,
         staffed: 2,
         harvestingStaffed: 2,
-        activeHarvestingStaffed: 1
+        activeHarvestingStaffed: 1,
+        backlogEnergy: 75
+      },
+      loop: {
+        phaseTicks: {
+          "harvester.gathering": 2,
+          "upgrader.working": 1
+        },
+        sourceAssignmentTicks: {
+          harvester: 2
+        },
+        sourceAdjacencyTicks: {
+          harvester: 1
+        },
+        cargoUtilizationTicks: {
+          upgrader: 1
+        },
+        withEnergyNoSpendTicks: {
+          upgrader: 1
+        }
+      },
+      creeps: {
+        harvesterA: {
+          role: "harvester",
+          ticksSinceSuccess: null,
+          samePositionTicks: 0
+        },
+        upgraderA: {
+          role: "upgrader",
+          ticksSinceSuccess: null,
+          samePositionTicks: 0
+        }
       },
       milestones: {
         firstOwnedSpawnTick: 25,

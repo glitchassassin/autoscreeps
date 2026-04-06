@@ -1,9 +1,9 @@
 import { summarizeSpawnDemand } from "./spawn";
-import { ensureTelemetryState } from "./telemetry-state";
+import { ensureTelemetryState, observeTelemetryTick } from "./telemetry-state";
 
 export const telemetrySegmentId = 42;
 export const telemetrySampleEveryTicks = 25;
-export const telemetrySchemaVersion = 4;
+export const telemetrySchemaVersion = 5;
 
 export type BotTelemetrySnapshot = {
   schemaVersion: number;
@@ -25,7 +25,22 @@ export type BotTelemetrySnapshot = {
     harvestingAssignments: Record<string, number>;
     activeHarvestingStaffed: number;
     activeHarvestingAssignments: Record<string, number>;
+    adjacentHarvesters: Record<string, number>;
+    successfulHarvestTicks: Record<string, number>;
+    dropEnergy: Record<string, number>;
+    oldestDropAge: Record<string, number>;
+    overAssigned: Record<string, number>;
+    backlogEnergy: number;
   };
+  loop: TelemetryLoopState;
+  creeps: Record<string, {
+    role: string;
+    ticksSinceSuccess: number | null;
+    lastSuccessfulAction: string | null;
+    samePositionTicks: number;
+    targetSwitches: number;
+    lastTarget: string | null;
+  }>;
   milestones: Record<string, number | null>;
   counters: {
     creepDeaths: number;
@@ -40,6 +55,7 @@ export function recordTelemetry(primarySpawn: StructureSpawn | null): void {
   RawMemory.setActiveSegments([telemetrySegmentId]);
 
   const telemetryState = ensureTelemetryState();
+  observeTelemetryTick();
   if (primarySpawn) {
     telemetryState.firstOwnedSpawnTick ??= Game.time;
   }
@@ -80,6 +96,8 @@ export function createTelemetrySnapshot(
       unmetDemand: demand.unmetDemand
     },
     sources: summarizeSourceStaffing(),
+    loop: telemetryState.loop ?? emptyLoopState(),
+    creeps: summarizeCreepDiagnostics(telemetryState),
     milestones: {
       firstOwnedSpawnTick: telemetryState.firstOwnedSpawnTick,
       rcl2Tick: telemetryState.rcl2Tick,
@@ -108,13 +126,43 @@ function summarizeSourceStaffing(): BotTelemetrySnapshot["sources"] {
   const assignments: Record<string, number> = {};
   const harvestingAssignments: Record<string, number> = {};
   const activeHarvestingAssignments: Record<string, number> = {};
+  const adjacentHarvesters: Record<string, number> = {};
+  const dropEnergy: Record<string, number> = {};
+  const oldestDropAge: Record<string, number> = {};
+  const overAssigned: Record<string, number> = {};
+  const successfulHarvestTicks = Memory.telemetry?.sources
+    ? Object.fromEntries(Object.entries(Memory.telemetry.sources).map(([sourceId, state]) => [sourceId, state.successfulHarvestTicks]))
+    : {};
   const sourcesById = new Map<string, Source>();
+  let backlogEnergy = 0;
   let total = 0;
 
   for (const room of Object.values(Game.rooms)) {
-    for (const source of room.find(FIND_SOURCES)) {
+    const sources = room.find(FIND_SOURCES);
+    for (const source of sources) {
       total += 1;
       sourcesById.set(source.id, source);
+      dropEnergy[source.id] = 0;
+      oldestDropAge[source.id] = 0;
+      overAssigned[source.id] = 0;
+      adjacentHarvesters[source.id] = 0;
+    }
+
+    const drops = room.find(FIND_DROPPED_RESOURCES, {
+      filter: (resource) => resource.resourceType === RESOURCE_ENERGY && resource.amount > 0
+    });
+    for (const drop of drops) {
+      const source = sources.find((candidate) => positionsAreNear(drop.pos, candidate.pos));
+      if (!source) {
+        continue;
+      }
+
+      dropEnergy[source.id] = (dropEnergy[source.id] ?? 0) + drop.amount;
+      backlogEnergy += drop.amount;
+      const firstSeenTick = Memory.telemetry?.drops?.[drop.id]?.firstSeenTick;
+      if (typeof firstSeenTick === "number") {
+        oldestDropAge[source.id] = Math.max(oldestDropAge[source.id] ?? 0, Game.time - firstSeenTick);
+      }
     }
   }
 
@@ -132,8 +180,15 @@ function summarizeSourceStaffing(): BotTelemetrySnapshot["sources"] {
       const source = sourcesById.get(sourceId);
       if (source && isAdjacentToSource(creep, source)) {
         activeHarvestingAssignments[sourceId] = (activeHarvestingAssignments[sourceId] ?? 0) + 1;
+        if (creep.memory.role === "harvester") {
+          adjacentHarvesters[sourceId] = (adjacentHarvesters[sourceId] ?? 0) + 1;
+        }
       }
     }
+  }
+
+  for (const [sourceId, source] of sourcesById.entries()) {
+    overAssigned[sourceId] = Math.max((assignments[sourceId] ?? 0) - countAvailableAdjacentTiles(source), 0);
   }
 
   return {
@@ -143,7 +198,59 @@ function summarizeSourceStaffing(): BotTelemetrySnapshot["sources"] {
     harvestingStaffed: Object.keys(harvestingAssignments).length,
     harvestingAssignments,
     activeHarvestingStaffed: Object.keys(activeHarvestingAssignments).length,
-    activeHarvestingAssignments
+    activeHarvestingAssignments,
+    adjacentHarvesters,
+    successfulHarvestTicks,
+    dropEnergy,
+    oldestDropAge,
+    overAssigned,
+    backlogEnergy
+  };
+}
+
+function summarizeCreepDiagnostics(telemetryState: TelemetryMemoryState): BotTelemetrySnapshot["creeps"] {
+  const diagnostics: BotTelemetrySnapshot["creeps"] = {};
+
+  for (const [name, state] of Object.entries(telemetryState.creeps ?? {})) {
+    diagnostics[name] = {
+      role: state.role,
+      ticksSinceSuccess: state.lastSuccessfulActionTick === null ? null : Game.time - state.lastSuccessfulActionTick,
+      lastSuccessfulAction: state.lastSuccessfulAction,
+      samePositionTicks: state.samePositionTicks,
+      targetSwitches: state.targetSwitches,
+      lastTarget: state.lastTarget
+    };
+  }
+
+  return diagnostics;
+}
+
+function emptyLoopState(): TelemetryLoopState {
+  return {
+    phaseTicks: {},
+    actionAttempts: {},
+    actionSuccesses: {},
+    actionFailures: {},
+    targetFailures: {},
+    workingStateFlips: {},
+    cargoUtilizationTicks: {},
+    noTargetTicks: {},
+    withEnergyNoSpendTicks: {},
+    noEnergyAvailableTicks: {},
+    sourceAssignmentTicks: {},
+    sourceAdjacencyTicks: {},
+        samePositionTicks: {},
+        energyGained: {},
+        energySpent: {},
+        energySpentOnBuild: 0,
+        energySpentOnUpgrade: 0,
+        deliveredEnergyByTargetType: {},
+    transferSuccessByTargetType: {},
+    workerTaskSelections: {},
+    sourceDropPickupLatencyTotal: 0,
+    sourceDropPickupLatencySamples: 0,
+    pickupToSpendLatencyTotal: 0,
+    pickupToSpendLatencySamples: 0
   };
 }
 
@@ -165,6 +272,30 @@ function positionsAreNear(position: RoomPosition | undefined, target: RoomPositi
   }
 
   return Math.max(Math.abs(position.x - target.x), Math.abs(position.y - target.y)) <= 1;
+}
+
+function countAvailableAdjacentTiles(source: Source): number {
+  const terrain = Game.rooms[source.pos.roomName]?.getTerrain();
+  if (!terrain) {
+    return 0;
+  }
+
+  let total = 0;
+  for (let y = source.pos.y - 1; y <= source.pos.y + 1; y += 1) {
+    for (let x = source.pos.x - 1; x <= source.pos.x + 1; x += 1) {
+      if (x === source.pos.x && y === source.pos.y) {
+        continue;
+      }
+      if (x < 0 || x > 49 || y < 0 || y > 49) {
+        continue;
+      }
+      if (terrain.get(x, y) !== TERRAIN_MASK_WALL) {
+        total += 1;
+      }
+    }
+  }
+
+  return total;
 }
 
 function determineColonyMode(primarySpawn: StructureSpawn | null, totalCreeps: number): BotTelemetrySnapshot["colonyMode"] {
