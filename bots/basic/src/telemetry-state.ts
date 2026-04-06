@@ -6,6 +6,7 @@ export function ensureTelemetryState(): TelemetryMemoryState {
       creepDeaths: 0,
       firstOwnedSpawnTick: null,
       rcl2Tick: null,
+      debugError: null,
       rcl3Tick: null,
       loop: createLoopState(),
       creeps: {},
@@ -20,6 +21,7 @@ export function ensureTelemetryState(): TelemetryMemoryState {
     creepDeaths: 0,
     firstOwnedSpawnTick: null,
     rcl2Tick: null,
+    debugError: null,
     rcl3Tick: null,
     loop: createLoopState(),
     creeps: {},
@@ -28,6 +30,7 @@ export function ensureTelemetryState(): TelemetryMemoryState {
   };
 
   Memory.telemetry.loop ??= createLoopState();
+  Memory.telemetry.debugError ??= null;
   Memory.telemetry.creeps ??= {};
   Memory.telemetry.drops ??= {};
   Memory.telemetry.sources ??= {};

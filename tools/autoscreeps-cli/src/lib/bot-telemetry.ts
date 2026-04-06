@@ -29,6 +29,10 @@ export function parseBotTelemetry(value: string | null): BotTelemetrySnapshot | 
     gameTime
   };
 
+  if (typeof parsed.debugError === "string" || parsed.debugError === null) {
+    snapshot.debugError = parsed.debugError as string | null;
+  }
+
   if (typeof parsed.colonyMode === "string") {
     snapshot.colonyMode = parsed.colonyMode;
   }

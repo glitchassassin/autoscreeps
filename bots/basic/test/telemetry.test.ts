@@ -75,6 +75,7 @@ describe("telemetry", () => {
     expect(snapshot).toEqual({
       schemaVersion: 5,
       gameTime: 25,
+      debugError: null,
       colonyMode: "normal",
       totalCreeps: 3,
       roleCounts: {

@@ -72,6 +72,7 @@ declare global {
     firstOwnedSpawnTick: number | null;
     rcl2Tick: number | null;
     rcl3Tick: number | null;
+    debugError?: string | null;
     loop?: TelemetryLoopState;
     creeps?: Record<string, TelemetryCreepRuntimeState>;
     drops?: Record<string, TelemetryDropRuntimeState>;

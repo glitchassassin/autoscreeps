@@ -50,6 +50,7 @@ export type TerminalOutcome = {
 export type BotTelemetrySnapshot = {
   schemaVersion: number;
   gameTime: number;
+  debugError?: string | null;
   colonyMode?: string;
   totalCreeps?: number;
   roleCounts?: Record<string, number>;

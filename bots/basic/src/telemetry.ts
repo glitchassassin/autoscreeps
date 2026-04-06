@@ -8,6 +8,7 @@ export const telemetrySchemaVersion = 5;
 export type BotTelemetrySnapshot = {
   schemaVersion: number;
   gameTime: number;
+  debugError?: string | null;
   colonyMode: "bootstrap" | "recovery" | "normal";
   totalCreeps: number;
   roleCounts: Record<WorkerRole, number>;
@@ -72,7 +73,18 @@ export function recordTelemetry(primarySpawn: StructureSpawn | null): void {
     return;
   }
 
-  RawMemory.segments[telemetrySegmentId] = JSON.stringify(createTelemetrySnapshot(primarySpawn, telemetryState));
+  try {
+    telemetryState.debugError = null;
+    RawMemory.segments[telemetrySegmentId] = JSON.stringify(createTelemetrySnapshot(primarySpawn, telemetryState));
+  } catch (error) {
+    const message = error instanceof Error ? error.stack ?? error.message : String(error);
+    telemetryState.debugError = message;
+    RawMemory.segments[telemetrySegmentId] = JSON.stringify({
+      schemaVersion: telemetrySchemaVersion,
+      gameTime: Game.time,
+      debugError: message
+    });
+  }
 }
 
 export function createTelemetrySnapshot(
@@ -86,6 +98,7 @@ export function createTelemetrySnapshot(
   return {
     schemaVersion: telemetrySchemaVersion,
     gameTime: Game.time,
+    debugError: telemetryState.debugError ?? null,
     colonyMode: determineColonyMode(primarySpawn, totalCreeps),
     totalCreeps,
     roleCounts,
@@ -130,9 +143,7 @@ function summarizeSourceStaffing(): BotTelemetrySnapshot["sources"] {
   const dropEnergy: Record<string, number> = {};
   const oldestDropAge: Record<string, number> = {};
   const overAssigned: Record<string, number> = {};
-  const successfulHarvestTicks = Memory.telemetry?.sources
-    ? Object.fromEntries(Object.entries(Memory.telemetry.sources).map(([sourceId, state]) => [sourceId, state.successfulHarvestTicks]))
-    : {};
+  const successfulHarvestTicks = collectSuccessfulHarvestTicks();
   const sourcesById = new Map<string, Source>();
   let backlogEnergy = 0;
   let total = 0;
@@ -206,6 +217,20 @@ function summarizeSourceStaffing(): BotTelemetrySnapshot["sources"] {
     overAssigned,
     backlogEnergy
   };
+}
+
+function collectSuccessfulHarvestTicks(): Record<string, number> {
+  const ticks: Record<string, number> = {};
+
+  if (!Memory.telemetry?.sources) {
+    return ticks;
+  }
+
+  for (const [sourceId, state] of Object.entries(Memory.telemetry.sources)) {
+    ticks[sourceId] = state.successfulHarvestTicks;
+  }
+
+  return ticks;
 }
 
 function summarizeCreepDiagnostics(telemetryState: TelemetryMemoryState): BotTelemetrySnapshot["creeps"] {
