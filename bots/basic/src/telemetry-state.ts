@@ -43,6 +43,10 @@ export function recordCreepDeath(count = 1): void {
   state.creepDeaths += count;
 }
 
+type ObservedTelemetryCreepState = TelemetryCreepRuntimeState & {
+  pendingAction?: TelemetryCreepActionState;
+};
+
 export function recordTelemetryAction(
   creep: Creep,
   action: TelemetryActionName,
@@ -138,7 +142,9 @@ function observeCreeps(state: TelemetryMemoryState): void {
   const loop = state.loop!;
 
   for (const [creepName, creep] of Object.entries(Game.creeps)) {
-    const creepState = ensureCreepRuntimeState(creepName, creep, state);
+    const creepState = ensureCreepRuntimeState(creepName, creep, state) as ObservedTelemetryCreepState;
+    const currentAction = creepState.currentAction;
+    const pendingAction = creepState.pendingAction;
     const role = creep.memory.role;
     const energy = getCreepEnergy(creep);
     const previousEnergy = creepState.lastEnergy;
@@ -167,7 +173,7 @@ function observeCreeps(state: TelemetryMemoryState): void {
       }
     }
 
-    if (creep.memory.working && energy > 0 && (!creepState.currentAction || !isSpendAction(creepState.currentAction.action) || creepState.currentAction.result !== OK)) {
+    if (creep.memory.working && energy > 0 && (!currentAction || !isSpendAction(currentAction.action) || currentAction.result !== OK)) {
       increment(loop.withEnergyNoSpendTicks, role);
     }
 
@@ -178,12 +184,12 @@ function observeCreeps(state: TelemetryMemoryState): void {
       add(loop.energySpent, role, Math.abs(energyDelta));
     }
 
-    if (creepState.currentAction?.result === OK) {
-      const action = creepState.currentAction.action;
+    if (pendingAction?.result === OK) {
+      const action = pendingAction.action;
       const spentEnergy = Math.max(previousEnergy - energy, 0);
 
-      if (action === "transfer" && creepState.currentAction.targetType && spentEnergy > 0) {
-        add(loop.deliveredEnergyByTargetType, creepState.currentAction.targetType, spentEnergy);
+      if (action === "transfer" && pendingAction.targetType && spentEnergy > 0) {
+        add(loop.deliveredEnergyByTargetType, pendingAction.targetType, spentEnergy);
       }
       if (action === "build" && spentEnergy > 0) {
         loop.energySpentOnBuild += spentEnergy;
@@ -202,6 +208,7 @@ function observeCreeps(state: TelemetryMemoryState): void {
     };
     creepState.lastEnergy = energy;
     creepState.lastWorking = creep.memory.working;
+    creepState.pendingAction = currentAction;
     delete creepState.currentAction;
   }
 }
