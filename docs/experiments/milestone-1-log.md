@@ -681,7 +681,7 @@ node src/cli.ts experiment run suite \
 
 ## Entry `exp-2026-04-06-rcl3-progress-and-extension-metrics`
 
-- Status: `planned`
+- Status: `completed`
 - Owner: `OpenCode`
 - Date: `2026-04-06`
 
@@ -694,18 +694,34 @@ node src/cli.ts experiment run suite \
 
 - Variant or branch: `workspace`
 - Bot package: `bots/basic`
-- Planned change:
+- Change implemented:
   - extend sampled run summaries with `controllerProgressToRCL3Pct`
   - add extension timing metrics such as `firstExtensionTick` and `allRcl2ExtensionsTick`
+  - sample controller progress and extension count directly from room state during the run
   - surface the new metrics in suite summaries without removing the existing source metrics
+  - switch the milestone-one opener suite gates to `T_RCL3`, `controllerProgressToRCL3Pct`, and `spawnIdlePct`
 
 ### Results
 
-- Pending.
+- Validation:
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+- Summary pipeline changes:
+  - `RunSample` now captures sampled controller progress and extension count per variant room
+  - `UserRunSummaryMetrics` now reports:
+    - `controllerProgressToRCL3Pct`
+    - `firstExtensionTick`
+    - `allRcl2ExtensionsTick`
+  - suite summaries now surface extension timing metrics alongside the existing harvest and active-harvest metrics
+- Suite configuration changes:
+  - `experiments/suites/milestone-1-opener.yaml` now uses `T_RCL3`, `controllerProgressToRCL3Pct`, and `spawnIdlePct` as its primary gated metrics
+- Suite evaluation:
+  - not rerun yet for this instrumentation-and-scorecard step
 
 ### Interpretation
 
-- Pending.
+- The milestone-one harness can now evaluate sustainable controller growth even when no candidate reaches `RCL3` within the current tick budget.
+- Extension timing is now visible enough to support the new baseline-of-competence requirement for future experiments.
+- This finishes the metric-side part of the `RCL3` pivot; the next opener experiment can now be judged on the new scorecard instead of `T_RCL2`.
 
 ### Follow-Up Hypotheses
 
@@ -714,7 +730,8 @@ node src/cli.ts experiment run suite \
 
 ### Decision
 
-- Pending.
+- `keep`
+- Use this scorecard and suite configuration for the upcoming dynamic-quota-plus-extensions baseline experiment.
 
 ## Entry `exp-2026-04-06-dynamic-quota-extension-baseline`
 

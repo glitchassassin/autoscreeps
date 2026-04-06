@@ -12,7 +12,7 @@ describe("suite runner", () => {
       version: 1,
       name: "opener-suite",
       gates: {
-        primaryMetrics: ["T_RCL2", "T_RCL3", "spawnIdlePct", "sourceCoveragePct", "sourceUptimePct"],
+        primaryMetrics: ["T_RCL3", "controllerProgressToRCL3Pct", "spawnIdlePct", "sourceCoveragePct", "sourceUptimePct"],
         training: { minImprovedPrimaryMetrics: 2 },
         holdout: { maxRegressionPct: 5 }
       },
@@ -22,9 +22,11 @@ describe("suite runner", () => {
     const summary = summarizeSuiteResults(manifest, [
       createCaseResult("train-a", "train", createRunDetails({
         baseline: createSummary({
-          rcl2: 150,
           rcl3: 250,
+          controllerProgressToRCL3Pct: 60,
           spawnIdlePct: 40,
+          firstExtensionTick: 140,
+          allRcl2ExtensionsTick: 180,
           sourceCoveragePct: 50,
           sourceUptimePct: 0,
           harvestingSourceCoveragePct: 45,
@@ -33,9 +35,11 @@ describe("suite runner", () => {
           activeHarvestingSourceUptimePct: 0
         }),
         candidate: createSummary({
-          rcl2: 100,
           rcl3: 200,
+          controllerProgressToRCL3Pct: 80,
           spawnIdlePct: 10,
+          firstExtensionTick: 110,
+          allRcl2ExtensionsTick: 150,
           sourceCoveragePct: 75,
           sourceUptimePct: 50,
           harvestingSourceCoveragePct: 60,
@@ -46,9 +50,11 @@ describe("suite runner", () => {
       })),
       createCaseResult("holdout-a", "holdout", createRunDetails({
         baseline: createSummary({
-          rcl2: 100,
           rcl3: 200,
+          controllerProgressToRCL3Pct: 70,
           spawnIdlePct: 20,
+          firstExtensionTick: 120,
+          allRcl2ExtensionsTick: 160,
           sourceCoveragePct: 100,
           sourceUptimePct: 100,
           harvestingSourceCoveragePct: 60,
@@ -57,9 +63,11 @@ describe("suite runner", () => {
           activeHarvestingSourceUptimePct: 10
         }),
         candidate: createSummary({
-          rcl2: 104,
           rcl3: 200,
+          controllerProgressToRCL3Pct: 72,
           spawnIdlePct: 21,
+          firstExtensionTick: 118,
+          allRcl2ExtensionsTick: 150,
           sourceCoveragePct: 92,
           sourceUptimePct: 100,
           harvestingSourceCoveragePct: 57,
@@ -70,7 +78,7 @@ describe("suite runner", () => {
       }))
     ]);
 
-    expect(summary.cohorts.train?.primaryMetrics.T_RCL2.improved).toBe(true);
+    expect(summary.cohorts.train?.primaryMetrics.controllerProgressToRCL3Pct.improved).toBe(true);
     expect(summary.cohorts.train?.primaryMetrics.sourceCoveragePct.improved).toBe(true);
     expect(summary.cohorts.train?.harvestModeMetrics.harvestingSourceCoveragePct).toMatchObject({
       baseline: 45,
@@ -92,6 +100,16 @@ describe("suite runner", () => {
       baseline: 10,
       candidate: 5,
       regressionPct: 50
+    });
+    expect(summary.cohorts.train?.extensionMetrics.firstExtensionTick).toMatchObject({
+      baseline: 140,
+      candidate: 110,
+      improved: true
+    });
+    expect(summary.cohorts.holdout?.extensionMetrics.allRcl2ExtensionsTick).toMatchObject({
+      baseline: 160,
+      candidate: 150,
+      improved: true
     });
     expect(summary.gates.training.passed).toBe(true);
     expect(summary.gates.holdout.passed).toBe(false);
@@ -142,8 +160,24 @@ describe("suite runner", () => {
           return createRunDetails({
             runId: "run-train-a",
             scenarioName: input.scenario.config.name,
-            baseline: createSummary({ rcl2: 100, rcl3: 200, spawnIdlePct: 25, sourceCoveragePct: 50, sourceUptimePct: 0 }),
-            candidate: createSummary({ rcl2: 100, rcl3: 200, spawnIdlePct: 25, sourceCoveragePct: 50, sourceUptimePct: 0 })
+            baseline: createSummary({
+              rcl3: 200,
+              controllerProgressToRCL3Pct: 30,
+              spawnIdlePct: 25,
+              firstExtensionTick: 120,
+              allRcl2ExtensionsTick: 150,
+              sourceCoveragePct: 50,
+              sourceUptimePct: 0
+            }),
+            candidate: createSummary({
+              rcl3: 200,
+              controllerProgressToRCL3Pct: 30,
+              spawnIdlePct: 25,
+              firstExtensionTick: 120,
+              allRcl2ExtensionsTick: 150,
+              sourceCoveragePct: 50,
+              sourceUptimePct: 0
+            })
           });
         }
       });
@@ -265,9 +299,11 @@ function createRunDetails(input: {
 }
 
 function createSummary(input: {
-  rcl2: number | null;
   rcl3: number | null;
+  controllerProgressToRCL3Pct: number | null;
   spawnIdlePct: number | null;
+  firstExtensionTick: number | null;
+  allRcl2ExtensionsTick: number | null;
   sourceCoveragePct: number | null;
   sourceUptimePct: number | null;
   harvestingSourceCoveragePct?: number | null;
@@ -280,7 +316,7 @@ function createSummary(input: {
     firstSeenGameTime: 1,
     controllerLevelMilestones: {
       "1": 1,
-      "2": input.rcl2,
+      "2": input.controllerProgressToRCL3Pct !== null ? 100 : null,
       "3": input.rcl3,
       "4": null,
       "5": null,
@@ -288,8 +324,11 @@ function createSummary(input: {
       "7": null,
       "8": null
     },
+    controllerProgressToRCL3Pct: input.controllerProgressToRCL3Pct,
     maxCombinedRCL: 3,
     maxOwnedControllers: 1,
+    firstExtensionTick: input.firstExtensionTick,
+    allRcl2ExtensionsTick: input.allRcl2ExtensionsTick,
     telemetrySampleCount: 4,
     spawnIdlePct: input.spawnIdlePct,
     sourceCoveragePct: input.sourceCoveragePct,

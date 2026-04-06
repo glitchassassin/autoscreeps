@@ -148,9 +148,17 @@ export type UserSampleMetrics = {
   rcl: Record<string, number>;
 };
 
+export type RunSampleRoomMetrics = {
+  controllerLevel: number | null;
+  controllerProgress: number | null;
+  controllerProgressTotal: number | null;
+  extensions: number | null;
+};
+
 export type RunSample = {
   gameTime: number;
   users: Record<VariantRole, UserSampleMetrics>;
+  rooms?: Record<VariantRole, RunSampleRoomMetrics>;
   telemetry?: Record<VariantRole, BotTelemetrySnapshot | null>;
 };
 
@@ -158,8 +166,11 @@ export type UserRunSummaryMetrics = {
   sampleCount: number;
   firstSeenGameTime: number | null;
   controllerLevelMilestones: Record<string, number | null>;
+  controllerProgressToRCL3Pct: number | null;
   maxCombinedRCL: number;
   maxOwnedControllers: number;
+  firstExtensionTick: number | null;
+  allRcl2ExtensionsTick: number | null;
   telemetrySampleCount: number;
   spawnIdlePct: number | null;
   sourceCoveragePct: number | null;

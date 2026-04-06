@@ -34,6 +34,20 @@ describe("run samples", () => {
             rcl: { "1": 1, "2": 0, "3": 0 }
           }
         },
+        rooms: {
+          baseline: {
+            controllerLevel: 1,
+            controllerProgress: 100,
+            controllerProgressTotal: 200,
+            extensions: 0
+          },
+          candidate: {
+            controllerLevel: 1,
+            controllerProgress: 50,
+            controllerProgressTotal: 200,
+            extensions: 0
+          }
+        },
         telemetry: {
           baseline: {
             schemaVersion: 4,
@@ -71,6 +85,20 @@ describe("run samples", () => {
             combinedRCL: 1,
             maxOwnedControllerLevel: 1,
             rcl: { "1": 1, "2": 0, "3": 0 }
+          }
+        },
+        rooms: {
+          baseline: {
+            controllerLevel: 2,
+            controllerProgress: 500,
+            controllerProgressTotal: 45000,
+            extensions: 1
+          },
+          candidate: {
+            controllerLevel: 1,
+            controllerProgress: 125,
+            controllerProgressTotal: 200,
+            extensions: 0
           }
         },
         telemetry: {
@@ -112,6 +140,20 @@ describe("run samples", () => {
             rcl: { "1": 2, "2": 0, "3": 0 }
           }
         },
+        rooms: {
+          baseline: {
+            controllerLevel: 3,
+            controllerProgress: null,
+            controllerProgressTotal: null,
+            extensions: 5
+          },
+          candidate: {
+            controllerLevel: 1,
+            controllerProgress: 150,
+            controllerProgressTotal: 200,
+            extensions: 0
+          }
+        },
         telemetry: {
           baseline: {
             schemaVersion: 4,
@@ -143,8 +185,11 @@ describe("run samples", () => {
     expect(summary.users.baseline.controllerLevelMilestones["1"]).toBe(100);
     expect(summary.users.baseline.controllerLevelMilestones["2"]).toBe(125);
     expect(summary.users.baseline.controllerLevelMilestones["3"]).toBe(150);
+    expect(summary.users.baseline.controllerProgressToRCL3Pct).toBe(100);
     expect(summary.users.baseline.maxCombinedRCL).toBe(3);
     expect(summary.users.baseline.telemetrySampleCount).toBe(3);
+    expect(summary.users.baseline.firstExtensionTick).toBe(125);
+    expect(summary.users.baseline.allRcl2ExtensionsTick).toBe(150);
     expect(summary.users.baseline.spawnIdlePct).toBeCloseTo(33.33, 2);
     expect(summary.users.baseline.sourceCoveragePct).toBeCloseTo(83.33, 2);
     expect(summary.users.baseline.sourceUptimePct).toBeCloseTo(66.67, 2);
@@ -153,7 +198,10 @@ describe("run samples", () => {
     expect(summary.users.baseline.activeHarvestingSourceCoveragePct).toBeCloseTo(16.67, 2);
     expect(summary.users.baseline.activeHarvestingSourceUptimePct).toBe(0);
     expect(summary.users.candidate.controllerLevelMilestones["2"]).toBeNull();
+    expect(summary.users.candidate.controllerProgressToRCL3Pct).toBeCloseTo(0.33, 2);
     expect(summary.users.candidate.maxOwnedControllers).toBe(2);
+    expect(summary.users.candidate.firstExtensionTick).toBeNull();
+    expect(summary.users.candidate.allRcl2ExtensionsTick).toBeNull();
     expect(summary.users.candidate.telemetrySampleCount).toBe(0);
     expect(summary.users.candidate.spawnIdlePct).toBeNull();
     expect(summary.users.candidate.sourceCoveragePct).toBeNull();

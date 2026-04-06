@@ -1,6 +1,15 @@
 version: 1
 name: milestone-1-opener
 description: Fixed-map opener benchmark suite for milestone 1.
+gates:
+  primaryMetrics:
+    - T_RCL3
+    - controllerProgressToRCL3Pct
+    - spawnIdlePct
+  training:
+    minImprovedPrimaryMetrics: 2
+  holdout:
+    maxRegressionPct: 5
 cases:
   - id: train-a-2k
     cohort: train

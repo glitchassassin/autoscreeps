@@ -27,8 +27,9 @@ export type SuiteCaseResult = {
 
 export type SuiteHarvestModeMetric = "harvestingSourceCoveragePct" | "harvestingSourceUptimePct";
 export type SuiteActiveHarvestMetric = "activeHarvestingSourceCoveragePct" | "activeHarvestingSourceUptimePct";
+export type SuiteExtensionMetric = "firstExtensionTick" | "allRcl2ExtensionsTick";
 
-type SuiteSummaryMetric = SuitePrimaryMetric | SuiteHarvestModeMetric | SuiteActiveHarvestMetric;
+type SuiteSummaryMetric = SuitePrimaryMetric | SuiteHarvestModeMetric | SuiteActiveHarvestMetric | SuiteExtensionMetric;
 
 type MetricComparison<Metric extends string> = {
   metric: Metric;
@@ -44,6 +45,7 @@ type MetricComparison<Metric extends string> = {
 export type SuiteMetricComparison = MetricComparison<SuitePrimaryMetric>;
 export type SuiteHarvestModeMetricComparison = MetricComparison<SuiteHarvestModeMetric>;
 export type SuiteActiveHarvestMetricComparison = MetricComparison<SuiteActiveHarvestMetric>;
+export type SuiteExtensionMetricComparison = MetricComparison<SuiteExtensionMetric>;
 
 export type SuiteCohortSummary = {
   caseCount: number;
@@ -52,6 +54,7 @@ export type SuiteCohortSummary = {
   primaryMetrics: Record<SuitePrimaryMetric, SuiteMetricComparison>;
   harvestModeMetrics: Record<SuiteHarvestModeMetric, SuiteHarvestModeMetricComparison>;
   activeHarvestMetrics: Record<SuiteActiveHarvestMetric, SuiteActiveHarvestMetricComparison>;
+  extensionMetrics: Record<SuiteExtensionMetric, SuiteExtensionMetricComparison>;
 };
 
 export type SuiteGateSummary = {
@@ -86,6 +89,7 @@ export type SuiteRunResult = {
 
 const suiteHarvestModeMetrics: SuiteHarvestModeMetric[] = ["harvestingSourceCoveragePct", "harvestingSourceUptimePct"];
 const suiteActiveHarvestMetrics: SuiteActiveHarvestMetric[] = ["activeHarvestingSourceCoveragePct", "activeHarvestingSourceUptimePct"];
+const suiteExtensionMetrics: SuiteExtensionMetric[] = ["firstExtensionTick", "allRcl2ExtensionsTick"];
 
 export async function runExperimentSuite(
   input: SuiteRunInput,
@@ -171,6 +175,9 @@ function summarizeCohort(cases: SuiteCaseResult[], metrics: SuitePrimaryMetric[]
   const activeHarvestMetrics = Object.fromEntries(
     suiteActiveHarvestMetrics.map((metric) => [metric, compareMetric(cases, metric)])
   ) as Record<SuiteActiveHarvestMetric, SuiteActiveHarvestMetricComparison>;
+  const extensionMetrics = Object.fromEntries(
+    suiteExtensionMetrics.map((metric) => [metric, compareMetric(cases, metric)])
+  ) as Record<SuiteExtensionMetric, SuiteExtensionMetricComparison>;
 
   return {
     caseCount: cases.length,
@@ -178,7 +185,8 @@ function summarizeCohort(cases: SuiteCaseResult[], metrics: SuitePrimaryMetric[]
     completionPct: toPct(completedCaseCount, cases.length) ?? 0,
     primaryMetrics,
     harvestModeMetrics,
-    activeHarvestMetrics
+    activeHarvestMetrics,
+    extensionMetrics
   };
 }
 
@@ -261,6 +269,8 @@ function metricValue(summary: UserRunSummaryMetrics, metric: SuiteSummaryMetric)
       return summary.controllerLevelMilestones["2"] ?? null;
     case "T_RCL3":
       return summary.controllerLevelMilestones["3"] ?? null;
+    case "controllerProgressToRCL3Pct":
+      return summary.controllerProgressToRCL3Pct;
     case "spawnIdlePct":
       return summary.spawnIdlePct;
     case "sourceCoveragePct":
@@ -275,6 +285,10 @@ function metricValue(summary: UserRunSummaryMetrics, metric: SuiteSummaryMetric)
       return summary.activeHarvestingSourceCoveragePct;
     case "activeHarvestingSourceUptimePct":
       return summary.activeHarvestingSourceUptimePct;
+    case "firstExtensionTick":
+      return summary.firstExtensionTick;
+    case "allRcl2ExtensionsTick":
+      return summary.allRcl2ExtensionsTick;
   }
 }
 
@@ -283,7 +297,10 @@ function metricDirection(metric: SuiteSummaryMetric): SuiteMetricComparison["dir
     case "T_RCL2":
     case "T_RCL3":
     case "spawnIdlePct":
+    case "firstExtensionTick":
+    case "allRcl2ExtensionsTick":
       return "lower-is-better";
+    case "controllerProgressToRCL3Pct":
     case "sourceCoveragePct":
     case "sourceUptimePct":
     case "harvestingSourceCoveragePct":

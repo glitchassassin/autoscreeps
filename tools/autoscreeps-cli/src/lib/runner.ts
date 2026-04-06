@@ -8,6 +8,7 @@ import type {
   RunMetrics,
   RunRecord,
   RunSample,
+  RunSampleRoomMetrics,
   RunTerminationReason,
   TerminalOutcome,
   UserBadge,
@@ -27,6 +28,7 @@ import type { ScenarioConfig, TerminalCondition, TerminalConditionSet } from "./
 import { ScreepsApiClient, type StatsResponse } from "./screeps-api.ts";
 import { ScreepsServerCli } from "./server-cli.ts";
 import { timestamp } from "./utils.ts";
+import { summarizeLiveRoom } from "./watch.ts";
 
 type DuelVariantInput = {
   source: string;
@@ -260,19 +262,26 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
         const captureSample = shouldCaptureRunSample(runRecord.run.startGameTime!, lastSampleGameTime, gameTime, sampleEveryTicks);
         let stats: StatsResponse | null = null;
         let telemetryData: Record<VariantRole, string | null> | null = null;
+        let roomData: RunSample["rooms"] | null = null;
 
         if (runRecord.run.terminalConditions || captureSample) {
           stats = await api.getStats();
         }
 
         if (captureSample) {
-          const [baselineTelemetry, candidateTelemetry] = await Promise.all([
+          const [baselineTelemetry, candidateTelemetry, baselineRoomObjects, candidateRoomObjects] = await Promise.all([
             api.getMemorySegment(baselineSession, autoscreepsTelemetrySegmentId),
-            api.getMemorySegment(candidateSession, autoscreepsTelemetrySegmentId)
+            api.getMemorySegment(candidateSession, autoscreepsTelemetrySegmentId),
+            api.getRoomObjects(runRecord.rooms.baseline),
+            api.getRoomObjects(runRecord.rooms.candidate)
           ]);
           telemetryData = {
             baseline: baselineTelemetry,
             candidate: candidateTelemetry
+          };
+          roomData = {
+            baseline: buildSampleRoomMetrics(runRecord.rooms.baseline, baselineRoomObjects),
+            candidate: buildSampleRoomMetrics(runRecord.rooms.candidate, candidateRoomObjects)
           };
         }
 
@@ -304,7 +313,7 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
         }
 
         if (captureSample && stats) {
-          const sample = buildRunSample(gameTime, stats, credentials, telemetryData);
+          const sample = buildRunSample(gameTime, stats, credentials, telemetryData, roomData);
           samples.push(sample);
           lastSampleGameTime = gameTime;
           await appendRunSample(runDir, sample);
@@ -361,13 +370,18 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
     ]);
 
     if (samples[samples.length - 1]?.gameTime !== endGameTime) {
-      const [baselineTelemetry, candidateTelemetry] = await Promise.all([
+      const [baselineTelemetry, candidateTelemetry, baselineRoomObjects, candidateRoomObjects] = await Promise.all([
         api.getMemorySegment(baselineSession, autoscreepsTelemetrySegmentId),
-        api.getMemorySegment(candidateSession, autoscreepsTelemetrySegmentId)
+        api.getMemorySegment(candidateSession, autoscreepsTelemetrySegmentId),
+        api.getRoomObjects(runRecord.rooms.baseline),
+        api.getRoomObjects(runRecord.rooms.candidate)
       ]);
       const finalSample = buildRunSample(endGameTime, finalStats, credentials, {
         baseline: baselineTelemetry,
         candidate: candidateTelemetry
+      }, {
+        baseline: buildSampleRoomMetrics(runRecord.rooms.baseline, baselineRoomObjects),
+        candidate: buildSampleRoomMetrics(runRecord.rooms.candidate, candidateRoomObjects)
       });
       samples.push(finalSample);
       lastSampleGameTime = endGameTime;
@@ -561,7 +575,8 @@ function buildRunSample(
   gameTime: number,
   stats: StatsResponse,
   credentials: Record<VariantRole, { username: string }>,
-  telemetryData: Record<VariantRole, string | null> | null
+  telemetryData: Record<VariantRole, string | null> | null,
+  roomData: Record<VariantRole, RunSampleRoomMetrics> | null
 ): RunSample {
   const sample: RunSample = {
     gameTime,
@@ -571,11 +586,26 @@ function buildRunSample(
     }
   };
 
+  if (roomData) {
+    sample.rooms = roomData;
+  }
+
   if (telemetryData) {
     sample.telemetry = buildTelemetryByRole(telemetryData);
   }
 
   return sample;
+}
+
+function buildSampleRoomMetrics(room: string, response: Awaited<ReturnType<ScreepsApiClient["getRoomObjects"]>>): RunSampleRoomMetrics {
+  const summary = summarizeLiveRoom(room, response);
+
+  return {
+    controllerLevel: summary.controllerLevel,
+    controllerProgress: summary.controllerProgress,
+    controllerProgressTotal: summary.controllerProgressTotal,
+    extensions: summary.extensions
+  };
 }
 
 export function evaluateTerminalConditions(
