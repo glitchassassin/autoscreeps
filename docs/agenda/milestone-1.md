@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a reproducible experiment system and scorecard for early-game colony performance, then use it to land the first bot architecture changes for a stable opener.
+Build a reproducible experiment system and scorecard for sustainable early-game colony growth, then use it to land the first bot architecture changes for a stable opener that makes reliable progress toward `RCL3`.
 
 Milestone 1 is intentionally limited to economy, recovery, and observability. Adversarial pressure is deferred to milestone 2.
 
@@ -18,15 +18,14 @@ Milestone 1 is intentionally limited to economy, recovery, and observability. Ad
 - A training suite and a holdout suite both exist and are used for promotion decisions.
 - The selected opener architecture reaches the tick budget in `100%` of clean runs to `5000` ticks without crash or deadlock.
 - The selected opener architecture reaches the tick budget in at least `95%` of deterministic disruption runs to `5000` ticks.
-- Relative to the current `bots/basic` baseline, the selected architecture improves at least `2` primary opener metrics on the training suite.
+- Relative to the current `bots/basic` baseline, the selected architecture improves at least `2` primary sustainable-growth metrics on the training suite.
 - The selected architecture shows no material holdout regression. The default gate is no worse than `5%` on any primary metric.
 
 ## Primary Metrics
 
-- `T_RCL2`: first tick an owned controller reaches RCL 2.
 - `T_RCL3`: first tick an owned controller reaches RCL 3.
+- `controllerProgressToRCL3Pct`: normalized progress from owned `RCL1` start to owned `RCL3` completion at end of run.
 - `spawnIdlePct`: percent of sampled ticks where a spawn is idle while the bot reports unmet spawn demand.
-- `sourceUptimePct`: percent of sampled ticks where each owned source has an assigned active worker.
 - `recoveryLatency`: ticks from a deterministic disruption event to restoration of minimum viable staffing.
 - `completionRate5k`: fraction of runs that reach the tick budget without collapse.
 
@@ -38,7 +37,11 @@ Milestone 1 is intentionally limited to economy, recovery, and observability. Ad
 - `energyBuiltPer100Ticks`
 - `creepDeaths`
 - `firstExtensionTick`
+- `allRcl2ExtensionsTick`
 - `firstContainerTick`
+- `activeHarvestingSourceCoveragePct`
+- `activeHarvestingSourceUptimePct`
+- `sourceBacklogEnergy`
 - `queueDepth`
 - `modeTransitions`
 
@@ -55,7 +58,7 @@ Milestone 1 is intentionally limited to economy, recovery, and observability. Ad
 - Replace random case selection with explicit fixed-map manifests or seedable map selection.
 - Add periodic sampling during runs. Start with one sample every `25` ticks.
 - Record per-sample world state for each variant: controller level, controller progress, creep count, spawn count, extension count, construction site count, owned room count, combined RCL, total owned energy, and room summary data needed for derived metrics.
-- Add derived-metric computation from the sample stream so the runner can calculate `T_RCL2`, `T_RCL3`, completion, and structure timing automatically.
+- Add derived-metric computation from the sample stream so the runner can calculate `T_RCL3`, normalized controller progress to `RCL3`, completion, and structure timing automatically.
 - Add suite-level aggregation and comparison so candidate runs can be judged on medians, p90s, completion rate, and regressions.
 - Add support for deterministic disruption events for milestone-one recovery tests.
 
@@ -91,19 +94,21 @@ Milestone 1 is intentionally limited to economy, recovery, and observability. Ad
 
 ### Phase 2
 
-- Test one architectural hypothesis at a time against the training suite.
+- Establish a minimum opener baseline of competence: dynamic spawn quotas plus strong-priority `RCL2` extension building.
+- Test one whole-strategy architectural hypothesis at a time on top of that baseline against the training suite.
 - Validate every promising change against the holdout suite and the disruption suite.
 - Keep only changes that improve the training suite without introducing material holdout regression.
 
 ## Milestone-One Hypotheses
 
-- Hypothesis A: fixed role counts are the main reason for poor opener stability. Test a demand-based spawn queue.
-- Hypothesis B: round-trip direct harvesting is the main reason for weak energy throughput. Test runtime-sensed source-resident harvesting, courier logistics, and source-side buffering.
+- Hypothesis A: fixed role counts and static post-`RCL2` priorities are the main reason for weak sustainable growth. Establish dynamic spawn quotas and strong-priority `RCL2` extension building as the new opener baseline.
+- Hypothesis B: once that competence baseline exists, discrete whole-opener strategies such as buffer-first direct workers, delayed courier transitions, and backlog-triggered logistics will differ meaningfully on `controllerProgressToRCL3Pct`, `T_RCL3`, and extension timing.
 - Hypothesis C: the current bot collapses too easily after early losses. Test explicit recovery mode and emergency spawn priorities.
 
 ## Promotion Rules
 
 - A candidate must beat the current selected baseline on at least `2` primary metrics on the training suite.
+- When a run does not reach `RCL3`, `controllerProgressToRCL3Pct` is the primary controller-progress score for promotion decisions.
 - A candidate must not regress more than `5%` on any primary metric on the holdout suite.
 - A candidate must preserve or improve `completionRate5k` on the disruption suite.
 - A candidate must produce complete run artifacts and parseable telemetry for every evaluation run.
@@ -120,10 +125,11 @@ Milestone 1 is intentionally limited to economy, recovery, and observability. Ad
 8. Add structured bot telemetry with a stable schema version.
 9. Benchmark the current `bots/basic` bot across the full suite and record the baseline report.
 10. Refactor `bots/basic` into a thin `sense -> plan -> spawn -> act` colony loop without intentionally changing strategy.
-11. Implement and evaluate a demand-based spawn queue.
-12. Implement and evaluate source-resident harvesting and courier logistics.
-13. Implement and evaluate explicit recovery mode and emergency spawn priorities.
-14. Freeze the selected milestone-one baseline for use in milestone 2.
+11. Add normalized `RCL3` progress and extension timing to the milestone-one scorecard.
+12. Implement and evaluate dynamic spawn quotas plus strong-priority `RCL2` extension building as the minimum opener baseline of competence.
+13. Implement and evaluate discrete sustainable-growth strategies on top of that baseline.
+14. Implement and evaluate explicit recovery mode and emergency spawn priorities.
+15. Freeze the selected milestone-one opener baseline for use in milestone 2.
 
 ## Deliverables
 

@@ -382,3 +382,374 @@ node src/cli.ts experiment run suite \
 
 - `keep`
 - Use this telemetry baseline for the upcoming source-resident harvester and courier experiments.
+
+## Entry `exp-2026-04-05-source-resident-bootstrap-harvesters`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-05`
+
+### Hypothesis
+
+- If harvesters keep a runtime-selected source residency and stay source-side when no immediate energy sink needs filling, the opener should improve active source utilization without requiring a courier role yet.
+- That should improve the stricter active-harvest source metrics and may improve real economy metrics if direct-source contention and off-source drift are reduced enough.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Change tested:
+  - make harvesters keep a room-local source assignment chosen from the least-loaded visible source
+  - when no spawn or extension needs energy, return harvesters to their source instead of letting them drift into controller work
+  - keep upgrader behavior, role counts, and body plans unchanged
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-05T01-47-16-872Z-e5138a4a`
+  - `train-b-2k`: `2026-04-05T01-56-21-163Z-50c9c8e7`
+  - `train-c-5k`: `2026-04-05T02-05-20-746Z-cd5b64fc`
+  - `train-d-5k`: `2026-04-05T02-26-51-265Z-2ad43735`
+  - `holdout-a-2k`: `2026-04-05T02-30-12-202Z-fc3ae0cb`
+  - `holdout-b-5k`: `2026-04-05T02-39-12-195Z-06e72651`
+
+### Results
+
+- All `6/6` cases completed.
+- Train cohort summary:
+  - `T_RCL2`: regressed from `569.5` to `645.5` (`+13.35%`)
+  - `spawnIdlePct`: improved from `12.73%` to `11.79%`
+  - `sourceCoveragePct`: improved from `50.74%` to `97.13%`
+  - `sourceUptimePct`: improved from `1.48%` to `94.27%`
+  - harvest-mode source coverage: improved from `44.99%` to `82.12%`
+  - harvest-mode source uptime: improved from `1.23%` to `72.21%`
+  - active-harvest source coverage: improved from `29.13%` to `68.53%`
+  - active-harvest source uptime: improved from `0%` to `58.45%`
+- Holdout cohort summary:
+  - `T_RCL2`: regressed from `459` to `535.5` (`+16.67%`)
+  - `spawnIdlePct`: regressed from `10.89%` to `11.78%` (`+8.17%`)
+  - `sourceCoveragePct`: improved from `50.89%` to `97.59%`
+  - `sourceUptimePct`: improved from `1.78%` to `95.19%`
+  - harvest-mode source coverage: improved from `45.06%` to `82.77%`
+  - harvest-mode source uptime: improved from `1.01%` to `73.91%`
+  - active-harvest source coverage: improved from `34.92%` to `72.07%`
+  - active-harvest source uptime: improved from `0.26%` to `63.77%`
+- Gate result:
+  - training passed with `3` improved primary metrics
+  - holdout failed because `T_RCL2` regressed by `16.67%` and `spawnIdlePct` regressed by `8.17%`
+  - overall suite result: `failed`
+- Notable per-case behavior:
+  - every candidate room finished with dropped energy objects near the sources while the baseline rooms did not, which matches the intended source-resident behavior and the missing courier layer
+  - the stricter active-harvest metrics improved dramatically, so this was a real source-side behavior change rather than an assignment bookkeeping artifact
+
+### Interpretation
+
+- This experiment successfully created source-resident harvesting in practice.
+- The harvest-mode and active-harvest metrics both improved sharply, which confirms that harvesters spent much more time actually present on sources rather than merely being assigned there.
+- However, the economy regressed because the opener still lacked source-backlog handling or courier transport:
+  - source-side energy accumulated
+  - `T_RCL2` slowed substantially on both train and holdout
+  - holdout `spawnIdlePct` also regressed beyond the gate
+- That means source residency alone is not enough. The experiment validates the new direction, but it also shows that residency and transport need to arrive together or in very tight sequence.
+- After evaluation, the source-resident harvester behavior was reverted so the workspace stays on the committed baseline while the result remains documented.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: the next experiment should be `source-backlog handling`, so source-resident harvesting has a way to move energy off-source before it becomes stranded.
+- Hypothesis B: a minimal courier or pickup path may recover the source-residency gain without paying the current controller-timing penalty.
+- Hypothesis C: future source-side experiments should keep using active-harvest metrics as proof that the bot really changed source behavior, but promotion should still be blocked by `T_RCL2` and holdout `spawnIdlePct`.
+
+### Decision
+
+- `reject`
+- Do not keep the source-resident harvester behavior by itself. Keep the experiment record, keep the active-harvest telemetry, and move on to source-backlog handling or a bootstrap courier step.
+
+## Entry `exp-2026-04-05-source-backlog-handling`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-05`
+
+### Hypothesis
+
+- If source-resident harvesters are paired with a minimal backlog pickup path, the opener may keep the source-side residency gains while reducing the controller-timing regression caused by stranded source energy.
+- A no-new-role pickup path should improve or preserve active-harvest metrics and recover enough useful energy flow to avoid the previous `T_RCL2` and holdout `spawnIdlePct` regressions.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Change tested:
+  - restore source-resident harvester behavior from the previous experiment
+  - make empty upgraders prefer source-side dropped energy or source-adjacent container energy before direct harvesting
+  - keep roles, role counts, and body plans unchanged
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-05T03-18-47-745Z-4374c4d0`
+  - `train-b-2k`: `2026-04-05T03-27-47-341Z-379548af`
+  - `train-c-5k`: `2026-04-05T03-36-46-209Z-bf9d328a`
+  - `train-d-5k`: `2026-04-05T04-08-19-356Z-1f735629`
+  - holdout cases: not reached because the long training run failed completion
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+- Completed short-train results:
+  - `train-a-2k`
+    - `T_RCL2`: regressed from `609` to `710` (`+16.58%`)
+    - `spawnIdlePct`: regressed from `18.75%` to `20%`
+    - `sourceCoveragePct`: improved from `50%` to `81.25%`
+    - `sourceUptimePct`: improved from `0%` to `33.75%`
+    - harvest-mode source coverage: improved from `40.63%` to `47.5%`
+    - harvest-mode source uptime: improved from `0%` to `8.75%`
+    - active-harvest source coverage: improved from `24.38%` to `31.25%`
+    - active-harvest source uptime: improved from `0%` to `1.25%`
+  - `train-b-2k`
+    - `T_RCL2`: regressed from `480` to `531` (`+10.63%`)
+    - `spawnIdlePct`: improved from `17.5%` to `15%`
+    - `sourceCoveragePct`: improved from `95.63%` to `96.25%`
+    - `sourceUptimePct`: improved from `91.25%` to `92.5%`
+    - harvest-mode source coverage: improved from `63.13%` to `78.75%`
+    - harvest-mode source uptime: improved from `36.25%` to `68.75%`
+    - active-harvest source coverage: improved from `39.38%` to `66.88%`
+    - active-harvest source uptime: improved from `12.5%` to `60%`
+- Long-train failures:
+  - `train-c-5k` failed with `Timed out waiting for game time 5001; last observed tick was 494`
+  - `train-d-5k` failed immediately afterward with `Timed out waiting for http://127.0.0.1:21025 to become ready`
+- Suite status:
+  - training did not complete the full suite
+  - holdout was not run because the experiment already failed the milestone completion requirement on long clean runs
+- Notable behavior:
+  - even the completed short runs still ended with dropped energy objects present in the candidate room, so the minimal pickup path did not eliminate source-side backlog
+
+### Interpretation
+
+- The minimal backlog-pickup path was not enough.
+- On the completed short training maps, source-use metrics improved, especially the stricter active-harvest metrics, but `T_RCL2` still regressed on both maps.
+- More importantly, the candidate failed to satisfy a milestone-one baseline requirement: it did not reliably reach the `5000`-tick budget on clean long runs.
+- The likely takeaway is that opportunistic upgrader pickup is too weak to pair with source-resident harvesting on its own. Source-side energy still accumulates, and the long-run world appears to stall under that pressure.
+- That means the no-new-role backlog-handling idea is not promotable and is not a stable stepping stone by itself.
+- After evaluation, the behavior change was reverted so the workspace stays on the committed baseline while the failed experiment remains documented.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: the next viable experiment is a real `bootstrap miner + courier` opener rather than more opportunistic generic-worker pickup.
+- Hypothesis B: if a smaller step is attempted first, it should introduce a dedicated courier path explicitly sized to drain source-side backlog, not just let upgraders opportunistically absorb it.
+- Hypothesis C: active-harvest telemetry remains useful here because it confirmed the source-side behavior changed for real, even though the resulting opener was unstable.
+
+### Decision
+
+- `reject`
+- Do not keep this behavior change. Keep the experiment record, revert the runtime behavior, and move on to a dedicated courier-based bootstrap experiment.
+
+## Entry `exp-2026-04-05-bootstrap-miner-courier-opener`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-05`
+
+### Hypothesis
+
+- If the opener stages into miner/courier behavior instead of relying on generic workers, it should keep two-source utilization high while restoring useful energy flow into colony sinks and controller progress.
+- A minimal staged version can reuse the existing `harvester` and `upgrader` role names while changing their behavior: harvesters become source-resident miners once courier support exists, and upgraders become courier/upgrader hybrids that haul source backlog into the colony before upgrading.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Change tested:
+  - keep early bootstrap behavior until at least one courier-capable upgrader exists
+  - then switch harvesters into source-resident mining with runtime least-loaded source selection
+  - make upgraders collect source backlog first and deliver to colony energy sinks before upgrading
+  - give upgraders a more courier-oriented body at low energy while keeping harvester bodies unchanged
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-05T13-39-21-907Z-87b55119`
+  - `train-b-2k`: `2026-04-05T13-48-12-344Z-2aff03fb`
+  - `train-c-5k`: `2026-04-05T13-57-12-332Z-a519098f`
+  - `train-d-5k`: `2026-04-05T14-18-44-837Z-c5d1a70a`
+  - `holdout-a-2k`: `2026-04-05T14-40-17-289Z-e962e139`
+  - `holdout-b-5k`: `2026-04-05T14-49-17-382Z-e915eb00`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL2`: regressed from `570` to `689` (`+20.88%`)
+  - `spawnIdlePct`: improved from `12.27%` to `11.64%`
+  - `sourceCoveragePct`: improved from `50.76%` to `96.59%`
+  - `sourceUptimePct`: improved from `1.52%` to `93.18%`
+  - harvest-mode source coverage: improved from `44.83%` to `83.13%`
+  - harvest-mode source uptime: improved from `1.02%` to `73.46%`
+  - active-harvest source coverage: improved from `29.17%` to `71.62%`
+  - active-harvest source uptime: improved from `0%` to `63.09%`
+- Holdout cohort summary:
+  - `T_RCL2`: regressed from `457` to `584.5` (`+27.9%`)
+  - `spawnIdlePct`: regressed from `10.85%` to `11.18%` (`+3.04%`)
+  - `sourceCoveragePct`: improved from `51%` to `96.01%`
+  - `sourceUptimePct`: improved from `1.99%` to `92.02%`
+  - harvest-mode source coverage: improved from `44.69%` to `86.99%`
+  - harvest-mode source uptime: improved from `1%` to `79.76%`
+  - active-harvest source coverage: improved from `34.75%` to `73.86%`
+  - active-harvest source uptime: improved from `0%` to `67.56%`
+- Gate result:
+  - training passed with `3` improved primary metrics
+  - holdout failed because `T_RCL2` regressed by `27.9%`
+  - overall suite result: `failed`
+- Notable behavior:
+  - unlike the previous no-new-role backlog experiment, this candidate completed the full `5k` suite cleanly
+  - the source-side metrics improved dramatically across every trust level, so the staged miner/courier behavior was real and stable
+  - despite that stability, controller progress slowed sharply enough that the opener remained non-promotable
+
+### Interpretation
+
+- This experiment solved the transport-stability problem that broke the lighter backlog-handling attempt.
+- It produced the strongest source metrics so far and held up on the long `5k` runs, which is useful evidence that the runtime miner/courier transition is mechanically sound.
+- But it still over-invested in logistics relative to controller progress:
+  - the courier-oriented upgrader body and sink-first routing improved source utilization substantially
+  - `T_RCL2` regressed badly on both train and holdout anyway
+- So the core issue is no longer simulation stability or bogus telemetry. The opener is now plainly too logistics-heavy for milestone-one promotion.
+- After evaluation, the staged miner/courier behavior was reverted so the workspace remains on the committed baseline while the experiment result stays documented.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: a dedicated courier opener may still be viable, but it likely needs a later transition into pure courier behavior or a cheaper early courier body so controller progress is not delayed this much.
+- Hypothesis B: the next experiment should try a narrower dedicated-courier bootstrap, such as `2 harvesters -> 1 courier-upgrader -> delay the second courier/upgrader`, rather than immediately making both upgrader slots courier-heavy.
+- Hypothesis C: source-side metrics are no longer the bottleneck for this branch; future variants on the courier path must optimize `T_RCL2` first.
+
+### Decision
+
+- `reject`
+- Do not keep this behavior change. Keep the experiment record, revert the runtime behavior, and only revisit the courier path with a materially cheaper controller-progress tradeoff.
+
+## Backlog Update `2026-04-06-rcl3-progress-pivot`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-06`
+
+### Trigger
+
+- Theoretical throughput analysis showed that the fastest possible `RCL2` path is not the same thing as a sustainable opener architecture.
+- The recent source-resident and courier experiments confirmed that source metrics can improve dramatically while controller timing still regresses.
+- That makes `T_RCL2` a poor primary design target for the remaining milestone-one opener work.
+
+### Deprecated Planning Assumptions
+
+- Deprecate `T_RCL2` as a promotion target for future opener experiments.
+- Deprecate "maximize source coverage" as a standalone success condition.
+- Deprecate strategy proposals that treat fixed quotas or one-off source-utilization tweaks as the main architectural decision.
+
+### New Baseline Of Competence
+
+- All future opener experiments should assume dynamic spawn quotas as the baseline control policy.
+- All future opener experiments should build `RCL2` extensions with strong priority.
+- Strategy experiments may still vary in exactly how and when dynamic quotas and extension-first behavior are implemented, but they should no longer compare against the old fixed-quota, no-extension-plan opener.
+
+### New Primary Evaluation Focus
+
+- `T_RCL3` when a run actually reaches `RCL3`
+- `controllerProgressToRCL3Pct` when a run does not reach `RCL3`
+- `spawnIdlePct` as a colony-efficiency companion metric
+- `firstExtensionTick` and `allRcl2ExtensionsTick` as structure-timing support metrics
+- active-harvest and source-backlog metrics as pipeline guardrails rather than the main objective
+
+### New Planned Experiments
+
+- `exp-2026-04-06-rcl3-progress-and-extension-metrics`
+  - add normalized progress-to-`RCL3` and extension timing metrics to run and suite summaries
+- `exp-2026-04-06-dynamic-quota-extension-baseline`
+  - establish dynamic spawn quotas plus strong-priority `RCL2` extension building as the new minimum opener baseline
+- `exp-2026-04-06-buffer-first-dynamic-direct`
+  - test a dynamic-quota direct-worker strategy that treats the spawn as the central energy buffer and delays the second upgrader
+- `exp-2026-04-06-coverage-aware-dynamic-direct`
+  - test a dynamic direct-worker strategy that only adds upstream labor when active source coverage is genuinely missing
+- `exp-2026-04-06-post-rcl2-single-courier-transition`
+  - test a strategy that stays direct through `RCL2` extensions and only then adds a single courier transition
+- `exp-2026-04-06-backlog-triggered-courier`
+  - test a strategy that activates courier behavior only when measured source backlog crosses a threshold
+- `exp-2026-04-06-container-opportunist`
+  - test runtime source-container investment only if backlog persists after dynamic quotas and extension buildout
+
+### Decision
+
+- Pivot milestone-one opener work toward sustainable `RCL3` progress.
+- Implement the metric and baseline-of-competence changes before choosing the next whole-strategy experiment.
+
+## Entry `exp-2026-04-06-rcl3-progress-and-extension-metrics`
+
+- Status: `planned`
+- Owner: `OpenCode`
+- Date: `2026-04-06`
+
+### Hypothesis
+
+- If the suite reports normalized controller progress toward `RCL3` and extension timing directly, future opener experiments can be judged on sustainable growth even when no candidate actually reaches `RCL3` by the end of the run.
+- This should give better feedback than `T_RCL2` for strategies that intentionally trade some early controller speed for stronger post-`RCL2` economy shape.
+
+### Experiment
+
+- Variant or branch: `workspace`
+- Bot package: `bots/basic`
+- Planned change:
+  - extend sampled run summaries with `controllerProgressToRCL3Pct`
+  - add extension timing metrics such as `firstExtensionTick` and `allRcl2ExtensionsTick`
+  - surface the new metrics in suite summaries without removing the existing source metrics
+
+### Results
+
+- Pending.
+
+### Interpretation
+
+- Pending.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: a candidate can lag slightly on early controller timing while still winning clearly on sustainable `RCL3` progress.
+- Hypothesis B: extension timing will explain more of the medium-horizon opener variance than raw source coverage once dynamic quotas are in place.
+
+### Decision
+
+- Pending.
+
+## Entry `exp-2026-04-06-dynamic-quota-extension-baseline`
+
+- Status: `planned`
+- Owner: `OpenCode`
+- Date: `2026-04-06`
+
+### Hypothesis
+
+- Dynamic spawn quotas plus strong-priority `RCL2` extension building form the minimum competent baseline for all remaining milestone-one opener experiments.
+- Even before comparing higher-level strategies, this baseline should improve sustainable controller progress by removing the fixed-quota bottleneck and making post-`RCL2` energy capacity expansion explicit.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Planned change:
+  - replace fixed `2 harvester / 2 upgrader` spawn quotas with a dynamic quota policy driven by room state
+  - add strong-priority `RCL2` extension building to the baseline opener
+  - keep the initial implementation strategy-agnostic enough that later direct, courier, and container experiments can inherit it cleanly
+
+### Results
+
+- Pending.
+
+### Interpretation
+
+- Pending.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: a dynamic direct-worker strategy will become a credible sustainable-growth baseline once extension timing is explicitly managed.
+- Hypothesis B: later courier experiments should be judged as incremental improvements on this baseline, not as replacements for it.
+
+### Decision
+
+- Pending.
