@@ -170,6 +170,87 @@ describe("watch helpers", () => {
     expect(rendered).not.toContain("+");
   });
 
+  it("pads separator and room rows to the full dashboard width", () => {
+    const rendered = renderDashboard({
+      mode: "follow-latest",
+      details: {
+        run: createRunRecord("run-2", "2026-01-01T00:00:00.000Z"),
+        variants: {
+          baseline: {
+            role: "baseline",
+            snapshot: {
+              kind: "git",
+              source: "git:main",
+              ref: "main",
+              resolvedSha: "abc123"
+            },
+            build: {
+              packagePath: "bots/basic",
+              bundleHash: "hash-a",
+              bundleSize: 10,
+              builtAt: "2026-01-01T00:00:00.000Z",
+              nodeVersion: "v22.0.0"
+            }
+          },
+          candidate: {
+            role: "candidate",
+            snapshot: {
+              kind: "workspace",
+              source: "workspace",
+              baseSha: "def456",
+              branchName: "main",
+              dirty: true,
+              patchFile: "candidate.patch",
+              patchHash: "hash-b"
+            },
+            build: {
+              packagePath: "bots/basic",
+              bundleHash: "hash-b",
+              bundleSize: 12,
+              builtAt: "2026-01-01T00:00:00.000Z",
+              nodeVersion: "v22.0.0"
+            }
+          }
+        },
+        metrics: null
+      },
+      events: [
+        {
+          timestamp: "2026-01-01T00:00:01.000Z",
+          level: "info",
+          event: "server.reset",
+          message: "Resetting and restarting the private server stack.",
+          data: undefined
+        } satisfies EventRecord
+      ],
+      baseline: null,
+      candidate: {
+        room: "W6N5",
+        owner: "candidate",
+        controllerLevel: 2,
+        controllerProgress: 300,
+        controllerProgressTotal: 45000,
+        creeps: 2,
+        spawns: 1,
+        constructionSites: 0,
+        extensions: 1,
+        energy: 175,
+        energyCapacity: 350,
+        objects: 8
+      },
+      displayGameTime: 10,
+      targetGameTime: 101,
+      statsError: null
+    }, { width: 120, colors: false, clear: false });
+
+    const lines = rendered.split("\n").slice(0, -1);
+    const recentEventsIndex = lines.findIndex((line) => line.includes("Recent Events"));
+
+    expect(lines.every((line) => line.length === 120)).toBe(true);
+    expect(recentEventsIndex).toBeGreaterThan(0);
+    expect(lines[recentEventsIndex - 1]).toBe(" ".repeat(120));
+  });
+
   it("keeps the title on the first line when clearing the screen", () => {
     const rendered = renderDashboard({
       mode: "follow-latest",

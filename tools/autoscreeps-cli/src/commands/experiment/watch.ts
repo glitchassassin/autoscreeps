@@ -163,7 +163,7 @@ export function renderDashboard(snapshot: DashboardSnapshot, options: RenderDash
       colors
     ));
 
-    return `${clearPrefix}${lines.join("\n")}\n`;
+    return finalizeDashboard(lines, width, clearPrefix);
   }
 
   const { run, variants } = snapshot.details;
@@ -225,6 +225,8 @@ export function renderDashboard(snapshot: DashboardSnapshot, options: RenderDash
     lines.push(...joinColumns(
       buildRoomPanel("Baseline", snapshot.baseline, columnWidth, palette.cyan, colors),
       buildRoomPanel("Candidate", snapshot.candidate, columnWidth, palette.magenta, colors),
+      columnWidth,
+      columnWidth,
       gap
     ));
   }
@@ -232,7 +234,7 @@ export function renderDashboard(snapshot: DashboardSnapshot, options: RenderDash
   lines.push("");
   lines.push(...buildPanel("Recent Events", [palette.yellow, palette.comment], formatEventRows(snapshot.events, width - 4, colors), width, colors));
 
-  return `${clearPrefix}${lines.join("\n")}\n`;
+  return finalizeDashboard(lines, width, clearPrefix);
 }
 
 function writeDashboardSnapshot(snapshot: DashboardSnapshot, renderState: DashboardRenderState): void {
@@ -261,6 +263,14 @@ function writeDashboardSnapshot(snapshot: DashboardSnapshot, renderState: Dashbo
   renderState.firstFrame = false;
   renderState.previousLineCount = lineCount;
   renderState.previousWidth = width;
+}
+
+function finalizeDashboard(lines: string[], width: number, clearPrefix: string): string {
+  return `${clearPrefix}${normalizeDashboardLines(lines, width).join("\n")}\n`;
+}
+
+function normalizeDashboardLines(lines: string[], width: number): string[] {
+  return lines.map((line) => padAnsi(truncateAnsi(line, width), width));
 }
 
 function renderTitleBar(width: number, colors: boolean): string {
@@ -349,15 +359,14 @@ function formatEventRows(events: EventRecord[], width: number, colors: boolean):
   });
 }
 
-function joinColumns(leftLines: string[], rightLines: string[], gap: number): string[] {
-  const leftWidth = Math.max(...leftLines.map(visibleLength));
+function joinColumns(leftLines: string[], rightLines: string[], leftWidth: number, rightWidth: number, gap: number): string[] {
   const totalLines = Math.max(leftLines.length, rightLines.length);
   const lines: string[] = [];
 
   for (let index = 0; index < totalLines; index += 1) {
     const left = leftLines[index] ?? "";
     const right = rightLines[index] ?? "";
-    lines.push(`${padAnsi(left, leftWidth)}${" ".repeat(gap)}${right}`.trimEnd());
+    lines.push(`${padAnsi(left, leftWidth)}${" ".repeat(gap)}${padAnsi(right, rightWidth)}`);
   }
 
   return lines;
