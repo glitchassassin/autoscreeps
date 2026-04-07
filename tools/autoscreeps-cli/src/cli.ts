@@ -42,14 +42,14 @@ async function main(): Promise<void> {
 
   experiment
     .command("show")
-    .description("Show a recorded experiment run")
-    .argument("<run-id>", "Run identifier")
+    .description("Show a recorded experiment suite")
+    .argument("<suite-id>", "Suite identifier")
     .action(showExperimentCommand);
 
   experiment
     .command("watch")
-    .description("Watch live status for experiment runs")
-    .argument("[run-id]", "Run identifier to pin")
+    .description("Watch live status for experiment suites")
+    .argument("[suite-id]", "Suite identifier to pin")
     .action(watchExperimentCommand);
 
   await program.parseAsync();

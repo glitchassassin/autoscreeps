@@ -1,23 +1,24 @@
 import { describe, expect, it } from "vitest";
-import type { EventRecord } from "../src/lib/contracts.ts";
+
+import type { EventRecord, SuiteCaseDetails, SuiteIndexEntry, SuiteRecord } from "../src/lib/contracts.ts";
 import type { RoomObjectsResponse } from "../src/lib/screeps-api.ts";
-import { selectRunForWatch, summarizeLiveRoom, summarizeRecordedRoom } from "../src/lib/watch.ts";
 import { renderDashboard, type DashboardSnapshot } from "../src/commands/experiment/watch.ts";
+import { selectSuiteForWatch, summarizeLiveRoom, summarizeRecordedRoom } from "../src/lib/watch.ts";
 
 describe("watch helpers", () => {
-  it("follows the newest run when not pinned", () => {
-    const selected = selectRunForWatch([
-      createRunRecord("older", "2026-01-01T00:00:00.000Z"),
-      createRunRecord("newer", "2026-01-01T00:01:00.000Z")
+  it("follows the newest suite when not pinned", () => {
+    const selected = selectSuiteForWatch([
+      createSuiteIndexEntry("older", "2026-01-01T00:00:00.000Z"),
+      createSuiteIndexEntry("newer", "2026-01-01T00:01:00.000Z")
     ]);
 
     expect(selected?.id).toBe("newer");
   });
 
-  it("pins an explicit run even when a newer run exists", () => {
-    const selected = selectRunForWatch([
-      createRunRecord("older", "2026-01-01T00:00:00.000Z"),
-      createRunRecord("newer", "2026-01-01T00:01:00.000Z")
+  it("pins an explicit suite even when a newer suite exists", () => {
+    const selected = selectSuiteForWatch([
+      createSuiteIndexEntry("older", "2026-01-01T00:00:00.000Z"),
+      createSuiteIndexEntry("newer", "2026-01-01T00:01:00.000Z")
     ], "older");
 
     expect(selected?.id).toBe("older");
@@ -76,47 +77,8 @@ describe("watch helpers", () => {
   it("renders the dashboard in plain text when colors are disabled", () => {
     const snapshot: DashboardSnapshot = {
       mode: "follow-latest",
-      details: {
-        run: createRunRecord("run-1", "2026-01-01T00:00:00.000Z"),
-        variants: {
-          baseline: {
-            role: "baseline",
-            snapshot: {
-              kind: "git",
-              source: "git:main",
-              ref: "main",
-              resolvedSha: "abc123"
-            },
-            build: {
-              packagePath: "bots/basic",
-              bundleHash: "hash-a",
-              bundleSize: 10,
-              builtAt: "2026-01-01T00:00:00.000Z",
-              nodeVersion: "v22.0.0"
-            }
-          },
-          candidate: {
-            role: "candidate",
-            snapshot: {
-              kind: "workspace",
-              source: "workspace",
-              baseSha: "def456",
-              branchName: "main",
-              dirty: true,
-              patchFile: "candidate.patch",
-              patchHash: "hash-b"
-            },
-            build: {
-              packagePath: "bots/basic",
-              bundleHash: "hash-b",
-              bundleSize: 12,
-              builtAt: "2026-01-01T00:00:00.000Z",
-              nodeVersion: "v22.0.0"
-            }
-          }
-        },
-        metrics: null
-      },
+      suite: createSuiteRecord("suite-1", "2026-01-01T00:00:00.000Z"),
+      displayCase: createCaseDetails("run-1"),
       events: [
         {
           timestamp: "2026-01-01T00:00:01.000Z",
@@ -126,6 +88,7 @@ describe("watch helpers", () => {
           data: { gameTime: 10, remainingTicks: 90 }
         } satisfies EventRecord
       ],
+      eventsLabel: "Recent Case Events",
       baseline: {
         room: "W5N5",
         owner: "baseline",
@@ -162,10 +125,10 @@ describe("watch helpers", () => {
     const rendered = renderDashboard(snapshot, { width: 120, colors: false, clear: false });
 
     expect(rendered).toContain("AUTOSCREEPS EXPERIMENT WATCH");
-    expect(rendered).toContain("Run Summary");
+    expect(rendered).toContain("Suite Summary");
     expect(rendered).toContain("Baseline (W5N5)");
     expect(rendered).toContain("Candidate (W6N5)");
-    expect(rendered).toContain("Recent Events");
+    expect(rendered).toContain("Recent Case Events");
     expect(rendered).not.toContain("\u001b[");
     expect(rendered).not.toContain("+");
   });
@@ -173,56 +136,18 @@ describe("watch helpers", () => {
   it("pads separator and room rows to the full dashboard width", () => {
     const rendered = renderDashboard({
       mode: "follow-latest",
-      details: {
-        run: createRunRecord("run-2", "2026-01-01T00:00:00.000Z"),
-        variants: {
-          baseline: {
-            role: "baseline",
-            snapshot: {
-              kind: "git",
-              source: "git:main",
-              ref: "main",
-              resolvedSha: "abc123"
-            },
-            build: {
-              packagePath: "bots/basic",
-              bundleHash: "hash-a",
-              bundleSize: 10,
-              builtAt: "2026-01-01T00:00:00.000Z",
-              nodeVersion: "v22.0.0"
-            }
-          },
-          candidate: {
-            role: "candidate",
-            snapshot: {
-              kind: "workspace",
-              source: "workspace",
-              baseSha: "def456",
-              branchName: "main",
-              dirty: true,
-              patchFile: "candidate.patch",
-              patchHash: "hash-b"
-            },
-            build: {
-              packagePath: "bots/basic",
-              bundleHash: "hash-b",
-              bundleSize: 12,
-              builtAt: "2026-01-01T00:00:00.000Z",
-              nodeVersion: "v22.0.0"
-            }
-          }
-        },
-        metrics: null
-      },
+      suite: createSuiteRecord("suite-2", "2026-01-01T00:00:00.000Z"),
+      displayCase: createCaseDetails("run-2"),
       events: [
         {
           timestamp: "2026-01-01T00:00:01.000Z",
           level: "info",
-          event: "server.reset",
-          message: "Resetting and restarting the private server stack.",
+          event: "suite.case.started",
+          message: "Started suite case.",
           data: undefined
         } satisfies EventRecord
       ],
+      eventsLabel: "Recent Case Events",
       baseline: null,
       candidate: {
         room: "W6N5",
@@ -244,7 +169,7 @@ describe("watch helpers", () => {
     }, { width: 120, colors: false, clear: false });
 
     const lines = rendered.split("\n").slice(0, -1);
-    const recentEventsIndex = lines.findIndex((line) => line.includes("Recent Events"));
+    const recentEventsIndex = lines.findIndex((line) => line.includes("Recent Case Events"));
 
     expect(lines.every((line) => line.length === 120)).toBe(true);
     expect(recentEventsIndex).toBeGreaterThan(0);
@@ -254,8 +179,10 @@ describe("watch helpers", () => {
   it("keeps the title on the first line when clearing the screen", () => {
     const rendered = renderDashboard({
       mode: "follow-latest",
-      details: null,
+      suite: null,
+      displayCase: null,
       events: [],
+      eventsLabel: "Recent Suite Events",
       baseline: null,
       candidate: null,
       displayGameTime: null,
@@ -267,37 +194,168 @@ describe("watch helpers", () => {
   });
 });
 
-function createRunRecord(runId: string, createdAt: string) {
+function createSuiteIndexEntry(id: string, createdAt: string): SuiteIndexEntry {
   return {
-    id: runId,
-    type: "duel" as const,
-    status: "running" as const,
+    id,
+    status: "running",
     createdAt,
-    startedAt: null,
+    finishedAt: null,
+    name: id,
+    progress: {
+      caseCount: 1,
+      completedCaseCount: 0,
+      failedCaseCount: 0,
+      currentCaseId: "duel",
+      currentCaseRunId: `${id}-run`
+    }
+  };
+}
+
+function createSuiteRecord(id: string, createdAt: string): SuiteRecord {
+  return {
+    id,
+    type: "suite",
+    status: "running",
+    createdAt,
+    startedAt: createdAt,
     finishedAt: null,
     repoRoot: "/repo",
+    name: "duel-basic",
+    source: {
+      kind: "scenario",
+      path: "experiments/scenarios/duel-basic.yaml"
+    },
+    baseline: {
+      source: "git:main",
+      packagePath: "bots/basic"
+    },
+    candidate: {
+      source: "workspace",
+      packagePath: "bots/basic"
+    },
+    gates: {
+      primaryMetrics: ["T_RCL2", "T_RCL3", "spawnIdlePct", "sourceCoveragePct", "sourceUptimePct"],
+      training: { minImprovedPrimaryMetrics: 2 },
+      holdout: { maxRegressionPct: 5 }
+    },
+    progress: {
+      caseCount: 1,
+      completedCaseCount: 0,
+      failedCaseCount: 0,
+      currentCaseId: "duel",
+      currentCaseRunId: "run-1"
+    },
+    cases: [
+      {
+        id: "duel",
+        cohort: "train",
+        caseIndex: 1,
+        tags: [],
+        scenarioPath: "experiments/scenarios/duel-basic.yaml",
+        scenarioName: "duel-basic",
+        runId: "run-1",
+        status: "running",
+        error: null,
+        startedAt: createdAt,
+        finishedAt: null
+      }
+    ],
+    error: null
+  };
+}
+
+function createCaseDetails(runId: string): SuiteCaseDetails {
+  return {
+    id: "duel",
+    cohort: "train",
+    caseIndex: 1,
+    tags: [],
     scenarioPath: "experiments/scenarios/duel-basic.yaml",
     scenarioName: "duel-basic",
-    rooms: {
-      baseline: "W5N5",
-      candidate: "W6N5"
-    },
-    run: {
-      tickDuration: 250,
-      maxTicks: 100,
-      sampleEveryTicks: 25,
-      pollIntervalMs: 1000,
-      map: null,
-      startGameTime: null,
-      endGameTime: null,
-      terminalConditions: null,
-      terminationReason: null
-    },
-    server: {
-      httpUrl: "http://127.0.0.1:21025",
-      cliHost: "127.0.0.1",
-      cliPort: 21026
-    },
-    error: null
+    runId,
+    status: "running",
+    error: null,
+    startedAt: "2026-01-01T00:00:01.000Z",
+    finishedAt: null,
+    details: {
+      run: {
+        id: runId,
+        type: "duel",
+        status: "running",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        startedAt: "2026-01-01T00:00:01.000Z",
+        finishedAt: null,
+        repoRoot: "/repo",
+        scenarioPath: "experiments/scenarios/duel-basic.yaml",
+        scenarioName: "duel-basic",
+        suite: {
+          id: "suite-1",
+          name: "duel-basic",
+          caseId: "duel",
+          cohort: "train",
+          caseIndex: 1,
+          caseCount: 1
+        },
+        rooms: {
+          baseline: "W5N5",
+          candidate: "W6N5"
+        },
+        run: {
+          tickDuration: 250,
+          maxTicks: 100,
+          sampleEveryTicks: 25,
+          pollIntervalMs: 1000,
+          map: null,
+          startGameTime: 1,
+          endGameTime: null,
+          terminalConditions: null,
+          terminationReason: null
+        },
+        server: {
+          httpUrl: "http://127.0.0.1:21025",
+          cliHost: "127.0.0.1",
+          cliPort: 21026
+        },
+        error: null
+      },
+      variants: {
+        baseline: {
+          role: "baseline",
+          snapshot: {
+            kind: "git",
+            source: "git:main",
+            ref: "main",
+            resolvedSha: "abc123"
+          },
+          build: {
+            packagePath: "bots/basic",
+            bundleHash: "hash-a",
+            bundleSize: 10,
+            builtAt: "2026-01-01T00:00:00.000Z",
+            nodeVersion: "v22.0.0"
+          }
+        },
+        candidate: {
+          role: "candidate",
+          snapshot: {
+            kind: "workspace",
+            source: "workspace",
+            baseSha: "def456",
+            branchName: "main",
+            dirty: true,
+            patchFile: "candidate.patch",
+            patchHash: "hash-b"
+          },
+          build: {
+            packagePath: "bots/basic",
+            bundleHash: "hash-b",
+            bundleSize: 12,
+            builtAt: "2026-01-01T00:00:00.000Z",
+            nodeVersion: "v22.0.0"
+          }
+        }
+      },
+      metrics: null
+    }
   };
 }

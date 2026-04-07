@@ -1,4 +1,4 @@
-import type { RoomSummary, RunRecord } from "./contracts.ts";
+import type { RoomSummary, SuiteIndexEntry } from "./contracts.ts";
 import type { RoomObjectRecord, RoomObjectsResponse } from "./screeps-api.ts";
 
 export type WatchRoomStats = {
@@ -16,12 +16,12 @@ export type WatchRoomStats = {
   objects: number;
 };
 
-export function selectRunForWatch(runs: RunRecord[], pinnedRunId?: string): RunRecord | null {
-  if (pinnedRunId) {
-    return runs.find((run) => run.id === pinnedRunId) ?? null;
+export function selectSuiteForWatch(suites: SuiteIndexEntry[], pinnedSuiteId?: string): SuiteIndexEntry | null {
+  if (pinnedSuiteId) {
+    return suites.find((suite) => suite.id === pinnedSuiteId) ?? null;
   }
 
-  return [...runs].sort(compareRunsNewestFirst)[0] ?? null;
+  return [...suites].sort(compareSuitesNewestFirst)[0] ?? null;
 }
 
 export function summarizeLiveRoom(room: string, response: RoomObjectsResponse): WatchRoomStats {
@@ -81,7 +81,7 @@ export function summarizeRecordedRoom(summary: RoomSummary): WatchRoomStats {
   };
 }
 
-function compareRunsNewestFirst(left: RunRecord, right: RunRecord): number {
+function compareSuitesNewestFirst(left: SuiteIndexEntry, right: SuiteIndexEntry): number {
   return Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.id.localeCompare(left.id);
 }
 

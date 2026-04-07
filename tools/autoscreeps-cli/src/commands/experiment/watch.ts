@@ -1,10 +1,10 @@
 import { clearScreenDown, cursorTo } from "node:readline";
 
-import type { EventRecord, RunDetails, VariantRecord } from "../../lib/contracts.ts";
-import { listRunRecords, readEventTail, readRunDetails, resolveRunDir } from "../../lib/history.ts";
+import type { EventRecord, RunStatus, SuiteCaseDetails, SuiteRecord, VariantRecord } from "../../lib/contracts.ts";
+import { listSuites, readCaseRunDetails, readEventTail, readSuiteRecord, resolveSuiteCaseRunDir, resolveSuiteDir } from "../../lib/history.ts";
 import { resolveRepoRoot } from "../../lib/git.ts";
 import { ScreepsApiClient } from "../../lib/screeps-api.ts";
-import { selectRunForWatch, summarizeLiveRoom, summarizeRecordedRoom, type WatchRoomStats } from "../../lib/watch.ts";
+import { selectSuiteForWatch, summarizeLiveRoom, summarizeRecordedRoom, type WatchRoomStats } from "../../lib/watch.ts";
 
 const pollIntervalMs = 1000;
 const eventTailLimit = 16;
@@ -27,8 +27,10 @@ const palette = {
 
 export type DashboardSnapshot = {
   mode: "follow-latest" | "pinned";
-  details: RunDetails | null;
+  suite: SuiteRecord | null;
+  displayCase: SuiteCaseDetails | null;
   events: EventRecord[];
+  eventsLabel: string;
   baseline: WatchRoomStats | null;
   candidate: WatchRoomStats | null;
   displayGameTime: number | null;
@@ -48,21 +50,21 @@ type DashboardRenderState = {
   previousWidth: number;
 };
 
-export async function watchExperimentCommand(runId?: string): Promise<void> {
+export async function watchExperimentCommand(suiteId?: string): Promise<void> {
   const repoRoot = await resolveRepoRoot(process.cwd());
-  const mode = runId ? "pinned" : "follow-latest";
+  const mode = suiteId ? "pinned" : "follow-latest";
   const renderState: DashboardRenderState = {
     firstFrame: true,
     previousLineCount: 0,
     previousWidth: 0
   };
 
-  if (runId) {
-    await readRunDetails(repoRoot, runId);
+  if (suiteId) {
+    await readSuiteRecord(repoRoot, suiteId);
   }
 
   while (true) {
-    const snapshot = await collectDashboardSnapshot(repoRoot, runId, mode);
+    const snapshot = await collectDashboardSnapshot(repoRoot, suiteId, mode);
     writeDashboardSnapshot(snapshot, renderState);
     await delay(pollIntervalMs);
   }
@@ -70,19 +72,28 @@ export async function watchExperimentCommand(runId?: string): Promise<void> {
 
 async function collectDashboardSnapshot(
   repoRoot: string,
-  pinnedRunId: string | undefined,
+  pinnedSuiteId: string | undefined,
   mode: DashboardSnapshot["mode"]
 ): Promise<DashboardSnapshot> {
-  const runs = pinnedRunId
-    ? [await readRunDetails(repoRoot, pinnedRunId).then((details) => details.run)]
-    : await listRunRecords(repoRoot);
-  const selectedRun = selectRunForWatch(runs, pinnedRunId);
+  const runs = pinnedSuiteId
+    ? [await readSuiteRecord(repoRoot, pinnedSuiteId).then((suite) => ({
+      id: suite.id,
+      status: suite.status,
+      createdAt: suite.createdAt,
+      finishedAt: suite.finishedAt,
+      name: suite.name,
+      progress: suite.progress
+    }))]
+    : await listSuites(repoRoot);
+  const selectedRun = selectSuiteForWatch(runs, pinnedSuiteId);
 
   if (!selectedRun) {
     return {
       mode,
-      details: null,
+      suite: null,
+      displayCase: null,
       events: [],
+      eventsLabel: "Recent Suite Events",
       baseline: null,
       candidate: null,
       displayGameTime: null,
@@ -91,15 +102,39 @@ async function collectDashboardSnapshot(
     };
   }
 
-  const details = await readRunDetails(repoRoot, selectedRun.id);
-  const events = await readEventTail(resolveRunDir(repoRoot, selectedRun.id), eventTailLimit);
+  const suite = await readSuiteRecord(repoRoot, selectedRun.id);
+  const displayCase = await readDisplayCase(repoRoot, suite);
+  const currentCaseRunId = suite.progress.currentCaseRunId;
+  const eventDir = currentCaseRunId && displayCase?.runId === currentCaseRunId
+    ? resolveSuiteCaseRunDir(repoRoot, suite.id, currentCaseRunId)
+    : resolveSuiteDir(repoRoot, suite.id);
+  const events = await readEventTail(eventDir, eventTailLimit);
+
+  if (!displayCase?.details) {
+    return {
+      mode,
+      suite,
+      displayCase,
+      events,
+      eventsLabel: currentCaseRunId ? "Recent Case Events" : "Recent Suite Events",
+      baseline: null,
+      candidate: null,
+      displayGameTime: null,
+      targetGameTime: null,
+      statsError: null
+    };
+  }
+
+  const details = displayCase.details;
   const targetGameTime = details.run.run.startGameTime === null ? null : details.run.run.startGameTime + details.run.run.maxTicks;
 
   if (details.run.status !== "running") {
     return {
       mode,
-      details,
+      suite,
+      displayCase,
       events,
+      eventsLabel: currentCaseRunId ? "Recent Case Events" : "Recent Suite Events",
       baseline: details.metrics ? summarizeRecordedRoom(details.metrics.rooms.baseline) : null,
       candidate: details.metrics ? summarizeRecordedRoom(details.metrics.rooms.candidate) : null,
       displayGameTime: details.run.run.endGameTime ?? details.run.run.startGameTime,
@@ -118,8 +153,10 @@ async function collectDashboardSnapshot(
 
     return {
       mode,
-      details,
+      suite,
+      displayCase,
       events,
+      eventsLabel: "Recent Case Events",
       baseline: summarizeLiveRoom(details.run.rooms.baseline, baselineRoom),
       candidate: summarizeLiveRoom(details.run.rooms.candidate, candidateRoom),
       displayGameTime: gameTime,
@@ -129,8 +166,10 @@ async function collectDashboardSnapshot(
   } catch (error) {
     return {
       mode,
-      details,
+      suite,
+      displayCase,
       events,
+      eventsLabel: "Recent Case Events",
       baseline: null,
       candidate: null,
       displayGameTime: details.run.run.startGameTime,
@@ -149,15 +188,15 @@ export function renderDashboard(snapshot: DashboardSnapshot, options: RenderDash
   lines.push(renderTitleBar(width, colors));
   lines.push("");
 
-  if (!snapshot.details) {
+  if (!snapshot.suite) {
     lines.push(...buildPanel(
-      "Waiting For Experiment",
+      "Waiting For Suite",
       [palette.blue, palette.comment],
       [
         padAnsi(styleText("Watcher Mode", { fg: palette.fgMuted, bold: true }, colors), width - 4),
-        padAnsi(styleText(snapshot.mode === "pinned" ? "Pinned" : "Follow newest run", { fg: palette.blue }, colors), width - 4),
+        padAnsi(styleText(snapshot.mode === "pinned" ? "Pinned" : "Follow newest suite", { fg: palette.blue }, colors), width - 4),
         "",
-        styleText("No run.json files are available yet under .autoscreeps/runs/.", { fg: palette.fg }, colors)
+        styleText("No suite.json files are available yet under .autoscreeps/suites/.", { fg: palette.fg }, colors)
       ],
       width,
       colors
@@ -166,23 +205,38 @@ export function renderDashboard(snapshot: DashboardSnapshot, options: RenderDash
     return finalizeDashboard(lines, width, clearPrefix);
   }
 
-  const { run, variants } = snapshot.details;
+  const suite = snapshot.suite;
+  const caseDetails = snapshot.displayCase?.details ?? null;
+  const run = caseDetails?.run ?? null;
+  const variants = caseDetails?.variants ?? null;
   const summaryRows = [
     formatTwoColumnRow(
-      { label: "Scenario", value: run.scenarioName },
-      { label: "Watcher", value: snapshot.mode === "pinned" ? "Pinned" : "Follow newest run" },
+      { label: "Suite", value: suite.name },
+      { label: "Watcher", value: snapshot.mode === "pinned" ? "Pinned" : "Follow newest suite" },
       width - 4,
       colors
     ),
     formatTwoColumnRow(
-      { label: "Run", value: run.id },
-      { label: "Status", value: formatStatusBadge(run.status, colors) },
+      { label: "Suite ID", value: suite.id },
+      { label: "Status", value: formatStatusBadge(suite.status, colors) },
       width - 4,
       colors
     ),
     formatTwoColumnRow(
-      { label: "Rooms", value: `${run.rooms.baseline} vs ${run.rooms.candidate}` },
-      { label: "Tick", value: formatTickSummary(run.run.startGameTime, snapshot.displayGameTime, snapshot.targetGameTime) },
+      { label: "Source", value: formatSuiteSource(suite) },
+      { label: "Case", value: formatSuiteCaseLabel(suite, snapshot.displayCase) },
+      width - 4,
+      colors
+    ),
+    formatTwoColumnRow(
+      { label: "Scenario", value: snapshot.displayCase?.scenarioName ?? "-" },
+      { label: "Case Status", value: formatCaseStatusBadge(snapshot.displayCase?.status ?? null, colors) },
+      width - 4,
+      colors
+    ),
+    formatTwoColumnRow(
+      { label: "Run", value: run?.id ?? "-" },
+      { label: "Tick", value: run ? formatTickSummary(run.run.startGameTime, snapshot.displayGameTime, snapshot.targetGameTime) : "-" },
       width - 4,
       colors
     ),
@@ -193,25 +247,31 @@ export function renderDashboard(snapshot: DashboardSnapshot, options: RenderDash
       colors
     ),
     formatTwoColumnRow(
-      { label: "Created", value: run.createdAt },
-      { label: "Started", value: run.startedAt ?? "-" },
+      { label: "Created", value: suite.createdAt },
+      { label: "Started", value: suite.startedAt ?? "-" },
       width - 4,
       colors
     ),
     formatTwoColumnRow(
-      { label: "Finished", value: run.finishedAt ?? "-" },
-      { label: "Tick Duration", value: `${run.run.tickDuration}ms` },
+      { label: "Finished", value: suite.finishedAt ?? "-" },
+      { label: "Cases", value: formatSuiteCaseCounts(suite) },
       width - 4,
       colors
     ),
-    formatWideField("Progress", formatProgressValue(run.run.startGameTime, snapshot.displayGameTime, snapshot.targetGameTime, Math.max(18, width - 34), colors), width - 4, colors)
+    formatWideField("Suite Progress", formatSuiteProgressValue(suite, Math.max(18, width - 34), colors), width - 4, colors)
   ];
+
+  if (run) {
+    summaryRows.push(
+      formatWideField("Case Progress", formatProgressValue(run.run.startGameTime, snapshot.displayGameTime, snapshot.targetGameTime, Math.max(18, width - 34), colors), width - 4, colors)
+    );
+  }
 
   if (snapshot.statsError) {
     summaryRows.push(formatWideField("Live Stats", styleText(snapshot.statsError, { fg: palette.yellow }, colors), width - 4, colors));
   }
 
-  lines.push(...buildPanel("Run Summary", [palette.blue, palette.cyan], summaryRows, width, colors));
+  lines.push(...buildPanel("Suite Summary", [palette.blue, palette.cyan], summaryRows, width, colors));
   lines.push("");
 
   const stackedRoomPanels = width < 118;
@@ -232,9 +292,38 @@ export function renderDashboard(snapshot: DashboardSnapshot, options: RenderDash
   }
 
   lines.push("");
-  lines.push(...buildPanel("Recent Events", [palette.yellow, palette.comment], formatEventRows(snapshot.events, width - 4, colors), width, colors));
+  lines.push(...buildPanel(snapshot.eventsLabel, [palette.yellow, palette.comment], formatEventRows(snapshot.events, width - 4, colors), width, colors));
 
   return finalizeDashboard(lines, width, clearPrefix);
+}
+
+async function readDisplayCase(repoRoot: string, suite: SuiteRecord): Promise<SuiteCaseDetails | null> {
+  const currentCase = suite.progress.currentCaseRunId
+    ? suite.cases.find((testCase) => testCase.runId === suite.progress.currentCaseRunId) ?? null
+    : null;
+  const latestCase = [...suite.cases].reverse().find((testCase) => testCase.runId !== null) ?? null;
+  const displayCase = currentCase ?? latestCase;
+
+  if (!displayCase || displayCase.runId === null) {
+    return displayCase ? { ...displayCase, details: null } : null;
+  }
+
+  return {
+    ...displayCase,
+    details: await readCaseRunDetailsOrNull(resolveSuiteCaseRunDir(repoRoot, suite.id, displayCase.runId))
+  };
+}
+
+async function readCaseRunDetailsOrNull(runDir: string): Promise<SuiteCaseDetails["details"]> {
+  try {
+    return await readCaseRunDetails(runDir);
+  } catch (error) {
+    const fileError = error as NodeJS.ErrnoException;
+    if (fileError.code === "ENOENT" || error instanceof SyntaxError) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 function writeDashboardSnapshot(snapshot: DashboardSnapshot, renderState: DashboardRenderState): void {
@@ -388,7 +477,7 @@ function formatWideField(label: string, value: string, width: number, colors: bo
 }
 
 function formatField(label: string, value: string, width: number, colors: boolean): string {
-  const labelWidth = Math.min(13, Math.max(8, width - 6));
+  const labelWidth = Math.min(14, Math.max(8, width - 6));
   const labelText = padAnsi(styleText(label.toUpperCase(), { fg: palette.fgMuted, bold: true }, colors), labelWidth);
   const valueText = truncateAnsi(styleText(value, { fg: palette.fg }, colors), Math.max(width - labelWidth - 1, 0));
   return padAnsi(`${labelText} ${valueText}`, width);
@@ -403,6 +492,24 @@ function formatVariantSummary(variant: VariantRecord | undefined): string {
     ? `git:${variant.snapshot.ref}`
     : variant.snapshot.source;
   return `${source} ${variant.build.packagePath}`;
+}
+
+function formatSuiteSource(suite: SuiteRecord): string {
+  return `${suite.source.kind}:${suite.source.path}`;
+}
+
+function formatSuiteCaseLabel(suite: SuiteRecord, displayCase: SuiteCaseDetails | null): string {
+  if (!displayCase) {
+    return "-";
+  }
+
+  const suffix = suite.progress.currentCaseRunId === displayCase.runId ? "" : " (latest)";
+  return `${displayCase.caseIndex}/${suite.progress.caseCount} ${displayCase.id}${suffix}`;
+}
+
+function formatSuiteCaseCounts(suite: SuiteRecord): string {
+  const done = suite.progress.completedCaseCount + suite.progress.failedCaseCount;
+  return `${done}/${suite.progress.caseCount} done, ${suite.progress.failedCaseCount} failed`;
 }
 
 function formatTickSummary(startGameTime: number | null, gameTime: number | null, targetGameTime: number | null): string {
@@ -438,6 +545,23 @@ function formatProgressValue(startGameTime: number | null, gameTime: number | nu
 
   const bar = `${styleText(" ".repeat(filled), { bg: palette.green }, colors)}${styleText(" ".repeat(empty), { bg: palette.border }, colors)}`;
   const details = styleText(` ${completedTicks}/${totalTicks}  ${(ratio * 100).toFixed(1)}%`, { fg: palette.fg }, colors);
+  return `${bar}${details}`;
+}
+
+function formatSuiteProgressValue(suite: SuiteRecord, width: number, colors: boolean): string {
+  const totalCases = Math.max(suite.progress.caseCount, 1);
+  const completedCases = suite.progress.completedCaseCount + suite.progress.failedCaseCount;
+  const ratio = completedCases / totalCases;
+
+  if (!colors) {
+    return `${completedCases}/${suite.progress.caseCount} ${(ratio * 100).toFixed(1)}% (${suite.progress.failedCaseCount} failed)`;
+  }
+
+  const barWidth = Math.max(10, Math.min(32, width - 22));
+  const filled = Math.max(completedCases === 0 ? 0 : 1, Math.min(barWidth, Math.round(ratio * barWidth)));
+  const empty = Math.max(barWidth - filled, 0);
+  const bar = `${styleText(" ".repeat(filled), { bg: suite.progress.failedCaseCount > 0 ? palette.yellow : palette.green }, colors)}${styleText(" ".repeat(empty), { bg: palette.border }, colors)}`;
+  const details = styleText(` ${completedCases}/${suite.progress.caseCount}  ${(ratio * 100).toFixed(1)}%  ${suite.progress.failedCaseCount} failed`, { fg: palette.fg }, colors);
   return `${bar}${details}`;
 }
 
@@ -495,8 +619,25 @@ function formatEventPrimitive(value: unknown): string {
   return truncatePlain(JSON.stringify(value), 24);
 }
 
-function formatStatusBadge(status: RunDetails["run"]["status"], colors: boolean): string {
+function formatStatusBadge(status: RunStatus, colors: boolean): string {
   switch (status) {
+    case "completed":
+      return badge("COMPLETED", palette.green, palette.bgDark, colors);
+    case "failed":
+      return badge("FAILED", palette.red, palette.bgDark, colors);
+    default:
+      return badge("RUNNING", palette.yellow, palette.bgDark, colors);
+  }
+}
+
+function formatCaseStatusBadge(status: SuiteCaseDetails["status"] | null, colors: boolean): string {
+  if (status === null) {
+    return "-";
+  }
+
+  switch (status) {
+    case "pending":
+      return badge("PENDING", palette.comment, palette.bgDark, colors);
     case "completed":
       return badge("COMPLETED", palette.green, palette.bgDark, colors);
     case "failed":

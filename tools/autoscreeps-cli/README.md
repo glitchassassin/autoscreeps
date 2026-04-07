@@ -8,9 +8,9 @@ Use Node 24 for this package. The repository root includes `.nvmrc`, so `nvm use
 
 - `autoscreeps experiment run duel`
 - `autoscreeps experiment run suite`
-- `autoscreeps experiment watch [run-id]`
+- `autoscreeps experiment watch [suite-id]`
 - `autoscreeps experiment list`
-- `autoscreeps experiment show <run-id>`
+- `autoscreeps experiment show <suite-id>`
 
 ## Example
 
@@ -24,7 +24,9 @@ node src/cli.ts experiment run duel \
   --candidate-package bots/basic
 ```
 
-Run history is written under `.autoscreeps/runs/` at the repository root.
+All recorded history is written under `.autoscreeps/suites/` at the repository root.
+
+`autoscreeps experiment run duel` is persisted as a one-case suite so `list`, `show`, and `watch` all operate on the same suite-first history model.
 
 ## Suite Manifests
 
@@ -42,6 +44,6 @@ node src/cli.ts experiment run suite \
   --candidate-package bots/basic
 ```
 
-`autoscreeps experiment watch` follows the newest run automatically and switches to a newer run when one starts.
+`autoscreeps experiment watch` follows the newest suite automatically and switches to a newer suite when one starts.
 
-`autoscreeps experiment watch <run-id>` pins the watcher to a specific run.
+`autoscreeps experiment watch <suite-id>` pins the watcher to a specific suite.

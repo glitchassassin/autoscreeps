@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { runExperimentSuite, summarizeSuiteResults, type SuiteCaseResult } from "../src/lib/suite-runner.ts";
+import { runExperimentSuite, summarizeSuiteResults } from "../src/lib/suite-runner.ts";
 import type { SuiteManifest } from "../src/lib/suite-manifest.ts";
-import type { RunDetails, UserRunSummaryMetrics } from "../src/lib/contracts.ts";
+import type { RunDetails, SuiteCaseDetails, UserRunSummaryMetrics } from "../src/lib/contracts.ts";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -183,12 +183,22 @@ describe("suite runner", () => {
       });
 
       expect(duelRunnerCalls).toEqual(["suite-runner:train-a"]);
+      expect(result.suite).toMatchObject({
+        name: "suite-runner",
+        status: "completed",
+        progress: {
+          caseCount: 1,
+          completedCaseCount: 1,
+          failedCaseCount: 0
+        }
+      });
       expect(result.cases).toHaveLength(1);
       expect(result.cases[0]).toMatchObject({
         id: "train-a",
-        runId: "run-train-a",
         status: "completed"
       });
+      expect(result.cases[0]?.runId).toMatch(/^\d{4}-/);
+      expect(result.cases[0]?.details).toBeNull();
       expect(result.summary.gates.training.passed).toBe(true);
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -196,15 +206,19 @@ describe("suite runner", () => {
   });
 });
 
-function createCaseResult(id: string, cohort: "train" | "holdout", details: RunDetails): SuiteCaseResult {
+function createCaseResult(id: string, cohort: "train" | "holdout", details: RunDetails): SuiteCaseDetails {
   return {
     id,
     cohort,
+    caseIndex: 1,
+    tags: [],
     scenarioPath: "./duel-basic.yaml",
     scenarioName: details.run.scenarioName,
     runId: details.run.id,
     status: details.run.status === "completed" ? "completed" : "failed",
     error: details.run.error,
+    startedAt: details.run.startedAt,
+    finishedAt: details.run.finishedAt,
     details
   };
 }

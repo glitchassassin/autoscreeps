@@ -1,28 +1,46 @@
-import type { RunDetails, UserRunSummaryMetrics } from "./contracts.ts";
-import { runDuelExperiment } from "./runner.ts";
-import { loadSuiteManifest, resolveSuiteCaseScenario, type SuiteManifest, type SuitePrimaryMetric } from "./suite-manifest.ts";
+import path from "node:path";
 
-type DuelVariantInput = {
-  source: string;
-  packagePath: string;
+import type { RunDetails, SuiteCaseDetails, SuiteGates, SuitePrimaryMetric, SuiteRecord, SuiteSource, UserRunSummaryMetrics, VariantInput } from "./contracts.ts";
+import { resolveRepoRoot } from "./git.ts";
+import { appendSuiteEvent, createSuiteCaseWorkspace, createSuiteWorkspace, readSuiteDetails, writeSuiteRecord } from "./history.ts";
+import { runDuelExperiment } from "./runner.ts";
+import { loadScenario } from "./scenario.ts";
+import { defaultSuiteGates, loadSuiteManifest, resolveSuiteCaseScenario } from "./suite-manifest.ts";
+import { timestamp } from "./utils.ts";
+
+type ResolvedScenario = Awaited<ReturnType<typeof loadScenario>>;
+
+type ResolvedSuiteCase = {
+  id: string;
+  cohort: "train" | "holdout";
+  tags: string[];
+  scenario: ResolvedScenario;
+};
+
+type ResolvedSuiteInput = {
+  cwd: string;
+  repoRoot: string;
+  name: string;
+  description?: string;
+  source: SuiteSource;
+  gates: SuiteGates;
+  baseline: VariantInput;
+  candidate: VariantInput;
+  cases: ResolvedSuiteCase[];
 };
 
 export type SuiteRunInput = {
   cwd: string;
   manifestPath: string;
-  baseline: DuelVariantInput;
-  candidate: DuelVariantInput;
+  baseline: VariantInput;
+  candidate: VariantInput;
 };
 
-export type SuiteCaseResult = {
-  id: string;
-  cohort: "train" | "holdout";
+export type ScenarioSuiteRunInput = {
+  cwd: string;
   scenarioPath: string;
-  scenarioName: string | null;
-  runId: string | null;
-  status: "completed" | "failed";
-  error: string | null;
-  details: RunDetails | null;
+  baseline: VariantInput;
+  candidate: VariantInput;
 };
 
 export type SuiteHarvestModeMetric = "harvestingSourceCoveragePct" | "harvestingSourceUptimePct";
@@ -51,7 +69,7 @@ export type SuiteCohortSummary = {
   caseCount: number;
   completedCaseCount: number;
   completionPct: number;
-  primaryMetrics: Record<SuitePrimaryMetric, SuiteMetricComparison>;
+  primaryMetrics: Partial<Record<SuitePrimaryMetric, SuiteMetricComparison>>;
   harvestModeMetrics: Record<SuiteHarvestModeMetric, SuiteHarvestModeMetricComparison>;
   activeHarvestMetrics: Record<SuiteActiveHarvestMetric, SuiteActiveHarvestMetricComparison>;
   extensionMetrics: Record<SuiteExtensionMetric, SuiteExtensionMetricComparison>;
@@ -71,20 +89,16 @@ export type SuiteGateSummary = {
   };
 };
 
+export type SuiteSummary = {
+  overall: SuiteCohortSummary;
+  cohorts: Partial<Record<"train" | "holdout", SuiteCohortSummary>>;
+  gates: SuiteGateSummary;
+};
+
 export type SuiteRunResult = {
-  manifest: {
-    path: string;
-    name: string;
-    description?: string;
-  };
-  baseline: DuelVariantInput;
-  candidate: DuelVariantInput;
-  cases: SuiteCaseResult[];
-  summary: {
-    overall: SuiteCohortSummary;
-    cohorts: Partial<Record<"train" | "holdout", SuiteCohortSummary>>;
-    gates: SuiteGateSummary;
-  };
+  suite: SuiteRecord;
+  cases: SuiteCaseDetails[];
+  summary: SuiteSummary;
 };
 
 const suiteHarvestModeMetrics: SuiteHarvestModeMetric[] = ["harvestingSourceCoveragePct", "harvestingSourceUptimePct"];
@@ -97,64 +111,73 @@ export async function runExperimentSuite(
     duelRunner?: typeof runDuelExperiment;
   } = {}
 ): Promise<SuiteRunResult> {
+  const repoRoot = await resolveExecutionRoot(input.cwd);
   const manifest = await loadSuiteManifest(input.manifestPath);
-  const duelRunner = dependencies.duelRunner ?? runDuelExperiment;
-  const cases: SuiteCaseResult[] = [];
+  const cases = await Promise.all(
+    manifest.config.cases.map(async (testCase) => ({
+      id: testCase.id,
+      cohort: testCase.cohort,
+      tags: [...testCase.tags],
+      scenario: await resolveSuiteCaseScenario(manifest, testCase)
+    }))
+  );
 
-  for (const testCase of manifest.config.cases) {
-    try {
-      const scenario = await resolveSuiteCaseScenario(manifest, testCase);
-      const details = await duelRunner({
-        cwd: input.cwd,
-        scenario,
-        baseline: input.baseline,
-        candidate: input.candidate
-      });
-
-      cases.push({
-        id: testCase.id,
-        cohort: testCase.cohort,
-        scenarioPath: testCase.scenario,
-        scenarioName: details.run.scenarioName,
-        runId: details.run.id,
-        status: details.run.status === "completed" ? "completed" : "failed",
-        error: details.run.error,
-        details
-      });
-    } catch (error) {
-      cases.push({
-        id: testCase.id,
-        cohort: testCase.cohort,
-        scenarioPath: testCase.scenario,
-        scenarioName: null,
-        runId: null,
-        status: "failed",
-        error: error instanceof Error ? error.message : String(error),
-        details: null
-      });
-    }
-  }
-
-  return {
-    manifest: {
-      path: manifest.path,
-      name: manifest.config.name,
-      description: manifest.config.description
+  return runResolvedSuite({
+    cwd: input.cwd,
+    repoRoot,
+    name: manifest.config.name,
+    description: manifest.config.description,
+    source: {
+      kind: "manifest",
+      path: path.relative(repoRoot, manifest.path)
     },
+    gates: manifest.config.gates,
     baseline: input.baseline,
     candidate: input.candidate,
-    cases,
-    summary: summarizeSuiteResults(manifest.config, cases)
-  };
+    cases
+  }, dependencies);
 }
 
-export function summarizeSuiteResults(manifest: SuiteManifest, cases: SuiteCaseResult[]): SuiteRunResult["summary"] {
-  const overall = summarizeCohort(cases, manifest.gates.primaryMetrics);
+export async function runScenarioSuite(
+  input: ScenarioSuiteRunInput,
+  dependencies: {
+    duelRunner?: typeof runDuelExperiment;
+  } = {}
+): Promise<SuiteRunResult> {
+  const repoRoot = await resolveExecutionRoot(input.cwd);
+  const scenario = await loadScenario(input.scenarioPath);
+
+  return runResolvedSuite({
+    cwd: input.cwd,
+    repoRoot,
+    name: scenario.config.name,
+    description: scenario.config.description,
+    source: {
+      kind: "scenario",
+      path: path.relative(repoRoot, scenario.path)
+    },
+    gates: defaultSuiteGates,
+    baseline: input.baseline,
+    candidate: input.candidate,
+    cases: [
+      {
+        id: "duel",
+        cohort: "train",
+        tags: [],
+        scenario
+      }
+    ]
+  }, dependencies);
+}
+
+export function summarizeSuiteResults(gatesOrManifest: SuiteGates | { gates: SuiteGates }, cases: SuiteCaseDetails[]): SuiteSummary {
+  const gates = "gates" in gatesOrManifest ? gatesOrManifest.gates : gatesOrManifest;
+  const overall = summarizeCohort(cases, gates.primaryMetrics);
   const trainCases = cases.filter((testCase) => testCase.cohort === "train");
   const holdoutCases = cases.filter((testCase) => testCase.cohort === "holdout");
-  const train = trainCases.length > 0 ? summarizeCohort(trainCases, manifest.gates.primaryMetrics) : undefined;
-  const holdout = holdoutCases.length > 0 ? summarizeCohort(holdoutCases, manifest.gates.primaryMetrics) : undefined;
-  const gates = evaluateSuiteGates(manifest, train, holdout);
+  const train = trainCases.length > 0 ? summarizeCohort(trainCases, gates.primaryMetrics) : undefined;
+  const holdout = holdoutCases.length > 0 ? summarizeCohort(holdoutCases, gates.primaryMetrics) : undefined;
+  const gateSummary = evaluateSuiteGates(gates, train, holdout);
 
   return {
     overall,
@@ -162,13 +185,194 @@ export function summarizeSuiteResults(manifest: SuiteManifest, cases: SuiteCaseR
       ...(train ? { train } : {}),
       ...(holdout ? { holdout } : {})
     },
-    gates
+    gates: gateSummary
   };
 }
 
-function summarizeCohort(cases: SuiteCaseResult[], metrics: SuitePrimaryMetric[]): SuiteCohortSummary {
+async function resolveExecutionRoot(cwd: string): Promise<string> {
+  try {
+    return await resolveRepoRoot(cwd);
+  } catch {
+    return path.resolve(cwd);
+  }
+}
+
+async function runResolvedSuite(
+  input: ResolvedSuiteInput,
+  dependencies: {
+    duelRunner?: typeof runDuelExperiment;
+  }
+): Promise<SuiteRunResult> {
+  const duelRunner = dependencies.duelRunner ?? runDuelExperiment;
+  const { suiteId, suiteDir } = await createSuiteWorkspace(input.repoRoot);
+  const suiteRecord: SuiteRecord = {
+    id: suiteId,
+    type: "suite",
+    status: "running",
+    createdAt: timestamp(),
+    startedAt: null,
+    finishedAt: null,
+    repoRoot: input.repoRoot,
+    name: input.name,
+    description: input.description,
+    source: input.source,
+    baseline: input.baseline,
+    candidate: input.candidate,
+    gates: {
+      primaryMetrics: [...input.gates.primaryMetrics],
+      training: { ...input.gates.training },
+      holdout: { ...input.gates.holdout }
+    },
+    progress: {
+      caseCount: input.cases.length,
+      completedCaseCount: 0,
+      failedCaseCount: 0,
+      currentCaseId: null,
+      currentCaseRunId: null
+    },
+    cases: input.cases.map((testCase, index) => ({
+      id: testCase.id,
+      cohort: testCase.cohort,
+      caseIndex: index + 1,
+      tags: [...testCase.tags],
+      scenarioPath: path.relative(input.repoRoot, testCase.scenario.path),
+      scenarioName: testCase.scenario.config.name,
+      runId: null,
+      status: "pending",
+      error: null,
+      startedAt: null,
+      finishedAt: null
+    })),
+    error: null
+  };
+
+  await writeSuiteRecord(suiteDir, suiteRecord);
+  await logSuiteEvent(suiteDir, "info", "suite.created", "Created experiment suite workspace.", {
+    suiteId: suiteRecord.id,
+    caseCount: suiteRecord.progress.caseCount
+  });
+
+  try {
+    for (const [index, testCase] of input.cases.entries()) {
+      const suiteCase = suiteRecord.cases[index]!;
+      const { runId, runDir } = await createSuiteCaseWorkspace(suiteDir);
+
+      if (suiteRecord.startedAt === null) {
+        suiteRecord.startedAt = timestamp();
+      }
+
+      suiteRecord.progress.currentCaseId = suiteCase.id;
+      suiteRecord.progress.currentCaseRunId = runId;
+      suiteCase.runId = runId;
+      suiteCase.status = "running";
+      suiteCase.error = null;
+      suiteCase.startedAt = timestamp();
+      suiteCase.finishedAt = null;
+      await writeSuiteRecord(suiteDir, suiteRecord);
+      await logSuiteEvent(suiteDir, "info", "suite.case.started", "Started suite case.", {
+        caseId: suiteCase.id,
+        caseIndex: suiteCase.caseIndex,
+        caseCount: suiteRecord.progress.caseCount,
+        runId
+      });
+
+      try {
+        const details = await duelRunner({
+          cwd: input.cwd,
+          scenario: testCase.scenario,
+          baseline: input.baseline,
+          candidate: input.candidate,
+          runWorkspace: {
+            runId,
+            runDir
+          },
+          suite: {
+            id: suiteRecord.id,
+            name: suiteRecord.name,
+            caseId: suiteCase.id,
+            cohort: suiteCase.cohort,
+            caseIndex: suiteCase.caseIndex,
+            caseCount: suiteRecord.progress.caseCount
+          }
+        });
+
+        suiteCase.status = details.run.status === "completed" ? "completed" : "failed";
+        suiteCase.error = details.run.error;
+        suiteCase.finishedAt = details.run.finishedAt ?? timestamp();
+      } catch (error) {
+        suiteCase.status = "failed";
+        suiteCase.error = error instanceof Error ? error.message : String(error);
+        suiteCase.finishedAt = timestamp();
+      }
+
+      suiteRecord.progress.currentCaseId = null;
+      suiteRecord.progress.currentCaseRunId = null;
+      refreshSuiteProgress(suiteRecord);
+      await writeSuiteRecord(suiteDir, suiteRecord);
+      await logSuiteEvent(
+        suiteDir,
+        suiteCase.status === "failed" ? "error" : "info",
+        suiteCase.status === "failed" ? "suite.case.failed" : "suite.case.completed",
+        suiteCase.status === "failed" ? "Suite case failed." : "Suite case completed.",
+        {
+          caseId: suiteCase.id,
+          runId: suiteCase.runId,
+          completedCaseCount: suiteRecord.progress.completedCaseCount,
+          failedCaseCount: suiteRecord.progress.failedCaseCount
+        }
+      );
+    }
+
+    suiteRecord.status = "completed";
+    suiteRecord.finishedAt = timestamp();
+    await writeSuiteRecord(suiteDir, suiteRecord);
+
+    const details = await readSuiteDetails(input.repoRoot, suiteRecord.id);
+    const summary = summarizeSuiteResults(details.suite.gates, details.cases);
+    await logSuiteEvent(suiteDir, "info", "suite.completed", "Experiment suite completed.", {
+      caseCount: details.suite.progress.caseCount,
+      completedCaseCount: details.suite.progress.completedCaseCount,
+      failedCaseCount: details.suite.progress.failedCaseCount,
+      gatesPassed: summary.gates.passed
+    });
+
+    return {
+      suite: details.suite,
+      cases: details.cases,
+      summary
+    };
+  } catch (error) {
+    suiteRecord.status = "failed";
+    suiteRecord.finishedAt = timestamp();
+    suiteRecord.progress.currentCaseId = null;
+    suiteRecord.progress.currentCaseRunId = null;
+    suiteRecord.error = error instanceof Error ? error.stack ?? error.message : String(error);
+    await writeSuiteRecord(suiteDir, suiteRecord);
+    await logSuiteEvent(suiteDir, "error", "suite.failed", "Experiment suite failed.", {
+      error: suiteRecord.error
+    });
+    throw error;
+  }
+}
+
+function refreshSuiteProgress(suiteRecord: SuiteRecord): void {
+  suiteRecord.progress.completedCaseCount = suiteRecord.cases.filter((testCase) => testCase.status === "completed").length;
+  suiteRecord.progress.failedCaseCount = suiteRecord.cases.filter((testCase) => testCase.status === "failed").length;
+}
+
+async function logSuiteEvent(suiteDir: string, level: "info" | "error", event: string, message: string, data?: unknown): Promise<void> {
+  await appendSuiteEvent(suiteDir, {
+    timestamp: timestamp(),
+    level,
+    event,
+    message,
+    data
+  });
+}
+
+function summarizeCohort(cases: SuiteCaseDetails[], metrics: SuitePrimaryMetric[]): SuiteCohortSummary {
   const completedCaseCount = cases.filter((testCase) => testCase.status === "completed").length;
-  const primaryMetrics = Object.fromEntries(metrics.map((metric) => [metric, compareMetric(cases, metric)])) as Record<SuitePrimaryMetric, SuiteMetricComparison>;
+  const primaryMetrics = Object.fromEntries(metrics.map((metric) => [metric, compareMetric(cases, metric)])) as Partial<Record<SuitePrimaryMetric, SuiteMetricComparison>>;
   const harvestModeMetrics = Object.fromEntries(
     suiteHarvestModeMetrics.map((metric) => [metric, compareMetric(cases, metric)])
   ) as Record<SuiteHarvestModeMetric, SuiteHarvestModeMetricComparison>;
@@ -190,7 +394,7 @@ function summarizeCohort(cases: SuiteCaseResult[], metrics: SuitePrimaryMetric[]
   };
 }
 
-function compareMetric<Metric extends SuiteSummaryMetric>(cases: SuiteCaseResult[], metric: Metric): MetricComparison<Metric> {
+function compareMetric<Metric extends SuiteSummaryMetric>(cases: SuiteCaseDetails[], metric: Metric): MetricComparison<Metric> {
   const direction = metricDirection(metric);
   const baselineValues = collectMetricValues(cases, "baseline", metric);
   const candidateValues = collectMetricValues(cases, "candidate", metric);
@@ -213,7 +417,7 @@ function compareMetric<Metric extends SuiteSummaryMetric>(cases: SuiteCaseResult
   };
 }
 
-function collectMetricValues(cases: SuiteCaseResult[], role: "baseline" | "candidate", metric: SuiteSummaryMetric): number[] {
+function collectMetricValues(cases: SuiteCaseDetails[], role: "baseline" | "candidate", metric: SuiteSummaryMetric): number[] {
   const values: number[] = [];
 
   for (const testCase of cases) {
@@ -232,19 +436,19 @@ function collectMetricValues(cases: SuiteCaseResult[], role: "baseline" | "candi
 }
 
 function evaluateSuiteGates(
-  manifest: SuiteManifest,
+  gates: SuiteGates,
   train: SuiteCohortSummary | undefined,
   holdout: SuiteCohortSummary | undefined
 ): SuiteGateSummary {
   const improvedMetrics = train
-    ? manifest.gates.primaryMetrics.filter((metric) => train.primaryMetrics[metric].improved === true)
+    ? gates.primaryMetrics.filter((metric) => train.primaryMetrics[metric]?.improved === true)
     : [];
-  const trainingPassed = train ? improvedMetrics.length >= manifest.gates.training.minImprovedPrimaryMetrics : true;
+  const trainingPassed = train ? improvedMetrics.length >= gates.training.minImprovedPrimaryMetrics : true;
 
   const regressions = holdout
-    ? manifest.gates.primaryMetrics
-      .map((metric) => ({ metric, regressionPct: holdout.primaryMetrics[metric].regressionPct }))
-      .filter((entry): entry is { metric: SuitePrimaryMetric; regressionPct: number } => entry.regressionPct !== null && entry.regressionPct > manifest.gates.holdout.maxRegressionPct)
+    ? gates.primaryMetrics
+      .map((metric) => ({ metric, regressionPct: holdout.primaryMetrics[metric]?.regressionPct ?? null }))
+      .filter((entry): entry is { metric: SuitePrimaryMetric; regressionPct: number } => entry.regressionPct !== null && entry.regressionPct > gates.holdout.maxRegressionPct)
     : [];
   const holdoutPassed = regressions.length === 0;
 
@@ -253,11 +457,11 @@ function evaluateSuiteGates(
     training: {
       passed: trainingPassed,
       improvedMetrics,
-      requiredImprovedMetrics: manifest.gates.training.minImprovedPrimaryMetrics
+      requiredImprovedMetrics: gates.training.minImprovedPrimaryMetrics
     },
     holdout: {
       passed: holdoutPassed,
-      maxRegressionPct: manifest.gates.holdout.maxRegressionPct,
+      maxRegressionPct: gates.holdout.maxRegressionPct,
       regressions
     }
   };

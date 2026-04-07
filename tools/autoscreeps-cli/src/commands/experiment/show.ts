@@ -1,8 +1,13 @@
-import { readRunDetails } from "../../lib/history.ts";
+import { readSuiteDetails } from "../../lib/history.ts";
 import { resolveRepoRoot } from "../../lib/git.ts";
+import { summarizeSuiteResults } from "../../lib/suite-runner.ts";
 
-export async function showExperimentCommand(runId: string): Promise<void> {
+export async function showExperimentCommand(suiteId: string): Promise<void> {
   const repoRoot = await resolveRepoRoot(process.cwd());
-  const run = await readRunDetails(repoRoot, runId);
-  process.stdout.write(`${JSON.stringify(run, null, 2)}\n`);
+  const details = await readSuiteDetails(repoRoot, suiteId);
+  process.stdout.write(`${JSON.stringify({
+    suite: details.suite,
+    summary: summarizeSuiteResults(details.suite.gates, details.cases),
+    cases: details.cases
+  }, null, 2)}\n`);
 }

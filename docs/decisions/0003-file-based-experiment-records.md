@@ -15,14 +15,18 @@ We also need reproducible provenance for workspace-based experiments that may in
 
 We will store experiment records as files in the repository workspace instead of treating the Screeps server databases as the source of truth.
 
-Recorded runs will live under `.autoscreeps/runs/`.
+Recorded experiment suites will live under `.autoscreeps/suites/`.
 
-Each run directory will contain structured files such as:
+Each suite directory will contain structured files such as:
 
-- `run.json` for run metadata and status
-- `variants.json` for resolved variant inputs and build metadata
-- `metrics.json` for captured run results
-- `events.jsonl` for execution events
+- `suite.json` for suite metadata, progress, and case summaries
+- `events.jsonl` for suite-level execution events
+- `cases/<case-run-id>/run.json` for per-case run metadata and status
+- `cases/<case-run-id>/variants.json` for resolved variant inputs and build metadata
+- `cases/<case-run-id>/metrics.json` for captured case results
+- `cases/<case-run-id>/events.jsonl` for per-case execution events
+
+Standalone duel invocations will be recorded as one-case suites so history inspection can remain suite-first.
 
 Variant provenance will be recorded as source state, not just build output:
 
@@ -50,7 +54,7 @@ We will store bundle hashes for verification, but the bundle itself is not the p
 
 ### Negative
 
-- Run history now consumes local disk space in the repository workspace.
+- Suite history now consumes local disk space in the repository workspace.
 - Reconstructing a workspace-based run requires applying a stored patch before rebuilding.
 - The files are only as reproducible as the captured source state and the build environment.
 

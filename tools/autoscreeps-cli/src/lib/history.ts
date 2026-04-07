@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { EventRecord, RunDetails, RunIndexEntry, RunMetrics, RunRecord, RunSample, VariantRecord } from "./contracts.ts";
+import type { EventRecord, RunDetails, RunIndexEntry, RunMetrics, RunRecord, RunSample, SuiteDetails, SuiteIndexEntry, SuiteRecord, VariantRecord } from "./contracts.ts";
 import { createRunId, ensureDirectory } from "./utils.ts";
 
 const indexFileName = "index.jsonl";
@@ -12,6 +12,18 @@ export function resolveHistoryRoot(repoRoot: string): string {
 
 export function resolveRunDir(repoRoot: string, runId: string): string {
   return path.join(resolveHistoryRoot(repoRoot), runId);
+}
+
+export function resolveSuitesRoot(repoRoot: string): string {
+  return path.join(repoRoot, ".autoscreeps", "suites");
+}
+
+export function resolveSuiteDir(repoRoot: string, suiteId: string): string {
+  return path.join(resolveSuitesRoot(repoRoot), suiteId);
+}
+
+export function resolveSuiteCaseRunDir(repoRoot: string, suiteId: string, runId: string): string {
+  return path.join(resolveSuiteDir(repoRoot, suiteId), "cases", runId);
 }
 
 export async function createRunWorkspace(repoRoot: string): Promise<{ historyRoot: string; runId: string; runDir: string }> {
@@ -28,8 +40,38 @@ export async function createRunWorkspace(repoRoot: string): Promise<{ historyRoo
   };
 }
 
+export async function createSuiteWorkspace(repoRoot: string): Promise<{ suitesRoot: string; suiteId: string; suiteDir: string }> {
+  const suitesRoot = resolveSuitesRoot(repoRoot);
+  const suiteId = createRunId();
+  const suiteDir = path.join(suitesRoot, suiteId);
+
+  await ensureDirectory(path.join(suiteDir, "cases"));
+
+  return {
+    suitesRoot,
+    suiteId,
+    suiteDir
+  };
+}
+
+export async function createSuiteCaseWorkspace(suiteDir: string): Promise<{ runId: string; runDir: string }> {
+  const runId = createRunId();
+  const runDir = path.join(suiteDir, "cases", runId);
+
+  await ensureDirectory(runDir);
+
+  return {
+    runId,
+    runDir
+  };
+}
+
 export async function writeRunRecord(runDir: string, record: RunRecord): Promise<void> {
   await writeJson(path.join(runDir, "run.json"), record);
+}
+
+export async function writeSuiteRecord(suiteDir: string, record: SuiteRecord): Promise<void> {
+  await writeJson(path.join(suiteDir, "suite.json"), record);
 }
 
 export async function writeVariantRecords(runDir: string, variants: Record<"baseline" | "candidate", VariantRecord>): Promise<void> {
@@ -46,6 +88,10 @@ export async function appendRunSample(runDir: string, sample: RunSample): Promis
 
 export async function appendEvent(runDir: string, event: EventRecord): Promise<void> {
   await fs.appendFile(path.join(runDir, "events.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
+}
+
+export async function appendSuiteEvent(suiteDir: string, event: EventRecord): Promise<void> {
+  await appendEvent(suiteDir, event);
 }
 
 export async function appendIndexEntry(historyRoot: string, entry: RunIndexEntry): Promise<void> {
@@ -105,8 +151,53 @@ export async function listRunRecords(repoRoot: string): Promise<RunRecord[]> {
   return runs.filter((run): run is RunRecord => run !== null).sort(compareRunsNewestFirst);
 }
 
+export async function listSuites(repoRoot: string): Promise<SuiteIndexEntry[]> {
+  const suitesRoot = resolveSuitesRoot(repoRoot);
+
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(suitesRoot, { withFileTypes: true });
+  } catch (error) {
+    const fileError = error as NodeJS.ErrnoException;
+    if (fileError.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+
+  const suites = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map(async (entry) => {
+        try {
+          return (await readJson(path.join(suitesRoot, entry.name, "suite.json"))) as SuiteRecord;
+        } catch (error) {
+          if (shouldIgnoreTransientJsonError(error)) {
+            return null;
+          }
+          throw error;
+        }
+      })
+  );
+
+  return suites
+    .filter((suite): suite is SuiteRecord => suite !== null)
+    .sort(compareSuitesNewestFirst)
+    .map((suite) => ({
+      id: suite.id,
+      status: suite.status,
+      createdAt: suite.createdAt,
+      finishedAt: suite.finishedAt,
+      name: suite.name,
+      progress: suite.progress
+    }));
+}
+
 export async function readRunDetails(repoRoot: string, runId: string): Promise<RunDetails> {
-  const runDir = resolveRunDir(repoRoot, runId);
+  return readCaseRunDetails(resolveRunDir(repoRoot, runId));
+}
+
+export async function readCaseRunDetails(runDir: string): Promise<RunDetails> {
   const run = (await readJson(path.join(runDir, "run.json"))) as RunRecord;
   const variantsPath = path.join(runDir, "variants.json");
   const metricsPath = path.join(runDir, "metrics.json");
@@ -148,6 +239,27 @@ export async function readRunDetails(repoRoot: string, runId: string): Promise<R
     variants,
     metrics,
     samples
+  };
+}
+
+export async function readSuiteRecord(repoRoot: string, suiteId: string): Promise<SuiteRecord> {
+  return (await readJson(path.join(resolveSuiteDir(repoRoot, suiteId), "suite.json"))) as SuiteRecord;
+}
+
+export async function readSuiteDetails(repoRoot: string, suiteId: string): Promise<SuiteDetails> {
+  const suite = await readSuiteRecord(repoRoot, suiteId);
+  const cases = await Promise.all(
+    suite.cases.map(async (testCase) => ({
+      ...testCase,
+      details: testCase.runId === null
+        ? null
+        : await readCaseRunDetailsOrNull(resolveSuiteCaseRunDir(repoRoot, suite.id, testCase.runId))
+    }))
+  );
+
+  return {
+    suite,
+    cases
   };
 }
 
@@ -201,6 +313,21 @@ function shouldIgnoreTransientJsonError(error: unknown): boolean {
   return fileError.code === "ENOENT" || error instanceof SyntaxError;
 }
 
+async function readCaseRunDetailsOrNull(runDir: string): Promise<RunDetails | null> {
+  try {
+    return await readCaseRunDetails(runDir);
+  } catch (error) {
+    if (shouldIgnoreTransientJsonError(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 function compareRunsNewestFirst(left: RunRecord, right: RunRecord): number {
+  return Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.id.localeCompare(left.id);
+}
+
+function compareSuitesNewestFirst(left: SuiteRecord, right: SuiteRecord): number {
   return Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.id.localeCompare(left.id);
 }

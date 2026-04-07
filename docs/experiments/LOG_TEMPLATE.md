@@ -17,7 +17,7 @@
 - Bot package:
 - Suite or scenario:
 - Command:
-- Cases or run IDs:
+- Suite ID and cases:
 
 ## Results
 

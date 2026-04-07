@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { appendIndexEntry, appendRunSample, createRunWorkspace, listRunRecords, listRuns, readEventTail, readRunDetails, resolveRunDir, writeRunRecord, writeVariantRecords } from "../src/lib/history.ts";
-import type { RunRecord, VariantRecord } from "../src/lib/contracts.ts";
+import { appendIndexEntry, appendRunSample, createRunWorkspace, createSuiteCaseWorkspace, createSuiteWorkspace, listRunRecords, listRuns, listSuites, readEventTail, readRunDetails, readSuiteDetails, resolveRunDir, writeRunRecord, writeSuiteRecord, writeVariantRecords } from "../src/lib/history.ts";
+import type { RunRecord, SuiteRecord, VariantRecord } from "../src/lib/contracts.ts";
 
 const tempPaths: string[] = [];
 
@@ -191,6 +191,97 @@ describe("history", () => {
 
     expect(events.map((event) => event.event)).toEqual(["two", "three"]);
   });
+
+  it("creates a suite workspace and reads nested case details back", async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "autoscreeps-suite-history-"));
+    tempPaths.push(repoRoot);
+
+    const { suiteId, suiteDir } = await createSuiteWorkspace(repoRoot);
+    const { runId, runDir } = await createSuiteCaseWorkspace(suiteDir);
+    const run = createRunRecord(repoRoot, runId, "2026-01-01T00:00:00.000Z");
+    run.status = "completed";
+    run.startedAt = "2026-01-01T00:00:01.000Z";
+    run.finishedAt = "2026-01-01T00:00:02.000Z";
+    run.suite = {
+      id: suiteId,
+      name: "duel-basic",
+      caseId: "duel",
+      cohort: "train",
+      caseIndex: 1,
+      caseCount: 1
+    };
+    const suite: SuiteRecord = {
+      id: suiteId,
+      type: "suite",
+      status: "completed",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      startedAt: "2026-01-01T00:00:01.000Z",
+      finishedAt: "2026-01-01T00:00:02.000Z",
+      repoRoot,
+      name: "duel-basic",
+      source: {
+        kind: "scenario",
+        path: "experiments/scenarios/duel-basic.yaml"
+      },
+      baseline: {
+        source: "git:main",
+        packagePath: "bots/basic"
+      },
+      candidate: {
+        source: "workspace",
+        packagePath: "bots/basic"
+      },
+      gates: {
+        primaryMetrics: ["T_RCL2", "T_RCL3", "spawnIdlePct", "sourceCoveragePct", "sourceUptimePct"],
+        training: { minImprovedPrimaryMetrics: 2 },
+        holdout: { maxRegressionPct: 5 }
+      },
+      progress: {
+        caseCount: 1,
+        completedCaseCount: 1,
+        failedCaseCount: 0,
+        currentCaseId: null,
+        currentCaseRunId: null
+      },
+      cases: [
+        {
+          id: "duel",
+          cohort: "train",
+          caseIndex: 1,
+          tags: [],
+          scenarioPath: run.scenarioPath,
+          scenarioName: run.scenarioName,
+          runId,
+          status: "completed",
+          error: null,
+          startedAt: run.startedAt,
+          finishedAt: run.finishedAt
+        }
+      ],
+      error: null
+    };
+
+    await writeSuiteRecord(suiteDir, suite);
+    await writeRunRecord(runDir, run);
+    await writeVariantRecords(runDir, createVariants());
+
+    const listed = await listSuites(repoRoot);
+    const details = await readSuiteDetails(repoRoot, suiteId);
+
+    expect(listed).toEqual([
+      {
+        id: suiteId,
+        status: "completed",
+        createdAt: suite.createdAt,
+        finishedAt: suite.finishedAt,
+        name: suite.name,
+        progress: suite.progress
+      }
+    ]);
+    expect(details.suite.id).toBe(suiteId);
+    expect(details.cases[0]?.details?.run.id).toBe(runId);
+    expect(details.cases[0]?.details?.variants?.baseline.snapshot.kind).toBe("git");
+  });
 });
 
 function createRunRecord(repoRoot: string, runId: string, createdAt: string): RunRecord {
@@ -225,5 +316,45 @@ function createRunRecord(repoRoot: string, runId: string, createdAt: string): Ru
       cliPort: 21026
     },
     error: null
+  };
+}
+
+function createVariants(): Record<"baseline" | "candidate", VariantRecord> {
+  return {
+    baseline: {
+      role: "baseline",
+      snapshot: {
+        kind: "git",
+        source: "git:main",
+        ref: "main",
+        resolvedSha: "abc123"
+      },
+      build: {
+        packagePath: "bots/basic",
+        bundleHash: "hash-a",
+        bundleSize: 10,
+        builtAt: "2026-01-01T00:00:00.000Z",
+        nodeVersion: "v22.0.0"
+      }
+    },
+    candidate: {
+      role: "candidate",
+      snapshot: {
+        kind: "workspace",
+        source: "workspace",
+        baseSha: "def456",
+        branchName: "main",
+        dirty: false,
+        patchFile: null,
+        patchHash: null
+      },
+      build: {
+        packagePath: "bots/basic",
+        bundleHash: "hash-b",
+        bundleSize: 12,
+        builtAt: "2026-01-01T00:00:00.000Z",
+        nodeVersion: "v22.0.0"
+      }
+    }
   };
 }

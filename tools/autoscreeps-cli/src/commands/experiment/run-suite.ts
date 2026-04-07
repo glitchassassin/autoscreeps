@@ -23,7 +23,7 @@ export async function runExperimentSuiteCommand(options: SuiteCommandOptions): P
   });
 
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-  if (!result.summary.gates.passed || result.cases.some((testCase) => testCase.status !== "completed")) {
+  if (result.suite.status !== "completed" || result.suite.progress.failedCaseCount > 0 || !result.summary.gates.passed) {
     process.exitCode = 1;
   }
 }

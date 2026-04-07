@@ -14,6 +14,7 @@ import type {
   UserBadge,
   UserSampleMetrics,
   UserWorldStatus,
+  VariantInput,
   VariantRecord,
   VariantRole
 } from "./contracts.ts";
@@ -30,15 +31,15 @@ import { ScreepsServerCli } from "./server-cli.ts";
 import { timestamp } from "./utils.ts";
 import { summarizeLiveRoom } from "./watch.ts";
 
-type DuelVariantInput = {
-  source: string;
-  packagePath: string;
-};
-
 export type DuelRunInput = {
   cwd: string;
-  baseline: DuelVariantInput;
-  candidate: DuelVariantInput;
+  baseline: VariantInput;
+  candidate: VariantInput;
+  runWorkspace?: {
+    runId: string;
+    runDir: string;
+  };
+  suite?: RunRecord["suite"];
 } & (
   | {
     scenarioPath: string;
@@ -83,7 +84,19 @@ type TerminalEvaluation = {
 export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails> {
   const repoRoot = await resolveRepoRoot(input.cwd);
   const scenario = "scenario" in input ? input.scenario : await loadScenario(input.scenarioPath);
-  const { runId, runDir, historyRoot } = await createRunWorkspace(repoRoot);
+  let runId: string;
+  let runDir: string;
+  let historyRoot: string | null = null;
+
+  if (input.runWorkspace) {
+    runId = input.runWorkspace.runId;
+    runDir = input.runWorkspace.runDir;
+  } else {
+    const workspace = await createRunWorkspace(repoRoot);
+    runId = workspace.runId;
+    runDir = workspace.runDir;
+    historyRoot = workspace.historyRoot;
+  }
   const world = await resolveExperimentWorld({
     scenario: scenario.config,
     runDir
@@ -98,6 +111,7 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
     repoRoot,
     scenarioPath: path.relative(repoRoot, scenario.path),
     scenarioName: scenario.config.name,
+    suite: input.suite,
     rooms: {
       baseline: world.rooms.baseline,
       candidate: world.rooms.candidate
@@ -413,16 +427,18 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
     await logEvent(runDir, "error", "run.failed", "Experiment run failed.", { error: runRecord.error });
   }
 
-  const indexEntry: RunIndexEntry = {
-    id: runRecord.id,
-    type: runRecord.type,
-    status: runRecord.status,
-    createdAt: runRecord.createdAt,
-    finishedAt: runRecord.finishedAt,
-    scenarioName: runRecord.scenarioName,
-    rooms: runRecord.rooms
-  };
-  await appendIndexEntry(historyRoot, indexEntry);
+  if (historyRoot !== null) {
+    const indexEntry: RunIndexEntry = {
+      id: runRecord.id,
+      type: runRecord.type,
+      status: runRecord.status,
+      createdAt: runRecord.createdAt,
+      finishedAt: runRecord.finishedAt,
+      scenarioName: runRecord.scenarioName,
+      rooms: runRecord.rooms
+    };
+    await appendIndexEntry(historyRoot, indexEntry);
+  }
 
   return {
     run: runRecord,

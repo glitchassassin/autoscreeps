@@ -2,7 +2,22 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
+import type { SuiteGates } from "./contracts.ts";
 import { loadScenario, mapGeneratorSchema, roomSelectionStrategySchema, scenarioRunSchema, scenarioSchema, type ScenarioConfig } from "./scenario.ts";
+
+export const defaultSuitePrimaryMetrics = [
+  "T_RCL2",
+  "T_RCL3",
+  "spawnIdlePct",
+  "sourceCoveragePct",
+  "sourceUptimePct"
+] as const;
+
+export const defaultSuiteGates: SuiteGates = {
+  primaryMetrics: [...defaultSuitePrimaryMetrics],
+  training: { minImprovedPrimaryMetrics: 2 },
+  holdout: { maxRegressionPct: 5 }
+};
 
 export const suitePrimaryMetricSchema = z.enum([
   "T_RCL2",
@@ -35,38 +50,20 @@ const suiteCaseSchema = z.object({
 });
 
 const suiteGatesSchema = z.object({
-  primaryMetrics: z.array(suitePrimaryMetricSchema).min(1).default([
-    "T_RCL2",
-    "T_RCL3",
-    "spawnIdlePct",
-    "sourceCoveragePct",
-    "sourceUptimePct"
-  ]),
+  primaryMetrics: z.array(suitePrimaryMetricSchema).min(1).default([...defaultSuitePrimaryMetrics]),
   training: z.object({
     minImprovedPrimaryMetrics: z.number().int().nonnegative().default(2)
-  }).default({
-    minImprovedPrimaryMetrics: 2
-  }),
+  }).default(defaultSuiteGates.training),
   holdout: z.object({
     maxRegressionPct: z.number().nonnegative().default(5)
-  }).default({
-    maxRegressionPct: 5
-  })
-}).default({
-  primaryMetrics: ["T_RCL2", "T_RCL3", "spawnIdlePct", "sourceCoveragePct", "sourceUptimePct"],
-  training: { minImprovedPrimaryMetrics: 2 },
-  holdout: { maxRegressionPct: 5 }
-});
+  }).default(defaultSuiteGates.holdout)
+}).default(defaultSuiteGates);
 
 export const suiteManifestSchema = z.object({
   version: z.literal(1),
   name: z.string().min(1),
   description: z.string().optional(),
-  gates: suiteGatesSchema.default({
-    primaryMetrics: ["T_RCL2", "T_RCL3", "spawnIdlePct", "sourceCoveragePct", "sourceUptimePct"],
-    training: { minImprovedPrimaryMetrics: 2 },
-    holdout: { maxRegressionPct: 5 }
-  }),
+  gates: suiteGatesSchema.default(defaultSuiteGates),
   cases: z.array(suiteCaseSchema).min(1)
 }).superRefine((value, context) => {
   const seen = new Set<string>();

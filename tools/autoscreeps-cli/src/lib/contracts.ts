@@ -35,7 +35,90 @@ export type VariantRecord = {
   build: VariantBuildRecord;
 };
 
+export type VariantInput = {
+  source: string;
+  packagePath: string;
+};
+
 export type RunStatus = "running" | "completed" | "failed";
+
+export type SuiteCaseStatus = "pending" | RunStatus;
+
+export type SuiteSource =
+  | {
+    kind: "manifest";
+    path: string;
+  }
+  | {
+    kind: "scenario";
+    path: string;
+  };
+
+export type SuitePrimaryMetric =
+  | "T_RCL2"
+  | "T_RCL3"
+  | "controllerProgressToRCL3Pct"
+  | "spawnIdlePct"
+  | "sourceCoveragePct"
+  | "sourceUptimePct";
+
+export type SuiteGates = {
+  primaryMetrics: SuitePrimaryMetric[];
+  training: {
+    minImprovedPrimaryMetrics: number;
+  };
+  holdout: {
+    maxRegressionPct: number;
+  };
+};
+
+export type SuiteCaseRecord = {
+  id: string;
+  cohort: "train" | "holdout";
+  caseIndex: number;
+  tags: string[];
+  scenarioPath: string;
+  scenarioName: string | null;
+  runId: string | null;
+  status: SuiteCaseStatus;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
+export type SuiteRecord = {
+  id: string;
+  type: "suite";
+  status: RunStatus;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  repoRoot: string;
+  name: string;
+  description?: string;
+  source: SuiteSource;
+  baseline: VariantInput;
+  candidate: VariantInput;
+  gates: SuiteGates;
+  progress: {
+    caseCount: number;
+    completedCaseCount: number;
+    failedCaseCount: number;
+    currentCaseId: string | null;
+    currentCaseRunId: string | null;
+  };
+  cases: SuiteCaseRecord[];
+  error: string | null;
+};
+
+export type SuiteIndexEntry = {
+  id: string;
+  status: RunStatus;
+  createdAt: string;
+  finishedAt: string | null;
+  name: string;
+  progress: SuiteRecord["progress"];
+};
 
 export type RunTerminationReason = "all-bots-terminal" | "max-ticks";
 
@@ -123,6 +206,14 @@ export type RunRecord = {
   repoRoot: string;
   scenarioPath: string;
   scenarioName: string;
+  suite?: {
+    id: string;
+    name: string;
+    caseId: string;
+    cohort: "train" | "holdout";
+    caseIndex: number;
+    caseCount: number;
+  };
   rooms: {
     baseline: string;
     candidate: string;
@@ -251,6 +342,15 @@ export type RunDetails = {
   variants: Record<VariantRole, VariantRecord> | null;
   metrics: RunMetrics | null;
   samples?: RunSample[] | null;
+};
+
+export type SuiteCaseDetails = SuiteCaseRecord & {
+  details: RunDetails | null;
+};
+
+export type SuiteDetails = {
+  suite: SuiteRecord;
+  cases: SuiteCaseDetails[];
 };
 
 export type EventRecord = {

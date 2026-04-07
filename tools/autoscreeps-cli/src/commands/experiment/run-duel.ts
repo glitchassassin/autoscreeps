@@ -1,4 +1,4 @@
-import { runDuelExperiment } from "../../lib/runner.ts";
+import { runScenarioSuite } from "../../lib/suite-runner.ts";
 
 type DuelCommandOptions = {
   scenario: string;
@@ -9,7 +9,7 @@ type DuelCommandOptions = {
 };
 
 export async function runDuelExperimentCommand(options: DuelCommandOptions): Promise<void> {
-  const details = await runDuelExperiment({
+  const result = await runScenarioSuite({
     cwd: process.cwd(),
     scenarioPath: options.scenario,
     baseline: {
@@ -22,8 +22,8 @@ export async function runDuelExperimentCommand(options: DuelCommandOptions): Pro
     }
   });
 
-  process.stdout.write(`${JSON.stringify(details, null, 2)}\n`);
-  if (details.run.status !== "completed") {
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  if (result.suite.status !== "completed" || result.suite.progress.failedCaseCount > 0 || !result.summary.gates.passed) {
     process.exitCode = 1;
   }
 }
