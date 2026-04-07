@@ -2,7 +2,6 @@
 description: Consults the local Screeps references to identify hard constraints, ceilings, and solution ideas for world-model or server-behavior problems.
 mode: subagent
 temperature: 0.5
-steps: 6
 permission:
   "*": deny
   read:
