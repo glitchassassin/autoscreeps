@@ -31,8 +31,8 @@ describe("watch helpers", () => {
         { type: "spawn", user: "u1", store: { energy: 150 }, storeCapacityResource: { energy: 300 } },
         { type: "extension", user: "u1", energy: 50, energyCapacity: 50 },
         { type: "constructionSite", user: "u1" },
-        { type: "creep", user: "u1" },
-        { type: "creep", user: "u1" },
+        { type: "creep", user: "u1", store: { energy: 25 }, storeCapacity: 50 },
+        { type: "creep", user: "u1", store: { energy: 0 }, storeCapacity: 50 },
         { type: "source" }
       ],
       users: {
@@ -46,8 +46,8 @@ describe("watch helpers", () => {
     expect(stats.extensions).toBe(1);
     expect(stats.constructionSites).toBe(1);
     expect(stats.controllerLevel).toBe(2);
-    expect(stats.energy).toBe(200);
-    expect(stats.energyCapacity).toBe(350);
+    expect(stats.energy).toBe(225);
+    expect(stats.energyCapacity).toBe(450);
   });
 
   it("reduces recorded metrics into watcher stats", () => {

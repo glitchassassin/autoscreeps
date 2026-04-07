@@ -36,7 +36,7 @@ export function summarizeLiveRoom(room: string, response: RoomObjectsResponse): 
 
   for (const object of ownedObjects) {
     const storedEnergy = getEnergyFromStore(object.store);
-    const storedCapacity = getEnergyFromStore(object.storeCapacityResource);
+    const storedCapacity = getEnergyFromStore(object.storeCapacityResource) ?? getNumericProperty(object, "storeCapacity");
 
     if (storedEnergy !== null || storedCapacity !== null) {
       energy += storedEnergy ?? 0;

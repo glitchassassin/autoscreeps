@@ -20,6 +20,7 @@ export type RoomObjectRecord = {
   energy?: number;
   energyCapacity?: number;
   store?: Record<string, number>;
+  storeCapacity?: number;
   storeCapacityResource?: Record<string, number>;
   reservation?: {
     user?: string;
