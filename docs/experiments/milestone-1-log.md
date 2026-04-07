@@ -735,7 +735,7 @@ node src/cli.ts experiment run suite \
 
 ## Entry `exp-2026-04-06-dynamic-quota-extension-baseline`
 
-- Status: `planned`
+- Status: `completed`
 - Owner: `OpenCode`
 - Date: `2026-04-06`
 
@@ -749,24 +749,891 @@ node src/cli.ts experiment run suite \
 - Variant or branch: `git:HEAD` vs `workspace`
 - Bot package: `bots/basic`
 - Suite: `experiments/suites/milestone-1-opener.yaml`
-- Planned change:
+- Change tested:
   - replace fixed `2 harvester / 2 upgrader` spawn quotas with a dynamic quota policy driven by room state
   - add strong-priority `RCL2` extension building to the baseline opener
   - keep the initial implementation strategy-agnostic enough that later direct, courier, and container experiments can inherit it cleanly
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-06T14-01-25-462Z-63378085`
+  - `train-b-2k`: `2026-04-06T14-03-12-985Z-ec089c18`
+  - `train-c-5k`: `2026-04-06T14-04-58-737Z-08073ec9`
+  - `train-d-5k`: `2026-04-06T14-08-20-593Z-5589c5db`
+  - `holdout-a-2k`: `2026-04-06T14-29-52-325Z-931ea50a`
+  - `holdout-b-5k`: `2026-04-06T14-31-37-466Z-dc68bc0b`
 
 ### Results
 
-- Pending.
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `8.62%` to `0.45%` (`-94.78%`)
+  - `spawnIdlePct`: improved from `13.84%` to `8.69%`
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `2145`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `null`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `16.02%` to `0.45%` (`-97.19%`)
+  - `spawnIdlePct`: improved from `11.31%` to `8.19%`
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `1040`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `null`
+- Gate result:
+  - training failed with only `1` improved primary metric (`spawnIdlePct`)
+  - holdout failed because `controllerProgressToRCL3Pct` regressed by `97.19%`
+  - overall suite result: `failed`
+- Notable behavior:
+  - the candidate only recorded a `firstExtensionTick` in `2/6` cases
+  - the candidate never completed all `5` `RCL2` extensions in any case
+  - several candidate rooms ended with only `1` creep plus multiple extension construction sites still pending, which strongly suggests the new baseline over-prioritized construction requests relative to workable economy throughput
 
 ### Interpretation
 
-- Pending.
+- This baseline failed badly on the new sustainable-growth objective.
+- The dynamic-quota and extension-first behavior reduced spawn idling, but it did so by starving controller progress and, on several maps, starving the room down to a brittle low-creep state while extension sites sat unfinished.
+- The main design mistake was treating extension site creation as "strong priority" without first earning the economic slack to build them. In practice, the opener placed sites early but did not have the labor or surplus energy to complete them.
+- Because controller progress collapsed and extension completion barely moved, this is not a viable foundation for the later strategy slate.
+- After evaluation, the behavior change was reverted so the workspace remains on the committed baseline while the experiment result stays documented.
 
 ### Follow-Up Hypotheses
 
-- Hypothesis A: a dynamic direct-worker strategy will become a credible sustainable-growth baseline once extension timing is explicitly managed.
-- Hypothesis B: later courier experiments should be judged as incremental improvements on this baseline, not as replacements for it.
+- Hypothesis A: dynamic quotas may still be correct, but extension construction should be demand-gated and workforce-gated rather than turning on as soon as `RCL2` is reached.
+- Hypothesis B: the next baseline attempt should separate quota changes from extension-site placement so we can tell whether the regression came mostly from spawn policy or from premature construction overhead.
+- Hypothesis C: strong-priority extension building may only make sense after a minimum workforce floor and a room-energy surplus are both satisfied.
 
 ### Decision
 
-- Pending.
+- `reject`
+- Do not keep this behavior change. Keep the scorecard pivot, keep the experiment record, and revisit the baseline with a much more conservative extension trigger.
+
+## Entry `exp-2026-04-06-drop-harvester-courier-worker-opener`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-06`
+
+### Hypothesis
+
+- A clearer three-stage opener pipeline should outperform the recent mixed-role baselines on sustainable `RCL3` progress.
+- If harvesters become true drop miners, couriers exclusively refill `spawn` and `extensions`, and workers only pick up dropped source energy for `build` or `upgrade` work, the opener should reduce role interference and make labor bottlenecks easier to control with dynamic quotas.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Change tested:
+  - add three explicit roles: `harvester`, `courier`, and `worker`
+  - make harvesters true drop-only miners with no transfer, build, or upgrade fallback
+  - make couriers collect source-side dropped energy and only refill `spawn` and `extensions`
+  - make workers collect source-side dropped energy and alternate between building and upgrading as tasks require
+  - keep workers on drop pickup only for this first pass, with no direct-harvest fallback
+  - use dynamic spawn quotas to bootstrap the first harvester/courier pair from the initial `300` energy and then scale by pipeline need
+  - place `RCL2` extensions conservatively rather than front-loading all five sites immediately
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-06T15-51-13-121Z-82b68cb9`
+  - `train-b-2k`: `2026-04-06T16-00-13-926Z-87535ac6`
+  - `train-c-5k`: `2026-04-06T16-09-15-012Z-d38769ec`
+  - `train-d-5k`: `2026-04-06T16-12-35-474Z-bb6fcf84`
+  - `holdout-a-2k`: `2026-04-06T16-34-07-385Z-2e775ac2`
+  - `holdout-b-5k`: `2026-04-06T16-43-07-541Z-3199f81d`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `8.62` to `1.69` (`-80.39%`)
+  - `spawnIdlePct`: improved from `12.29%` to `10.00%`
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `null`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `null`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `15.97` to `4.22` (`-73.58%`)
+  - `spawnIdlePct`: improved from `10.81%` to `10.52%`
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `4775`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `null`
+- Gate result:
+  - training failed with only `1` improved primary metric (`spawnIdlePct`)
+  - holdout failed because `controllerProgressToRCL3Pct` regressed by `73.58%`
+  - overall suite result: `failed`
+- Notable behavior:
+  - candidate `RCL2` timing regressed in all `6/6` cases
+  - harvest-mode source coverage and uptime jumped from roughly `45/1` to `97/95`
+  - active-harvest source coverage and uptime jumped from roughly `29/0` on train and `35/0.33` on holdout to about `90/88` and `88.5/86.9`
+  - no train case completed even a first extension, and only one holdout case built a single extension very late at tick `4775`
+  - candidate rooms often still contained dropped energy or pending construction at the end, implying the pipeline moved energy out of the source reliably but still failed to convert it into timely room progress
+
+### Interpretation
+
+- This experiment achieved the clearest source pipeline so far.
+- The drop-harvester plus courier split produced near-max source coverage and active harvest uptime across both train and holdout, so the upstream side of the economy was no longer the bottleneck.
+- But the downstream side remained too weak:
+  - workers progressed the controller much more slowly than the baseline
+  - extension rollout barely started
+  - the opener remained late to `RCL2` on every map
+- That means the strict drop-pickup-only worker stage is too constrained. The bot can harvest and transport, but it still cannot turn that energy into tech progression quickly enough.
+- After evaluation, the behavior change was reverted so the workspace remains on the committed baseline while the experiment record stays documented.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: the next version of this pipeline should add a narrow worker fallback, likely limited to local pickup or direct harvest only when no source drop is available for a bounded time.
+- Hypothesis B: the courier role may still be over-focused on spawn and extension refill; a worker-facing transfer or courier drop-off pattern could improve controller progress without undoing the role split.
+- Hypothesis C: the three-role pipeline is mechanically valid, but its quota policy and worker energy-acquisition constraints need to be relaxed before it can compete on `RCL3` progress.
+
+### Decision
+
+- `reject`
+- Do not keep this strict drop-pickup-only behavior. Keep the experiment record, revert the runtime change, and revisit the pipeline with a controlled worker fallback or worker-facing energy delivery.
+
+## Entry `exp-2026-04-06-drop-harvester-courier-worker-opener-loop-rerun`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-06`
+
+### Hypothesis
+
+- The strict drop-harvester/courier/worker pipeline may still fail, but the new loop-diagnostics telemetry should reveal whether the dominant issue is really worker pickup starvation, courier misallocation, build/upgrade selection, or some other downstream stall.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Change tested:
+  - re-run the same strict three-role pipeline:
+    - drop-only harvesters
+    - couriers that only refill `spawn` and `extensions`
+    - workers that use source-side drops only and alternate between `build` and `upgrade`
+  - keep workers on drop pickup only, with no direct-harvest fallback
+  - use the new loop telemetry to inspect role behavior and handoff latency during evaluation
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-06T18-38-24-368Z-8c7cdb4c`
+  - `train-b-2k`: `2026-04-06T18-40-12-910Z-12adf634`
+  - `train-c-5k`: `2026-04-06T18-49-13-857Z-974f2389`
+  - `train-d-5k`: `2026-04-06T18-52-54-087Z-71014739`
+  - `holdout-a-2k`: `2026-04-06T19-14-27-423Z-42ec667b`
+  - `holdout-b-5k`: `2026-04-06T19-16-23-371Z-1a0d005e`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `8.62` to `1.69` (`-80.39%`)
+  - `spawnIdlePct`: not comparable because neither side produced parsed telemetry samples
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `null`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `null`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `15.98` to `4.22` (`-73.59%`)
+  - `spawnIdlePct`: not comparable because neither side produced parsed telemetry samples
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `4744`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `null`
+- Gate result:
+  - training failed with `0` improved primary metrics
+  - holdout failed because `controllerProgressToRCL3Pct` regressed by `73.59%`
+  - overall suite result: `failed`
+- Telemetry transport result:
+  - every sampled run artifact recorded `telemetry: { baseline: null, candidate: null }`
+  - `telemetrySampleCount` stayed `0` for both variants in every case
+  - no telemetry parse, size, or malformed-payload errors were visible in the run event logs
+- Notable behavior:
+  - the rerun reproduced the same controller-progress failure pattern as the first run
+  - candidate `RCL2` timing again regressed in all `6/6` cases
+  - the only completed extension signal was still a single very late holdout extension
+
+### Interpretation
+
+- The rerun confirms that the strict three-role pipeline still underperforms badly on sustainable controller progress.
+- However, this follow-up did not answer the loop-diagnosis question because the new telemetry never reached the run samples.
+- That means we still do not know from direct loop evidence whether the dominant failure is worker pickup starvation, courier misallocation, or some other downstream stall.
+- The experiment therefore failed twice:
+  - as an opener candidate on the scorecard
+  - as a telemetry-driven diagnosis attempt, because the harness never observed the emitted telemetry payloads
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: the telemetry emission path or segment capture path regressed when loop diagnostics were added, and that should be fixed before any more telemetry-dependent reruns.
+- Hypothesis B: once telemetry capture works again, rerunning this exact strategy may still be useful, because the score failure is reproducible and the missing loop evidence is now the main blocker to understanding it.
+- Hypothesis C: if the telemetry transport bug proves expensive to chase, an alternate diagnosis path may be to expose a smaller subset of loop counters first or derive more evidence from sampled room objects.
+
+### Decision
+
+- `reject`
+- Do not keep the strict three-role behavior. Revert it again, and treat telemetry transport as the next blocker before using loop instrumentation to guide more reruns.
+
+## Entry `exp-2026-04-06-drop-harvester-courier-worker-opener-loop-rerun-fixed-telemetry`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-06`
+
+### Hypothesis
+
+- Once telemetry transport is fixed, rerunning the strict drop-harvester/courier/worker pipeline should reveal whether the dominant failure is worker pickup starvation, courier misallocation, or some other downstream loop stall.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Change tested:
+  - re-run the same strict three-role pipeline after fixing telemetry capture in the Screeps runtime
+  - collect loop diagnostics including action attempts/successes, target failures, no-energy ticks, with-energy-no-spend ticks, and source backlog
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-06T20-25-15-151Z-dc156abc`
+  - `train-b-2k`: `2026-04-06T20-27-02-313Z-759d6e33`
+  - `train-c-5k`: `2026-04-06T20-28-49-303Z-066c1942`
+  - `train-d-5k`: `2026-04-06T20-50-21-303Z-11d7d4cc`
+  - `holdout-a-2k`: `2026-04-06T20-54-28-801Z-68cbd78a`
+  - `holdout-b-5k`: `2026-04-06T21-03-30-841Z-4735e17a`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `8.63` to `1.69` (`-80.42%`)
+  - `spawnIdlePct`: improved from `12.83%` to `10.66%`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `15.96` to `4.22` (`-73.56%`)
+  - `spawnIdlePct`: improved from `11.00%` to `10.39%`
+- Extension timing:
+  - train `firstExtensionTick`: baseline `null`, candidate `null`
+  - holdout `firstExtensionTick`: baseline `null`, candidate `4766`
+  - `allRcl2ExtensionsTick`: baseline `null`, candidate `null` in all cohorts
+- Gate result:
+  - training failed with only `1` improved primary metric (`spawnIdlePct`)
+  - holdout failed because `controllerProgressToRCL3Pct` regressed by `73.56%`
+  - overall suite result: `failed`
+- Pipeline diagnostics:
+  - harvesting remained extremely strong:
+    - overall harvest-mode source coverage `45.78 -> 97.33`
+    - overall harvest-mode source uptime `1.67 -> 94.65`
+    - overall active-harvest coverage `29.89 -> 89.57`
+    - overall active-harvest uptime `0 -> 88.39`
+  - representative train loop data (`train-c-5k`, final sample):
+    - `withEnergyNoSpendTicks`: `courier 8245`, `worker 1890`
+    - `targetFailures`: `courier.no_refill_target 7598`, `courier.target_switch 353`, `worker.target_switch 244`
+    - `backlogEnergy`: `3928`
+    - `actionAttempts/successes`: courier `pickup 1156/131`, `transfer 647/48`; worker `pickup 1539/89`, `upgrade 1994/1100`, `build 1191/195`
+    - `actionFailures`: `courier.transfer.-9 599`, `worker.pickup.-9 1405`, `worker.build.-9 996`, `worker.upgrade.-9 894`
+  - representative holdout loop data (`holdout-b-5k`, final sample):
+    - `withEnergyNoSpendTicks`: `courier 7963`, `worker 1276`
+    - `targetFailures`: `courier.no_refill_target 7708`, `courier.target_switch 843`, `worker.target_switch 718`
+    - `backlogEnergy`: `2410`
+    - `actionAttempts/successes`: courier `pickup 1441/337`, `transfer 255/44`; worker `pickup 1297/279`, `upgrade 2156/1839`, `build 1294/335`
+    - `actionFailures`: `courier.transfer.-9 211`, `worker.pickup.-9 973`, `worker.build.-7 741`, `worker.build.-9 218`, `worker.upgrade.-9 317`
+
+### Interpretation
+
+- The telemetry-fixed rerun rules out a simple “workers can’t find dropped energy often enough” explanation.
+- The main downstream bottleneck is courier and worker spend efficiency:
+  - couriers spend huge amounts of time with energy but no valid refill target
+  - workers also accumulate large `withEnergyNoSpendTicks` and many out-of-range build/upgrade attempts
+  - source backlog remains large even while source-side harvesting is excellent
+- In other words, the strict pipeline harvests successfully, but it does not route or spend that energy into room progress quickly enough.
+- The biggest signal is `courier.no_refill_target`: spawn and extension refill alone is too narrow a delivery contract for the amount of energy being produced.
+- After evaluation, the strict three-role behavior was reverted again so the workspace remains on the committed telemetry baseline while the new evidence stays documented.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: keep the three-role split, but let couriers deliver to worker-facing sinks or handoff locations instead of only `spawn` and `extensions`.
+- Hypothesis B: workers likely need either a tighter local drop-acquisition path or a courier-assisted feed, because high pickup attempts with low pickup successes indicate contested or badly-routed collection.
+- Hypothesis C: the next pipeline experiment should change the courier delivery contract before adding a worker direct-harvest fallback, because courier starvation appears to be the dominant downstream loop failure.
+
+### Decision
+
+- `reject`
+- Do not keep the strict three-role behavior. Keep the telemetry fix and the diagnostic result, and use the next experiment to widen or redirect courier delivery rather than immediately relaxing worker harvest rules.
+
+## Entry `exp-2026-04-06-worker-facing-courier-delivery`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-06`
+
+### Hypothesis
+
+- The strict three-role pipeline is still directionally correct, but the courier delivery contract is too narrow.
+- If couriers can feed worker-facing handoff points instead of only `spawn` and `extensions`, the opener should keep the source-side gains while reducing courier `no_refill_target` stalls, lowering source backlog, and improving `controllerProgressToRCL3Pct`.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Change tested:
+  - keep the three-role split:
+    - drop-only harvesters
+    - couriers
+    - pickup-only workers
+  - keep workers on drop pickup only for now, with no direct-harvest fallback
+  - widen courier delivery beyond `spawn` and `extensions` by introducing a worker-facing handoff path
+  - make couriers prioritize `spawn` and `extensions`, then drop energy to worker-facing handoff targets instead of idling with energy
+  - let workers top up from nearby courier-fed handoff drops while keeping the same basic build/upgrade loop
+  - keep dynamic spawn demand and conservative `RCL2` extension placement in the three-role runtime
+  - keep the existing telemetry instrumentation and use it as the main diagnosis tool
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-06T21-28-15-706Z-657cead2`
+  - `train-b-2k`: `2026-04-06T21-30-09-083Z-bcd5d376`
+  - `train-c-5k`: `2026-04-06T21-39-12-563Z-466628a8`
+  - `train-d-5k`: `2026-04-06T21-42-35-751Z-7118b93e`
+  - `holdout-a-2k`: `2026-04-06T21-45-59-877Z-99e9b29d`
+  - `holdout-b-5k`: `2026-04-06T21-55-02-612Z-ff79815f`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `8.62` to `0.44` (`-94.90%`)
+  - `spawnIdlePct`: regressed from `13.05%` to `13.33%` (`+2.15%`)
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `1464`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `null`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `15.97` to `1.92` (`-87.98%`)
+  - `spawnIdlePct`: regressed from `11.45%` to `12.73%` (`+11.18%`)
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `1400`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `4261`
+- Gate result:
+  - training failed with `0` improved primary metrics
+  - holdout failed because `controllerProgressToRCL3Pct` regressed by `87.98%` and `spawnIdlePct` regressed by `11.18%`
+  - overall suite result: `failed`
+- Notable behavior:
+  - harvest-mode source metrics improved sharply across both cohorts:
+    - train `harvestingSourceCoveragePct`: `44.96 -> 95.90`
+    - train `harvestingSourceUptimePct`: `1.12 -> 91.79`
+    - holdout `harvestingSourceCoveragePct`: `44.19 -> 94.32`
+    - holdout `harvestingSourceUptimePct`: `0.83 -> 88.65`
+  - representative candidate loop diagnostics showed successful worker-facing delivery:
+    - `train-c-5k`: `deliveredEnergyByTargetType.worker_handoff = 100`, `transferSuccessByTargetType.worker_handoff = 102`
+    - `holdout-b-5k`: `deliveredEnergyByTargetType.worker_handoff = 100`, `transferSuccessByTargetType.worker_handoff = 86`
+  - `courier.no_refill_target` no longer showed up as the dominant sampled failure; the recurring courier failure shifted to `courier.no_source_drop`:
+    - `train-c-5k`: `courier.no_source_drop 480`
+    - `holdout-b-5k`: `courier.no_source_drop 88`
+  - source backlog fell dramatically in the representative `5k` runs:
+    - `train-c-5k`: final `backlogEnergy 45` after peaking at `454`
+    - `holdout-b-5k`: final `backlogEnergy 0` after peaking at `1724`
+  - workers still spent most successful work actions on `build` rather than `upgrade`:
+    - `train-c-5k`: `build 2496`, `upgrade 205`
+    - `holdout-b-5k`: `build 2804`, `upgrade 925`
+  - `withEnergyNoSpendTicks` remained high even after adding handoff delivery:
+    - `train-c-5k`: `courier 3380`, `worker 2561`
+    - `holdout-b-5k`: `courier 1859`, `worker 2248`
+
+### Interpretation
+
+- Worker-facing courier delivery appears to have solved the narrow-delivery failure mode.
+- Couriers successfully fed `worker_handoff` targets, source backlog could be drained, and the old `no_refill_target` symptom no longer dominated the sampled diagnostics.
+- But that logistics fix did not translate into milestone progress:
+  - controller progress remained catastrophically below baseline on both train and holdout
+  - workers still accumulated large `withEnergyNoSpendTicks` and target-switch counts
+  - even when backlog was low or zero, the colony still converted too much energy into slow or badly-routed work instead of controller progress
+- In practice, this variant over-corrected the courier bottleneck without fixing downstream spend policy.
+- The three-role pipeline still looks mechanically viable, but broader courier delivery by itself is not enough to make it competitive on the `RCL3` scorecard.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: if courier-facing handoff fixes most of the `no_refill_target` problem but workers still spend poorly, the next change should tighten worker pathing or task selection before touching harvest fallback.
+- Hypothesis B: if source backlog remains high even after worker-facing courier delivery, then the pipeline likely needs both broader delivery and a worker energy-acquisition fallback.
+- Hypothesis C: extension construction may now be too eager relative to controller progress, so a follow-up should test stronger upgrade bias or stricter build gating once the first extension capacity is secured.
+
+### Decision
+
+- `reject`
+- Do not promote this behavior change. Keep the experiment record, and treat worker-side spend policy as the next bottleneck on the courier path.
+
+## Entry `exp-2026-04-06-upgrade-biased-worker-handoff`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-06`
+
+### Hypothesis
+
+- Worker-facing courier delivery fixed enough of the transport problem that the next bottleneck is worker spend policy.
+- If workers default to `upgrade` and only take very cheap nearby `build` work for `spawn` or `extension` sites, the opener should keep the source-side and courier-side gains while recovering `controllerProgressToRCL3Pct`.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Change tested:
+  - keep the current three-role split:
+    - drop-only harvesters
+    - worker-facing couriers
+    - pickup-only workers
+  - keep courier handoff behavior unchanged so the experiment isolates downstream spend policy
+  - change worker task selection so `upgrade` is the default spend path
+  - only allow workers to `build` very nearby `spawn` or `extension` sites instead of pathing across the room toward construction by default
+  - keep worker pickup behavior unchanged for now
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-06T22-13-43-746Z-d7445f83`
+  - `train-b-2k`: `2026-04-06T22-15-35-460Z-b0114733`
+  - `train-c-5k`: `2026-04-06T22-24-38-082Z-01ad2859`
+  - `train-d-5k`: `2026-04-06T22-28-13-028Z-3e17411e`
+  - `holdout-a-2k`: `2026-04-06T22-31-37-711Z-00629dfc`
+  - `holdout-b-5k`: `2026-04-06T22-40-39-979Z-c02e0a54`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `8.62` to `3.62` (`-58.00%`)
+  - `spawnIdlePct`: unchanged at `13.01%`
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `2263`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `null`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `15.95` to `3.63` (`-77.24%`)
+  - `spawnIdlePct`: regressed from `11.22%` to `12.99%` (`+15.78%`)
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `1533.5`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `null`
+- Gate result:
+  - training failed with `0` improved primary metrics
+  - holdout failed because `controllerProgressToRCL3Pct` regressed by `77.24%` and `spawnIdlePct` regressed by `15.78%`
+  - overall suite result: `failed`
+- Notable behavior:
+  - this materially improved controller progress relative to the previous worker-facing courier variant, but still remained far below baseline:
+    - train candidate `0.44 -> 3.62`
+    - holdout candidate `1.92 -> 3.63`
+  - harvest-mode source metrics remained extremely strong:
+    - train `harvestingSourceCoveragePct`: `45.30 -> 95.77`
+    - train `harvestingSourceUptimePct`: `0.56 -> 91.55`
+    - holdout `harvestingSourceCoveragePct`: `45.19 -> 95.39`
+    - holdout `harvestingSourceUptimePct`: `0.85 -> 90.78`
+  - representative `5k` worker task mix shifted heavily toward `upgrade`, but not enough to stabilize the economy:
+    - `train-c-5k`: `workerTaskSelections` `build 1168`, `upgrade 3808`
+    - `holdout-b-5k`: `workerTaskSelections` `build 1630`, `upgrade 3097`
+  - representative `5k` spend counters showed lower build bias than the prior variant, but controller conversion was still weak:
+    - `train-c-5k`: `energySpentOnBuild 2265`, `energySpentOnUpgrade 642`
+    - `holdout-b-5k`: `energySpentOnBuild 4265`, `energySpentOnUpgrade 523`
+  - worker and courier idle-with-energy symptoms stayed high:
+    - `train-c-5k`: `withEnergyNoSpendTicks` `worker 3854`, `courier 4076`
+    - `holdout-b-5k`: `withEnergyNoSpendTicks` `worker 3295`, `courier 2016`
+  - target switching remained severe in the representative `5k` runs:
+    - `train-c-5k`: `worker.target_switch 7322`, `courier.target_switch 1980`
+    - `holdout-b-5k`: `worker.target_switch 6358`, `courier.target_switch 1522`
+  - backlog and energy-acquisition failures still showed the pipeline was not stable end-to-end:
+    - `train-c-5k`: final `backlogEnergy 205`, `courier.no_source_drop 20`
+    - `holdout-b-5k`: final `backlogEnergy 1782`, `worker.no_source_drop 71`, `courier.no_source_drop 236`
+  - worker-facing courier handoff remained active, but it was not enough on its own:
+    - `train-c-5k`: `transferSuccessByTargetType.worker_handoff = 139`
+    - `holdout-b-5k`: `transferSuccessByTargetType.worker_handoff = 93`
+
+### Interpretation
+
+- The upgrade-biased worker change helped.
+- Compared with the previous worker-facing courier experiment, controller progress improved meaningfully on both cohorts while preserving the strong source-coverage gains.
+- But the variant still failed decisively against baseline because the room remained unstable after energy reached workers:
+  - `withEnergyNoSpendTicks` stayed high
+  - worker target switching stayed extreme
+  - holdout backlog could still explode late in the run
+- The main lesson is that broader courier delivery was not enough, and a softer upgrade bias was also not enough.
+- The next iteration should simplify worker spend policy further by reducing target churn and gating build work more aggressively, rather than broadening the logistics layer again.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: if controller progress rebounds while source and courier metrics stay strong, then worker task selection was the real bottleneck and harvest fallback can remain deferred.
+- Hypothesis B: if controller progress still fails even with upgrade-biased workers, the next experiment should test stricter extension gating or a simpler no-build-until-threshold policy.
+- Hypothesis C: if worker target switching is the dominant remaining waste source, a next variant should pin workers to a much narrower spend policy, such as upgrade-only except for adjacent urgent spawn-energy infrastructure.
+
+### Decision
+
+- `reject`
+- Do not keep this behavior change as the new baseline. Keep the lesson that stronger upgrade bias helps, and follow it with a stricter worker-stability experiment rather than abandoning the three-role path yet.
+
+## Entry `exp-2026-04-06-upgrade-only-until-rcl3`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-06`
+
+### Hypothesis
+
+- The next bottleneck to isolate is not broader logistics. It is pre-`RCL3` construction churn.
+- In the latest three-role run, the colony harvested materially more energy than baseline but converted far less of it into controller progress while spending worker attention on extension construction and target switching.
+- If the three-role opener removes all pre-`RCL3` construction work and sends worker energy to the controller only, `controllerProgressToRCL3Pct` should rise sharply even if harvest throughput stays unchanged.
+- If controller progress still remains far below baseline after removing construction as a sink, the next bottleneck is composition and harvest saturation rather than spend policy.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Rationale from prior evidence:
+  - `holdout-b-5k` baseline reached `2746` controller progress by tick `1321` with `0` extensions.
+  - The upgrade-biased three-role candidate reached tick `1321` with `1` extension and `0` controller progress.
+  - By tick `5007`, baseline had `12004` controller progress with `0` extensions while the candidate had `2632` with `2` extensions.
+  - This is a large unexplained gap, and extension building before `RCL3` is not required for milestone success.
+- Change tested:
+  - keep the current three-role split:
+    - drop-only harvesters
+    - worker-facing couriers
+    - pickup-only workers
+  - keep courier handoff behavior unchanged so the experiment isolates pre-`RCL3` spend policy
+  - disable bootstrap extension construction while the owned controller is below `RCL3`
+  - make workers `upgrade`-only while the owned controller is below `RCL3`
+  - keep spawn demand unchanged for this experiment so the result isolates construction removal rather than changing composition and spend policy at the same time
+- Key evaluation focus:
+  - `controllerProgressToRCL3Pct`
+  - `spawnIdlePct`
+  - `firstExtensionTick` should remain `null` for candidate runs that do not reach `RCL3`
+  - `worker.build` attempts and successes should drop to `0` before `RCL3`
+  - `worker.target_switch`
+  - `withEnergyNoSpendTicks`
+  - `backlogEnergy`
+  - representative controller progress checkpoints around the ticks where the prior run built its first and second extensions
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-07T00-48-43-016Z-f6342574`
+  - `train-b-2k`: `2026-04-07T00-50-40-344Z-aa7a103d`
+  - `train-c-5k`: `2026-04-07T00-52-31-123Z-0faeb825`
+  - `train-d-5k`: `2026-04-07T00-56-11-353Z-1b7d68f5`
+  - `holdout-a-2k`: `2026-04-07T00-59-39-977Z-7e8591bd`
+  - `holdout-b-5k`: `2026-04-07T01-01-28-757Z-c1618aca`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `8.62` to `7.10` (`-17.63%`)
+  - `spawnIdlePct`: unchanged at `12.55%`
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `null`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `null`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `16.03` to `7.31` (`-54.40%`)
+  - `spawnIdlePct`: regressed from `11.14%` to `11.85%` (`+6.37%`)
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `null`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `null`
+- Gate result:
+  - training failed with `0` improved primary metrics
+  - holdout failed because `controllerProgressToRCL3Pct` regressed by `54.40%` and `spawnIdlePct` regressed by `6.37%`
+  - overall suite result: `failed`
+- Notable behavior:
+  - this materially improved the three-role opener versus the prior upgrade-biased worker variant:
+    - overall candidate `controllerProgressToRCL3Pct`: `7.31` vs prior `3.62`
+    - holdout candidate `controllerProgressToRCL3Pct`: `10.20` vs prior `3.63`
+  - pre-`RCL3` construction removal worked exactly as intended:
+    - candidate `firstExtensionTick` stayed `null` in all cases
+    - representative `5k` runs showed no visible `worker.build` attempts or successes
+    - representative `5k` runs recorded `energySpentOnBuild = 0`
+  - representative `5k` worker task mix became pure upgrade work:
+    - `train-c-5k`: `workerTaskSelections` `upgrade 5303`
+    - `holdout-b-5k`: `workerTaskSelections` `upgrade 4592`
+  - representative `5k` upgrade spend became correspondingly clean:
+    - `train-c-5k`: `energySpentOnUpgrade 5256`, final controller progress `5071/10000`
+    - `holdout-b-5k`: `energySpentOnUpgrade 4584`, final controller progress `4410/10000`
+  - harvest-mode source metrics stayed extremely strong across cohorts:
+    - overall `harvestingSourceCoveragePct`: `44.75 -> 95.96`
+    - overall `harvestingSourceUptimePct`: `1.14 -> 91.92`
+    - overall `activeHarvestingSourceCoveragePct`: `29.43 -> 92.33`
+    - overall `activeHarvestingSourceUptimePct`: `0 -> 85.90`
+  - the remaining bottleneck was not build churn but energy-to-controller conversion stability:
+    - `train-c-5k`: `withEnergyNoSpendTicks` `worker 3584`, `courier 3698`; `worker.target_switch 7104`, `courier.target_switch 2120`; final `backlogEnergy 96`
+    - `holdout-b-5k`: `withEnergyNoSpendTicks` `worker 4311`, `courier 937`; `worker.target_switch 8631`, `courier.target_switch 1831`; final `backlogEnergy 2441`
+    - `holdout-b-5k` still ended with `courier.no_source_drop 63` and `worker.no_source_drop 15`
+
+### Interpretation
+
+- Removing pre-`RCL3` construction was a good experiment and a real improvement.
+- It proved that extension construction and pre-`RCL3` build churn were not the fundamental reason the three-role opener lagged baseline.
+- Once build work was removed, the candidate still failed because the room could not convert harvested energy into steady controller spend:
+  - workers still accumulated very large `withEnergyNoSpendTicks`
+  - worker target switching remained extreme
+  - holdout backlog could still grow very large despite strong harvest uptime
+- In other words, the experiment eliminated one hypothesized waste source cleanly, but the dominant bottleneck is now clearly composition and logistics stability rather than construction policy.
+- The next iteration should stop treating the current `2/2/2` role mix as fixed and instead test throughput-driven spawn demand or a simpler direct-spend composition that can better convert harvested energy into controller progress.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: if upgrade-only until `RCL3` closes most of the controller gap, then pre-`RCL3` construction was the dominant waste source and composition changes can wait.
+- Hypothesis B: if controller progress improves only modestly and harvest remains far below the room's theoretical ceiling, the next experiment should remove fixed role caps and derive spawn quotas from throughput targets instead.
+
+### Decision
+
+- `reject`
+- Do not promote this variant as the new baseline. Keep the lesson that pre-`RCL3` construction was not the main bottleneck, and use the next experiment to challenge the fixed three-role composition and its logistics assumptions directly.
+
+## Entry `exp-2026-04-07-throughput-driven-spawn-demand`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-07`
+
+### Hypothesis
+
+- The dominant remaining bottleneck is not fixed construction policy but fixed role targets.
+- In the latest upgrade-only-until-`RCL3` run, the colony still treated the opener as a fixed `2/2/2` pipeline even though observed conversion from harvested source energy to upgrade spend remained very poor.
+- If pre-`RCL3` spawn demand is driven by throughput targets instead of encoded creep counts, the opener should be able to add enough direct-spend worker capacity to improve controller progress materially.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Rationale from prior evidence:
+  - representative three-role candidate conversion from harvested source energy to upgrade spend was very poor:
+    - `train-c-5k`: candidate `5256 / 28330 = 18.55%`
+    - `holdout-b-5k`: candidate `4584 / 28826 = 15.90%`
+  - representative baseline conversion in the same runs was much better:
+    - `train-c-5k`: baseline `7340 / 9640 = 76.14%`
+    - `holdout-b-5k`: baseline `12149 / 15092 = 80.50%`
+  - the latest candidate also showed:
+    - no pre-`RCL3` build work
+    - strong harvest uptime
+    - very large `worker.target_switch` counts
+    - very large `withEnergyNoSpendTicks`
+    - persistent source backlog in holdout
+  - this strongly suggests that the next experiment should stop treating role counts as fixed and instead derive pre-`RCL3` demand from measured throughput targets.
+- Change tested:
+  - keep the no-build-until-`RCL3` policy from the previous experiment
+  - remove the `courier` role entirely while the owned controller is below `RCL3`
+  - move to a direct-spend pre-`RCL3` composition:
+    - harvesters keep the spawn alive and harvest directly from sources
+    - workers harvest directly for themselves when empty and upgrade only when full
+  - replace fixed pre-`RCL3` role caps with throughput-driven demand derived from room state:
+    - dedicated harvester target: `2 WORK` per source
+    - direct-spend worker target: `3 WORK` per source, plus `1 WORK` for each `300` source-backlog energy observed in the room
+  - keep the implementation otherwise minimal and leave post-`RCL3` logic unchanged so the experiment isolates pre-`RCL3` demand policy
+- Key evaluation focus:
+  - `controllerProgressToRCL3Pct`
+  - `spawnIdlePct`
+  - harvested source energy to upgrade-spend conversion ratio
+  - `withEnergyNoSpendTicks`
+  - `target_switch`
+  - `backlogEnergy`
+  - pre-`RCL3` role mix and whether the room still leaves large source-side energy stranded
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-07T01-32-04-662Z-5d02c209`
+  - `train-b-2k`: `2026-04-07T01-33-53-448Z-1959d0d6`
+  - `train-c-5k`: `2026-04-07T01-35-41-887Z-02ae5424`
+  - `train-d-5k`: `2026-04-07T01-39-08-278Z-376fa73d`
+  - `holdout-a-2k`: `2026-04-07T01-42-34-494Z-475401e4`
+  - `holdout-b-5k`: `2026-04-07T01-44-24-510Z-c06999b0`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: improved from `8.63` to `17.02`
+  - `spawnIdlePct`: regressed from `12.67%` to `30.46%` (`+140.41%`)
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `null`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `null`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: improved from `15.99` to `24.06`
+  - `spawnIdlePct`: regressed from `11.14%` to `27.56%` (`+147.40%`)
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `null`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `null`
+- Gate result:
+  - training failed because only `1` primary metric improved and the suite requires `2`
+  - holdout failed because `spawnIdlePct` regressed by `147.40%`
+  - overall suite result: `failed`
+- Notable behavior:
+  - this is the first recent variant to beat baseline on `controllerProgressToRCL3Pct` in both train and holdout
+  - pre-`RCL3` courier removal was real in telemetry:
+    - representative `5k` runs ended with `courier: 0`
+    - unmet courier demand stayed `0`
+  - the throughput-driven demand policy converged to a larger direct-spend composition:
+    - `train-c-5k`: end role counts `harvester 2`, `worker 6`, `courier 0`
+    - `holdout-b-5k`: end role counts `harvester 2`, `worker 6`, `courier 0`
+  - representative `5k` controller throughput improved dramatically versus the prior three-role pipeline:
+    - `train-c-5k`: controller progress `13991`, `energySpentOnUpgrade 14151`
+    - `holdout-b-5k`: controller progress `17918`, `energySpentOnUpgrade 18069`
+  - source-side performance remained strong while source backlog collapsed to zero:
+    - `train-c-5k`: `backlogEnergy 0`
+    - `holdout-b-5k`: `backlogEnergy 0`
+  - worker-side churn dropped massively versus the courier pipeline variants:
+    - `train-c-5k`: `worker.target_switch 414`
+    - `holdout-b-5k`: `worker.target_switch 490`
+  - but spawn usage regressed sharply even while controller progress improved:
+    - `train-c-5k`: candidate `spawnIdlePct 21.55%` vs baseline `7.18%`
+    - `holdout-b-5k`: candidate `spawnIdlePct 16.76%` vs baseline `4.47%`
+  - representative `5k` end-state idle-with-energy counters were still high:
+    - `train-c-5k`: `withEnergyNoSpendTicks` `harvester 4992`, `worker 5500`
+    - `holdout-b-5k`: `withEnergyNoSpendTicks` `harvester 3487`, `worker 4288`
+  - representative harvester fallback showed the new bottleneck had shifted again:
+    - `train-c-5k`: `harvester.no_energy_target 3571`
+    - `holdout-b-5k`: `harvester.no_energy_target 4830`
+
+### Interpretation
+
+- This experiment was a meaningful success even though it failed the suite gate.
+- It validated the core hypothesis that fixed role caps were suppressing controller progress.
+- Once pre-`RCL3` demand became throughput-driven and direct-spend workers replaced the courier layer, controller progress beat baseline across both train and holdout, source backlog fell to zero, and worker target churn collapsed.
+- The dominant remaining bottleneck is no longer courier conversion.
+- It is demand sizing and spawn under-utilization:
+  - the room now spends much more energy on the controller
+  - but the spawn stops adding capacity too early
+  - high `harvester.no_energy_target` and high `spawnIdlePct` together suggest the colony can support more direct-spend or better-shaped direct-spend bodies than the current demand formula requests
+- In other words, the direction is right, but the current throughput targets are too conservative.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: keep the direct-spend pre-`RCL3` composition and raise the throughput targets, because the current demand formula appears to stop spawning well before the room is saturated.
+- Hypothesis B: redesign harvester behavior or body plans so excess harvester energy is converted into controller progress more effectively once spawn refill demand is satisfied.
+
+### Decision
+
+- `continue`
+- Do not promote this exact behavior as the new baseline because the spawn-idle regression is too large, but keep this direction. The next experiment should build on throughput-driven direct spend rather than returning to the courier pipeline.
+
+## Entry `exp-2026-04-07-queue-aware-spawn-feed`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-07`
+
+### Hypothesis
+
+- The throughput-driven direct-spend opener is directionally correct, but it still underuses the spawn during growth.
+- In the latest run, `controllerProgressToRCL3Pct` beat baseline in both train and holdout, while `spawnIdlePct` regressed badly.
+- If pre-`RCL3` creeps temporarily prioritize feeding `spawn` and `extensions` whenever the spawn queue is non-empty, `spawnIdlePct` should drop materially without giving back all of the controller-progress gains.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Rationale from prior evidence:
+  - throughput-driven direct spend improved the primary progress metric in both cohorts:
+    - train `controllerProgressToRCL3Pct`: `8.63 -> 17.02`
+    - holdout `controllerProgressToRCL3Pct`: `15.99 -> 24.06`
+  - but spawn usage regressed sharply:
+    - train `spawnIdlePct`: `12.67% -> 30.46%`
+    - holdout `spawnIdlePct`: `11.14% -> 27.56%`
+  - representative `5k` runs ended with strong direct-spend throughput and zero backlog:
+    - `train-c-5k`: `energySpentOnUpgrade 14151`, `backlogEnergy 0`
+    - `holdout-b-5k`: `energySpentOnUpgrade 18069`, `backlogEnergy 0`
+  - the next question is whether the remaining failure is simply growth-fueling priority while demand is still outstanding.
+- Change tested:
+  - keep the no-build-until-`RCL3` policy
+  - keep pre-`RCL3` courier removal
+  - keep the throughput-driven pre-`RCL3` demand formula unchanged for this experiment
+  - keep direct-harvest workers and the simplified direct-spend opener
+  - change only pre-`RCL3` spend routing:
+    - when `queueDepth > 0`, workers with energy should prioritize `spawn` and `extensions` before upgrading
+    - when `queueDepth === 0`, workers should return to pure controller spend
+  - leave post-`RCL3` logic unchanged so the experiment isolates queue-aware spawn feeding
+- Key evaluation focus:
+  - `controllerProgressToRCL3Pct`
+  - `spawnIdlePct`
+  - harvested source energy to upgrade-spend conversion ratio
+  - time spent with `queueDepth > 0` and `isSpawning === false`
+  - `harvester.no_energy_target`
+  - `withEnergyNoSpendTicks`
+  - `backlogEnergy`
+  - representative `5k` role counts and queue depth around the `RCL2` growth phase
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-07T11-46-05-017Z-6191e2d1`
+  - `train-b-2k`: `2026-04-07T11-47-56-579Z-75db59a7`
+  - `train-c-5k`: `2026-04-07T11-56-56-977Z-254dea8e`
+  - `train-d-5k`: `2026-04-07T12-00-34-935Z-64537ea3`
+  - `holdout-a-2k`: `2026-04-07T12-22-08-501Z-2f8eb5e1`
+  - `holdout-b-5k`: `2026-04-07T12-31-09-837Z-d36c7f95`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: improved from `8.62` to `16.11`
+  - `spawnIdlePct`: regressed from `12.17%` to `20.84%` (`+71.27%`)
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: improved from `15.92` to `23.78`
+  - `spawnIdlePct`: regressed from `10.88%` to `22.52%` (`+106.94%`)
+- Gate result:
+  - training failed because only `1/3` primary metrics improved
+  - holdout failed because `spawnIdlePct` regressed by `106.94%`, above the `5%` max-regression limit
+  - overall suite result: `failed`
+- Notable behavior:
+  - queue-aware spawn feeding materially reduced candidate spawn idling versus the previous direct-spend variant:
+    - train `spawnIdlePct`: `30.46% -> 20.84%`
+    - holdout `spawnIdlePct`: `27.56% -> 22.52%`
+  - controller progress gains held against baseline, but softened slightly versus the previous candidate:
+    - train `controllerProgressToRCL3Pct`: `17.02 -> 16.11`
+    - holdout `controllerProgressToRCL3Pct`: `24.06 -> 23.78`
+  - representative `5k` candidate end states still used the larger direct-spend composition:
+    - `train-c-5k`: role counts `harvester 2`, `worker 6`, `courier 0`
+    - `holdout-b-5k`: role counts `harvester 2`, `worker 6`, `courier 0`
+  - representative `5k` candidate final samples showed queue-aware feed did not keep demand outstanding by the end:
+    - `train-c-5k`: `queueDepth 0`, `isSpawning true`
+    - `holdout-b-5k`: `queueDepth 0`, `isSpawning false`
+  - upgrade throughput remained much higher than baseline in representative `5k` runs:
+    - `train-c-5k`: baseline `energySpentOnUpgrade 7344`, candidate `14095`
+    - `holdout-b-5k`: baseline `energySpentOnUpgrade 12155`, candidate `17826`
+  - source backlog was mostly eliminated, though not perfectly in holdout:
+    - `train-c-5k`: candidate `backlogEnergy 0`
+    - `holdout-b-5k`: candidate `backlogEnergy 19`
+  - representative candidate idle-with-energy counters remained high:
+    - `train-c-5k`: `withEnergyNoSpendTicks` `harvester 4753`, `worker 6223`
+    - `holdout-b-5k`: `withEnergyNoSpendTicks` `harvester 3263`, `worker 4764`
+  - representative failure counters still point at excess harvested energy with insufficient follow-through demand:
+    - `train-c-5k`: `harvester.no_energy_target 4486`, `worker.target_switch 511`
+    - `holdout-b-5k`: `harvester.no_energy_target 5296`, `worker.target_switch 595`
+
+### Interpretation
+
+- This experiment was a partial success, but not enough to pass the suite gate.
+- The core hypothesis was directionally correct:
+  - queue-aware spawn feeding did cut `spawnIdlePct` materially versus the previous direct-spend variant
+  - controller progress stayed well above baseline in both train and holdout
+- However, spend routing alone was not the main remaining bottleneck.
+- Representative `5k` runs still ended with `queueDepth 0`, persistent `harvester.no_energy_target`, and large `withEnergyNoSpendTicks`, which means the colony was still running out of requested work before it ran out of available energy.
+- In other words, queue-aware feed helped growth-fueling priority, but the dominant limit still appears to be demand sizing or body affordability rather than routing.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: keep queue-aware spawn feeding and raise pre-`RCL3` throughput demand so the queue stays non-empty longer while the room is still energy-rich.
+- Hypothesis B: retune pre-`RCL3` body shapes so more harvested energy reaches spawn refill and controller spend before workers accumulate large idle-with-energy time.
+
+### Decision
+
+- `continue`
+- Do not promote this exact behavior as the new baseline. Keep queue-aware feed as a useful local improvement, but the next experiment should target demand sizing or body plans rather than spend routing alone.

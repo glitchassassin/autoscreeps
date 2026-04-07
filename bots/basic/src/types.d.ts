@@ -1,5 +1,5 @@
 declare global {
-  type WorkerRole = "harvester" | "upgrader";
+  type WorkerRole = "harvester" | "courier" | "worker";
 
   type TelemetryActionName = "harvest" | "pickup" | "transfer" | "upgrade" | "build" | "move";
 

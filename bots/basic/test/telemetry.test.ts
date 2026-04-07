@@ -23,18 +23,27 @@ describe("telemetry", () => {
       creeps: {
         harvesterA: {
           memory: { role: "harvester", working: false, homeRoom: "W0N0", sourceId: "source-a" },
+          body: [{ type: WORK, hits: 100 }, { type: WORK, hits: 100 }],
           pos: { x: 10, y: 11, roomName: "W0N0" },
           store: { energy: 0, getFreeCapacity: vi.fn(() => 50) }
         } as unknown as Creep,
         harvesterB: {
           memory: { role: "harvester", working: false, homeRoom: "W0N0", sourceId: "source-b" },
+          body: [{ type: WORK, hits: 100 }, { type: WORK, hits: 100 }],
           pos: { x: 23, y: 23, roomName: "W0N0" },
           store: { energy: 0, getFreeCapacity: vi.fn(() => 50) }
         } as unknown as Creep,
-        upgraderA: {
-          memory: { role: "upgrader", working: true, homeRoom: "W0N0", sourceId: "source-a" },
+        courierA: {
+          memory: { role: "courier", working: false, homeRoom: "W0N0" },
+          body: [],
+          pos: { x: 12, y: 12, roomName: "W0N0" },
+          store: { energy: 0, getFreeCapacity: vi.fn(() => 100) }
+        } as unknown as Creep,
+        workerA: {
+          memory: { role: "worker", working: true, homeRoom: "W0N0" },
+          body: [{ type: WORK, hits: 100 }],
           pos: { x: 10, y: 10, roomName: "W0N0" },
-          store: { energy: 50, getFreeCapacity: vi.fn(() => 0) }
+          store: { energy: 50, getFreeCapacity: vi.fn(() => 50) }
         } as unknown as Creep
       },
       spawns: {},
@@ -77,25 +86,27 @@ describe("telemetry", () => {
       gameTime: 25,
       debugError: null,
       colonyMode: "normal",
-      totalCreeps: 3,
+      totalCreeps: 4,
       roleCounts: {
         harvester: 2,
-        upgrader: 1
+        courier: 1,
+        worker: 1
       },
       spawn: {
-        queueDepth: 1,
+        queueDepth: 5,
         isSpawning: false,
-        nextRole: "upgrader",
+        nextRole: "worker",
         unmetDemand: {
           harvester: 0,
-          upgrader: 1
+          courier: 0,
+          worker: 5
         }
       },
       sources: {
         total: 2,
         staffed: 2,
         assignments: {
-          "source-a": 2,
+          "source-a": 1,
           "source-b": 1
         },
         harvestingStaffed: 2,
@@ -176,6 +187,19 @@ describe("telemetry", () => {
     expect(JSON.parse(rawSegment as string)).toMatchObject({
       schemaVersion: 5,
       gameTime: 25,
+      roleCounts: {
+        harvester: 2,
+        courier: 1,
+        worker: 1
+      },
+      spawn: {
+        queueDepth: 5,
+        nextRole: "worker",
+        unmetDemand: {
+          courier: 0,
+          worker: 5
+        }
+      },
       sources: {
         total: 2,
         staffed: 2,
@@ -186,7 +210,8 @@ describe("telemetry", () => {
       loop: {
         phaseTicks: {
           "harvester.gathering": 2,
-          "upgrader.working": 1
+          "courier.gathering": 1,
+          "worker.working": 1
         },
         sourceAssignmentTicks: {
           harvester: 2
@@ -195,10 +220,10 @@ describe("telemetry", () => {
           harvester: 1
         },
         cargoUtilizationTicks: {
-          upgrader: 1
+          worker: 1
         },
         withEnergyNoSpendTicks: {
-          upgrader: 1
+          worker: 1
         }
       },
       creeps: {
@@ -207,8 +232,8 @@ describe("telemetry", () => {
           ticksSinceSuccess: null,
           samePositionTicks: 0
         },
-        upgraderA: {
-          role: "upgrader",
+        workerA: {
+          role: "worker",
           ticksSinceSuccess: null,
           samePositionTicks: 0
         }
@@ -239,7 +264,25 @@ function makeSpawn(): StructureSpawn {
     spawning: null,
     room: {
       name: "W0N0",
-      energyAvailable: 300
+      energyAvailable: 300,
+      energyCapacityAvailable: 300,
+      controller: {
+        my: true,
+        level: 2
+      },
+      find: (type: number) => {
+        if (type === FIND_SOURCES) {
+          return [
+            { id: "source-a", pos: { x: 10, y: 10, roomName: "W0N0" } },
+            { id: "source-b", pos: { x: 20, y: 20, roomName: "W0N0" } }
+          ] as Source[];
+        }
+        if (type === FIND_DROPPED_RESOURCES) {
+          return [{ id: "drop-a", resourceType: RESOURCE_ENERGY, amount: 75, pos: { x: 10, y: 11, roomName: "W0N0" } }] as Array<Resource<ResourceConstant>>;
+        }
+
+        return [];
+      }
     }
   } as unknown as StructureSpawn;
 }

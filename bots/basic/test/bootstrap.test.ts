@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ensureBootstrapSpawn } from "../src/bootstrap";
+import { ensureBootstrapExtensions, ensureBootstrapSpawn } from "../src/bootstrap";
 import { installScreepsGlobals } from "./helpers/install-globals";
 
 describe("ensureBootstrapSpawn", () => {
@@ -104,8 +104,51 @@ describe("ensureBootstrapSpawn", () => {
   });
 });
 
+describe("ensureBootstrapExtensions", () => {
+  beforeEach(() => {
+    installScreepsGlobals();
+    const testGlobal = globalThis as typeof globalThis & { Game: Game; Memory: Memory };
+
+    testGlobal.Memory = {
+      creeps: {}
+    } as unknown as Memory;
+  });
+
+  it("does not create extension sites before RCL3", () => {
+    const createConstructionSite = vi.fn(() => OK);
+    const room = makeRoom({
+      controller: {
+        my: true,
+        level: 2,
+        pos: { x: 25, y: 25 }
+      },
+      spawns: [{ pos: { x: 25, y: 24 } } as StructureSpawn],
+      createConstructionSite
+    });
+
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+    testGlobal.Game = {
+      rooms: {
+        W5N5: room
+      },
+      creeps: {
+        courierA: { memory: { role: "courier", homeRoom: "W5N5" } } as unknown as Creep,
+        workerA: { memory: { role: "worker", homeRoom: "W5N5" } } as unknown as Creep,
+        harvesterA: { memory: { role: "harvester", homeRoom: "W5N5" } } as unknown as Creep,
+        harvesterB: { memory: { role: "harvester", homeRoom: "W5N5" } } as unknown as Creep
+      },
+      spawns: {},
+      time: 1
+    } as unknown as Game;
+
+    ensureBootstrapExtensions();
+
+    expect(createConstructionSite).not.toHaveBeenCalled();
+  });
+});
+
 function makeRoom(input: {
-  controller: { my: boolean; pos: { x: number; y: number } };
+  controller: { my: boolean; pos: { x: number; y: number }; level?: number };
   spawns?: StructureSpawn[];
   blockedTiles?: Set<string>;
   createConstructionSite: ReturnType<typeof vi.fn>;
@@ -113,17 +156,23 @@ function makeRoom(input: {
   return {
     name: "W5N5",
     controller: input.controller as StructureController,
+    energyAvailable: 300,
+    energyCapacityAvailable: 300,
     createConstructionSite: input.createConstructionSite,
     getTerrain: () => ({
       get: (x: number, y: number) => (input.blockedTiles?.has(`${x},${y}`) ? TERRAIN_MASK_WALL : 0)
     }),
-    find: (type: number, opts?: { filter?: (site: ConstructionSite) => boolean }) => {
+    find: (type: number, opts?: { filter?: (value: ConstructionSite | Structure) => boolean }) => {
       if (type === FIND_MY_SPAWNS) {
         return input.spawns ?? [];
       }
       if (type === FIND_MY_CONSTRUCTION_SITES) {
         const sites = [] as ConstructionSite[];
-        return opts?.filter ? sites.filter(opts.filter) : sites;
+        return opts?.filter ? sites.filter(opts.filter as (site: ConstructionSite) => boolean) : sites;
+      }
+      if (type === FIND_MY_STRUCTURES) {
+        const structures = input.spawns ?? [];
+        return opts?.filter ? structures.filter(opts.filter as (structure: Structure) => boolean) : structures;
       }
       return [];
     }

@@ -91,7 +91,7 @@ export function createTelemetrySnapshot(
   primarySpawn: StructureSpawn | null,
   telemetryState: TelemetryMemoryState = ensureTelemetryState()
 ): BotTelemetrySnapshot {
-  const demand = summarizeSpawnDemand();
+  const demand = summarizeSpawnDemand(primarySpawn?.room ?? null);
   const roleCounts = countRoles();
   const totalCreeps = Object.keys(Game.creeps).length;
 
@@ -125,7 +125,8 @@ export function createTelemetrySnapshot(
 function countRoles(): Record<WorkerRole, number> {
   const counts: Record<WorkerRole, number> = {
     harvester: 0,
-    upgrader: 0
+    courier: 0,
+    worker: 0
   };
 
   for (const creep of Object.values(Game.creeps)) {

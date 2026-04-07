@@ -14,7 +14,7 @@ describe("harvestNearestSource", () => {
   });
 
   it("records the selected source id on the creep", () => {
-    const source = { id: "source-a" } as Source;
+    const source = { id: "source-a", pos: { x: 10, y: 10, roomName: "W0N0" } } as Source;
     const creep = makeCreep(source);
 
     harvestNearestSource(creep);
@@ -52,6 +52,9 @@ function makeCreep(source: Source | null): Creep {
       })
     },
     pos: {
+      x: 10,
+      y: 11,
+      roomName: "W0N0",
       findClosestByPath: vi.fn((value: Source[] | number) => {
         if (Array.isArray(value)) {
           return value[0] ?? null;

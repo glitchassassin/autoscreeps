@@ -1,18 +1,20 @@
-import { ensureBootstrapSpawn } from "./bootstrap";
+import { ensureBootstrapInfrastructure } from "./bootstrap";
 import { cleanupDeadCreeps } from "./memory";
+import { runCourier } from "./roles/courier";
 import { runHarvester } from "./roles/harvester";
-import { runUpgrader } from "./roles/upgrader";
+import { runWorker } from "./roles/worker";
 import { runSpawnManager } from "./spawn";
 import { recordTelemetry } from "./telemetry";
 
 const roleHandlers: Record<WorkerRole, (creep: Creep) => void> = {
   harvester: runHarvester,
-  upgrader: runUpgrader
+  courier: runCourier,
+  worker: runWorker
 };
 
 export function runTick(): void {
   cleanupDeadCreeps();
-  ensureBootstrapSpawn();
+  ensureBootstrapInfrastructure();
 
   const firstSpawn = Object.values(Game.spawns)[0];
   if (firstSpawn) {

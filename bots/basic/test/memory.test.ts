@@ -23,7 +23,7 @@ describe("cleanupDeadCreeps", () => {
           homeRoom: "W0N0"
         },
         missing: {
-          role: "upgrader",
+          role: "worker",
           working: true,
           homeRoom: "W0N0"
         }
