@@ -9,7 +9,6 @@ launcherOptions:
 
 serverConfig:
   shardName: autoscreeps
-  tickRate: 250
   socketUpdateRate: 250
   welcomeText: |
     <h1>autoscreeps</h1>

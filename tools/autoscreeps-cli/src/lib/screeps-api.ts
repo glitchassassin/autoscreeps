@@ -44,6 +44,13 @@ export type StatsResponse = {
   users: StatsUserRecord[];
 };
 
+type ShardInfoResponse = {
+  shards?: Array<{
+    tick?: number | null;
+    lastTicks?: number[];
+  }>;
+};
+
 type MemorySegmentResponse = {
   data?: string | null;
 };
@@ -153,6 +160,22 @@ export class ScreepsApiClient {
 
   async getStats(): Promise<StatsResponse> {
     return await this.requestJson<StatsResponse>("/stats");
+  }
+
+  async getMeasuredTickDuration(): Promise<number | null> {
+    const response = await this.requestJson<ShardInfoResponse>("/api/game/shards/info");
+    const shard = response.shards?.[0];
+
+    if (typeof shard?.tick === "number" && Number.isFinite(shard.tick) && shard.tick > 0) {
+      return shard.tick;
+    }
+
+    const lastTicks = shard?.lastTicks?.filter((value) => Number.isFinite(value) && value > 0) ?? [];
+    if (lastTicks.length === 0) {
+      return null;
+    }
+
+    return lastTicks.reduce((sum, value) => sum + value, 0) / lastTicks.length;
   }
 
   async summarizeRoom(room: string): Promise<RoomSummary> {

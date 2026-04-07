@@ -264,11 +264,14 @@ export async function readSuiteDetails(repoRoot: string, suiteId: string): Promi
 }
 
 export async function readEventTail(runDir: string, limit: number): Promise<EventRecord[]> {
+  return (await readEvents(runDir)).slice(-limit);
+}
+
+export async function readEvents(runDir: string): Promise<EventRecord[]> {
   const filePath = path.join(runDir, "events.jsonl");
 
   try {
-    const events = await readJsonLines<EventRecord>(filePath);
-    return events.slice(-limit);
+    return await readJsonLines<EventRecord>(filePath);
   } catch (error) {
     const fileError = error as NodeJS.ErrnoException;
     if (fileError.code === "ENOENT") {

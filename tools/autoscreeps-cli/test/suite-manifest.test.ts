@@ -31,6 +31,8 @@ describe("suite manifests", () => {
     await fs.writeFile(manifestPath, [
       "version: 1",
       "name: opener-suite",
+      "run:",
+      "  tickDuration: 25",
       "cases:",
       "  - id: train-a",
       "    scenario: ./scenarios/duel-basic.yaml",
@@ -52,6 +54,7 @@ describe("suite manifests", () => {
       type: "mirrored-random-1x1",
       sourceMapId: "fixed-map"
     });
+    expect(scenario.config.run.tickDuration).toBe(25);
     expect(scenario.config.run.maxTicks).toBe(2000);
     expect(scenario.config.run.sampleEveryTicks).toBe(25);
   });

@@ -1,7 +1,7 @@
 import { clearScreenDown, cursorTo } from "node:readline";
 
-import type { EventRecord, RunStatus, SuiteCaseDetails, SuiteRecord, VariantRecord } from "../../lib/contracts.ts";
-import { listSuites, readCaseRunDetails, readEventTail, readSuiteRecord, resolveSuiteCaseRunDir, resolveSuiteDir } from "../../lib/history.ts";
+import type { EventRecord, RunRecord, RunStatus, SuiteCaseDetails, SuiteRecord, VariantRecord } from "../../lib/contracts.ts";
+import { listSuites, readCaseRunDetails, readEvents, readEventTail, readSuiteRecord, resolveSuiteCaseRunDir, resolveSuiteDir } from "../../lib/history.ts";
 import { resolveRepoRoot } from "../../lib/git.ts";
 import { ScreepsApiClient } from "../../lib/screeps-api.ts";
 import { selectSuiteForWatch, summarizeLiveRoom, summarizeRecordedRoom, type WatchRoomStats } from "../../lib/watch.ts";
@@ -43,6 +43,8 @@ export type DashboardSnapshot = {
   eventsLabel: string;
   baseline: WatchRoomStats | null;
   candidate: WatchRoomStats | null;
+  configuredTickDurationMs: number | null;
+  measuredTickDurationMs: number | null;
   displayGameTime: number | null;
   targetGameTime: number | null;
   statsError: string | null;
@@ -106,6 +108,8 @@ async function collectDashboardSnapshot(
       eventsLabel: "Recent Suite Events",
       baseline: null,
       candidate: null,
+      configuredTickDurationMs: null,
+      measuredTickDurationMs: null,
       displayGameTime: null,
       targetGameTime: null,
       statsError: null
@@ -115,6 +119,7 @@ async function collectDashboardSnapshot(
   const suite = await readSuiteRecord(repoRoot, selectedRun.id);
   const displayCase = await readDisplayCase(repoRoot, suite);
   const currentCaseRunId = suite.progress.currentCaseRunId;
+  const caseRunDir = displayCase?.runId ? resolveSuiteCaseRunDir(repoRoot, suite.id, displayCase.runId) : null;
   const eventDir = currentCaseRunId && displayCase?.runId === currentCaseRunId
     ? resolveSuiteCaseRunDir(repoRoot, suite.id, currentCaseRunId)
     : resolveSuiteDir(repoRoot, suite.id);
@@ -129,6 +134,8 @@ async function collectDashboardSnapshot(
       eventsLabel: currentCaseRunId ? "Recent Case Events" : "Recent Suite Events",
       baseline: null,
       candidate: null,
+      configuredTickDurationMs: null,
+      measuredTickDurationMs: null,
       displayGameTime: null,
       targetGameTime: null,
       statsError: null
@@ -139,6 +146,10 @@ async function collectDashboardSnapshot(
   const targetGameTime = details.run.run.startGameTime === null ? null : details.run.run.startGameTime + details.run.run.maxTicks;
 
   if (details.run.status !== "running") {
+    const measuredTickDurationMs = caseRunDir === null
+      ? null
+      : estimateMeasuredTickDurationFromEvents(details.run, await readEvents(caseRunDir));
+
     return {
       mode,
       suite,
@@ -147,6 +158,8 @@ async function collectDashboardSnapshot(
       eventsLabel: currentCaseRunId ? "Recent Case Events" : "Recent Suite Events",
       baseline: details.metrics ? summarizeRecordedRoom(details.metrics.rooms.baseline) : null,
       candidate: details.metrics ? summarizeRecordedRoom(details.metrics.rooms.candidate) : null,
+      configuredTickDurationMs: details.run.run.tickDuration,
+      measuredTickDurationMs,
       displayGameTime: details.run.run.endGameTime ?? details.run.run.startGameTime,
       targetGameTime,
       statsError: null
@@ -155,10 +168,11 @@ async function collectDashboardSnapshot(
 
   try {
     const api = new ScreepsApiClient(details.run.server.httpUrl, { requestTimeoutMs: 1500 });
-    const [gameTime, baselineRoom, candidateRoom] = await Promise.all([
+    const [gameTime, baselineRoom, candidateRoom, measuredTickDurationMs] = await Promise.all([
       api.getGameTime(),
       api.getRoomObjects(details.run.rooms.baseline),
-      api.getRoomObjects(details.run.rooms.candidate)
+      api.getRoomObjects(details.run.rooms.candidate),
+      api.getMeasuredTickDuration()
     ]);
 
     return {
@@ -169,6 +183,8 @@ async function collectDashboardSnapshot(
       eventsLabel: "Recent Case Events",
       baseline: summarizeLiveRoom(details.run.rooms.baseline, baselineRoom),
       candidate: summarizeLiveRoom(details.run.rooms.candidate, candidateRoom),
+      configuredTickDurationMs: details.run.run.tickDuration,
+      measuredTickDurationMs,
       displayGameTime: gameTime,
       targetGameTime,
       statsError: null
@@ -182,6 +198,8 @@ async function collectDashboardSnapshot(
       eventsLabel: "Recent Case Events",
       baseline: null,
       candidate: null,
+      configuredTickDurationMs: details.run.run.tickDuration,
+      measuredTickDurationMs: null,
       displayGameTime: details.run.run.startGameTime,
       targetGameTime,
       statsError: error instanceof Error ? error.message : String(error)
@@ -246,7 +264,7 @@ export function renderDashboard(snapshot: DashboardSnapshot, options: RenderDash
     ),
     formatTwoColumnRow(
       { label: "Run", value: run?.id ?? "-" },
-      { label: "Tick", value: run ? formatTickSummary(run.run.startGameTime, snapshot.displayGameTime, snapshot.targetGameTime) : "-" },
+      { label: "Tick Duration", value: run ? formatTickDurationSummary(snapshot.configuredTickDurationMs, snapshot.measuredTickDurationMs) : "-" },
       width - 4,
       colors
     ),
@@ -522,21 +540,6 @@ function formatSuiteCaseCounts(suite: SuiteRecord): string {
   return `${done}/${suite.progress.caseCount} done, ${suite.progress.failedCaseCount} failed`;
 }
 
-function formatTickSummary(startGameTime: number | null, gameTime: number | null, targetGameTime: number | null): string {
-  if (gameTime === null) {
-    return startGameTime === null ? "starting" : `${startGameTime}`;
-  }
-
-  if (startGameTime === null || targetGameTime === null) {
-    return `${gameTime}`;
-  }
-
-  const completedTicks = Math.max(gameTime - startGameTime, 0);
-  const totalTicks = Math.max(targetGameTime - startGameTime, 1);
-  const progress = Math.min((completedTicks / totalTicks) * 100, 100);
-  return `${gameTime}/${targetGameTime} (${progress.toFixed(1)}%)`;
-}
-
 function formatProgressValue(startGameTime: number | null, gameTime: number | null, targetGameTime: number | null, width: number, colors: boolean): string {
   if (startGameTime === null || gameTime === null || targetGameTime === null) {
     return styleText("waiting for game time...", { fg: palette.comment }, colors);
@@ -575,6 +578,10 @@ function formatSuiteProgressValue(suite: SuiteRecord, width: number, colors: boo
   return `${bar}${details}`;
 }
 
+function formatTickDurationSummary(configuredTickDurationMs: number | null, measuredTickDurationMs: number | null): string {
+  return `${formatMilliseconds(configuredTickDurationMs)} configured / ${formatMilliseconds(measuredTickDurationMs)} actual`;
+}
+
 function formatController(stats: WatchRoomStats): string {
   if (stats.controllerLevel === null) {
     return "-";
@@ -603,6 +610,44 @@ function formatEnergy(energy: number | null, energyCapacity: number | null): str
 
 function formatNumber(value: number | null): string {
   return value === null ? "-" : `${value}`;
+}
+
+function formatMilliseconds(value: number | null): string {
+  if (value === null || !Number.isFinite(value) || value <= 0) {
+    return "-";
+  }
+
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded.toFixed(0)} ms` : `${rounded.toFixed(1)} ms`;
+}
+
+function estimateMeasuredTickDurationFromEvents(run: RunRecord, events: EventRecord[]): number | null {
+  const simulationStarted = events.find((event) => event.event === "simulation.running");
+  const simulationCompleted = [...events].reverse().find((event) => event.event === "simulation.completed");
+
+  const startGameTime = readNumericEventField(simulationStarted?.data, "startGameTime") ?? run.run.startGameTime;
+  const endGameTime = readNumericEventField(simulationCompleted?.data, "gameTime") ?? run.run.endGameTime;
+  const startedAtMs = simulationStarted ? Date.parse(simulationStarted.timestamp) : Number.NaN;
+  const completedAtMs = simulationCompleted ? Date.parse(simulationCompleted.timestamp) : Number.NaN;
+
+  if (startGameTime === null || endGameTime === null || endGameTime <= startGameTime) {
+    return null;
+  }
+
+  if (!Number.isFinite(startedAtMs) || !Number.isFinite(completedAtMs) || completedAtMs <= startedAtMs) {
+    return null;
+  }
+
+  return (completedAtMs - startedAtMs) / (endGameTime - startGameTime);
+}
+
+function readNumericEventField(data: unknown, key: string): number | null {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+    return null;
+  }
+
+  const value = (data as Record<string, unknown>)[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function summarizeEventData(data: unknown, colors: boolean): string {

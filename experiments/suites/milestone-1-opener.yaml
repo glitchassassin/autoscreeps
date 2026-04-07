@@ -1,6 +1,8 @@
 version: 1
 name: milestone-1-opener
 description: Fixed-map opener benchmark suite for milestone 1.
+run:
+  tickDuration: 25
 gates:
   primaryMetrics:
     - T_RCL3
@@ -18,7 +20,6 @@ cases:
       mapGenerator:
         sourceMapId: 3a278e6d
       run:
-        tickDuration: 25
         maxTicks: 2000
         pollIntervalMs: 250
         maxWallClockMs: 1800000
@@ -30,7 +31,6 @@ cases:
       mapGenerator:
         sourceMapId: e665861f
       run:
-        tickDuration: 25
         maxTicks: 2000
         pollIntervalMs: 250
         maxWallClockMs: 1800000
@@ -42,7 +42,6 @@ cases:
       mapGenerator:
         sourceMapId: 446a0e3a
       run:
-        tickDuration: 25
         maxTicks: 5000
         pollIntervalMs: 250
         maxWallClockMs: 1800000
@@ -54,7 +53,6 @@ cases:
       mapGenerator:
         sourceMapId: 3454fc1f
       run:
-        tickDuration: 25
         maxTicks: 5000
         pollIntervalMs: 250
         maxWallClockMs: 1800000
@@ -66,7 +64,6 @@ cases:
       mapGenerator:
         sourceMapId: bf4049e8
       run:
-        tickDuration: 25
         maxTicks: 2000
         pollIntervalMs: 250
         maxWallClockMs: 1800000
@@ -78,7 +75,6 @@ cases:
       mapGenerator:
         sourceMapId: f857e984
       run:
-        tickDuration: 25
         maxTicks: 5000
         pollIntervalMs: 250
         maxWallClockMs: 1800000

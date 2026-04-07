@@ -3,7 +3,7 @@ import path from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
 import type { SuiteGates } from "./contracts.ts";
-import { loadScenario, mapGeneratorSchema, roomSelectionStrategySchema, scenarioRunSchema, scenarioSchema, type ScenarioConfig } from "./scenario.ts";
+import { loadScenario, mapGeneratorSchema, roomSelectionStrategySchema, scenarioSchema, terminalConditionSetSchema, type ScenarioConfig } from "./scenario.ts";
 
 export const defaultSuitePrimaryMetrics = [
   "T_RCL2",
@@ -34,11 +34,21 @@ const mapGeneratorOverrideSchema = z.object({
   roomSelectionStrategy: roomSelectionStrategySchema.optional()
 });
 
+const scenarioRunOverrideSchema = z.object({
+  tickDuration: z.number().int().positive().optional(),
+  maxTicks: z.number().int().positive().optional(),
+  sampleEveryTicks: z.number().int().positive().optional(),
+  pollIntervalMs: z.number().int().positive().optional(),
+  maxWallClockMs: z.number().int().positive().optional(),
+  maxStalledPolls: z.number().int().positive().optional(),
+  terminalConditions: terminalConditionSetSchema.optional()
+});
+
 const suiteCaseOverrideSchema = z.object({
   map: z.string().min(1).optional(),
   mapGenerator: mapGeneratorOverrideSchema.optional(),
   rooms: z.tuple([z.string().min(1), z.string().min(1)]).optional(),
-  run: scenarioRunSchema.partial().optional()
+  run: scenarioRunOverrideSchema.optional()
 });
 
 const suiteCaseSchema = z.object({
@@ -48,6 +58,10 @@ const suiteCaseSchema = z.object({
   overrides: suiteCaseOverrideSchema.optional(),
   tags: z.array(z.string().min(1)).default([])
 });
+
+const suiteRunOverrideSchema = scenarioRunOverrideSchema.pick({
+  tickDuration: true
+}).partial();
 
 const suiteGatesSchema = z.object({
   primaryMetrics: z.array(suitePrimaryMetricSchema).min(1).default([...defaultSuitePrimaryMetrics]),
@@ -63,6 +77,7 @@ export const suiteManifestSchema = z.object({
   version: z.literal(1),
   name: z.string().min(1),
   description: z.string().optional(),
+  run: suiteRunOverrideSchema.optional(),
   gates: suiteGatesSchema.default(defaultSuiteGates),
   cases: z.array(suiteCaseSchema).min(1)
 }).superRefine((value, context) => {
@@ -110,6 +125,7 @@ export async function resolveSuiteCaseScenario(manifest: LoadedSuiteManifest, te
     rooms: testCase.overrides?.rooms ?? loadedScenario.config.rooms,
     run: {
       ...loadedScenario.config.run,
+      ...(manifest.config.run ?? {}),
       ...(testCase.overrides?.run ?? {})
     }
   });

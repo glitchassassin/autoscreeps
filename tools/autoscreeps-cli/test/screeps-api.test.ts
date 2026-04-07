@@ -69,4 +69,19 @@ describe("ScreepsApiClient", () => {
     expect(firstRequest.headers.get("X-Username")).toBe("baseline");
     expect(firstRequest.headers.get("X-Token")).toBe("token");
   });
+
+  it("reads the measured tick duration from shard info", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('{"shards":[{"tick":248.5,"lastTicks":[250,247]}]}', { status: 200 }));
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const api = new ScreepsApiClient("http://127.0.0.1:21025");
+
+    await expect(api.getMeasuredTickDuration()).resolves.toBe(248.5);
+
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    expect(request.url).toBe("http://127.0.0.1:21025/api/game/shards/info");
+  });
 });

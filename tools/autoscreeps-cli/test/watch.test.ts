@@ -117,6 +117,8 @@ describe("watch helpers", () => {
         energyCapacity: 350,
         objects: 8
       },
+      configuredTickDurationMs: 250,
+      measuredTickDurationMs: 248.5,
       displayGameTime: 10,
       targetGameTime: 101,
       statsError: null
@@ -131,6 +133,7 @@ describe("watch helpers", () => {
     expect(rendered).toContain("Recent Case Events");
     expect(rendered).toContain("RCL 2 (0.6% to RCL 3)");
     expect(rendered).toContain("RCL 2 (0.7% to RCL 3)");
+    expect(rendered).toContain("250 ms configured / 248.5 ms actual");
     expect(rendered).not.toContain("\u001b[");
     expect(rendered).not.toContain("+");
   });
@@ -157,6 +160,8 @@ describe("watch helpers", () => {
         objects: 6
       },
       candidate: null,
+      configuredTickDurationMs: 250,
+      measuredTickDurationMs: null,
       displayGameTime: 10,
       targetGameTime: 101,
       statsError: null
@@ -195,6 +200,8 @@ describe("watch helpers", () => {
         energyCapacity: 350,
         objects: 8
       },
+      configuredTickDurationMs: 250,
+      measuredTickDurationMs: 248.5,
       displayGameTime: 10,
       targetGameTime: 101,
       statsError: null
@@ -217,6 +224,8 @@ describe("watch helpers", () => {
       eventsLabel: "Recent Suite Events",
       baseline: null,
       candidate: null,
+      configuredTickDurationMs: null,
+      measuredTickDurationMs: null,
       displayGameTime: null,
       targetGameTime: null,
       statsError: null

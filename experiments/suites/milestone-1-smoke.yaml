@@ -1,6 +1,8 @@
 version: 1
 name: milestone-1-smoke
 description: Quick smoke suite for manifest-driven opener evaluation.
+run:
+  tickDuration: 25
 gates:
   training:
     minImprovedPrimaryMetrics: 0
@@ -14,7 +16,6 @@ cases:
       mapGenerator:
         sourceMapId: 3a278e6d
       run:
-        tickDuration: 25
         maxTicks: 200
         pollIntervalMs: 250
         maxWallClockMs: 600000
@@ -26,7 +27,6 @@ cases:
       mapGenerator:
         sourceMapId: e665861f
       run:
-        tickDuration: 25
         maxTicks: 200
         pollIntervalMs: 250
         maxWallClockMs: 600000
