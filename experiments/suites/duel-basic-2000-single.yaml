@@ -1,0 +1,12 @@
+version: 1
+name: duel-basic-2000-single
+description: Single-case suite for watching long-running duel-basic progress in the CLI.
+gates:
+  training:
+    minImprovedPrimaryMetrics: 0
+  holdout:
+    maxRegressionPct: 100
+cases:
+  - id: duel-basic-2000
+    cohort: train
+    scenario: ../scenarios/duel-basic-2000.yaml

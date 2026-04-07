@@ -129,8 +129,40 @@ describe("watch helpers", () => {
     expect(rendered).toContain("Baseline (W5N5)");
     expect(rendered).toContain("Candidate (W6N5)");
     expect(rendered).toContain("Recent Case Events");
+    expect(rendered).toContain("RCL 2 (0.6% to RCL 3)");
+    expect(rendered).toContain("RCL 2 (0.7% to RCL 3)");
     expect(rendered).not.toContain("\u001b[");
     expect(rendered).not.toContain("+");
+  });
+
+  it("shows RCL1 progress even when the API omits progressTotal", () => {
+    const rendered = renderDashboard({
+      mode: "follow-latest",
+      suite: createSuiteRecord("suite-3", "2026-01-01T00:00:00.000Z"),
+      displayCase: createCaseDetails("run-3"),
+      events: [],
+      eventsLabel: "Recent Case Events",
+      baseline: {
+        room: "W5N5",
+        owner: "baseline",
+        controllerLevel: 1,
+        controllerProgress: 50,
+        controllerProgressTotal: null,
+        creeps: 1,
+        spawns: 1,
+        constructionSites: 0,
+        extensions: 0,
+        energy: 150,
+        energyCapacity: 300,
+        objects: 6
+      },
+      candidate: null,
+      displayGameTime: 10,
+      targetGameTime: 101,
+      statsError: null
+    }, { width: 120, colors: false, clear: false });
+
+    expect(rendered).toContain("RCL 1 (25.0% to RCL 2)");
   });
 
   it("pads separator and room rows to the full dashboard width", () => {

@@ -25,6 +25,16 @@ const palette = {
   bgPanel: [36, 40, 59] as const
 };
 
+const controllerProgressTotals: Partial<Record<number, number>> = {
+  1: 200,
+  2: 45000,
+  3: 135000,
+  4: 405000,
+  5: 1215000,
+  6: 3645000,
+  7: 10935000
+};
+
 export type DashboardSnapshot = {
   mode: "follow-latest" | "pinned";
   suite: SuiteRecord | null;
@@ -570,11 +580,17 @@ function formatController(stats: WatchRoomStats): string {
     return "-";
   }
 
-  if (stats.controllerProgress === null || stats.controllerProgressTotal === null) {
+  if (stats.controllerProgress === null) {
     return `RCL ${stats.controllerLevel}`;
   }
 
-  return `RCL ${stats.controllerLevel} (${stats.controllerProgress}/${stats.controllerProgressTotal})`;
+  const progressTotal = stats.controllerProgressTotal ?? controllerProgressTotals[stats.controllerLevel] ?? null;
+  if (progressTotal === null || progressTotal <= 0) {
+    return `RCL ${stats.controllerLevel}`;
+  }
+
+  const progressPct = Math.min(Math.max((stats.controllerProgress / progressTotal) * 100, 0), 100);
+  return `RCL ${stats.controllerLevel} (${progressPct.toFixed(1)}% to RCL ${stats.controllerLevel + 1})`;
 }
 
 function formatEnergy(energy: number | null, energyCapacity: number | null): string {
