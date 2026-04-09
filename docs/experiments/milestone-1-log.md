@@ -2369,7 +2369,7 @@ node src/cli.ts experiment run suite \
 
 ## Entry `exp-2026-04-09-rcl2-one-extension-no-extra-growth`
 
-- Status: `planned`
+- Status: `completed`
 - Owner: `OpenCode`
 - Date: `2026-04-09`
 
@@ -2399,9 +2399,9 @@ node src/cli.ts experiment run suite \
     - one `RCL2` extension adds only `50` room energy capacity
     - the failed run never completed all five `RCL2` extensions, so it never reached the meaningful `+250` capacity ceiling
 - Change tested:
-  - revert the completed failed first-extension implementation
   - keep the current direct-spend/no-extra-reserve branch as the base control path
-  - after `RCL2`, allow exactly one early extension to be requested and built
+  - after `RCL2`, allow exactly one early extension to be requested
+  - use worker-ready rather than courier-ready extension gating so the current pre-`RCL3` role model can actually request the site
   - keep post-extension worker-demand flooring, body cadence, and discretionary growth otherwise aligned with the control path so the experiment isolates the value of the first extension itself rather than extra workforce growth
   - do not request additional `RCL2` extensions in this experiment
 - Key evaluation focus:
@@ -2412,3 +2412,115 @@ node src/cli.ts experiment run suite \
   - final role counts in representative `5k` runs
   - `energySpentOnBuild` vs `energySpentOnUpgrade`
   - whether a one-extension/no-extra-growth candidate still loses by roughly the same margin as the completed first-extension run
+- Command:
+  - `node src/cli.ts experiment run suite --manifest ../../experiments/suites/milestone-1-opener.yaml --baseline-source git:HEAD --baseline-package bots/basic --candidate-source workspace --candidate-package bots/basic`
+- Suite ID: `2026-04-09T14-31-13-817Z-92b660fe`
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-09T14-31-13-819Z-303ee649`
+  - `train-b-2k`: `2026-04-09T14-33-07-293Z-3f821ad1`
+  - `train-c-5k`: `2026-04-09T14-34-56-825Z-8f3ee89e`
+  - `train-d-5k`: `2026-04-09T14-38-23-990Z-504092d1`
+  - `holdout-a-2k`: `2026-04-09T14-42-01-777Z-789f8609`
+  - `holdout-b-5k`: `2026-04-09T14-43-53-250Z-f9b85562`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: improved from `19.59` to `19.70` (`+0.56%`)
+  - `spawnWaitingForSufficientEnergyPct`: improved from `29.35%` to `28.86%` (`-1.67%`)
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `null`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `null`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: improved from `24.91` to `25.00` (`+0.36%`)
+  - `spawnWaitingForSufficientEnergyPct`: regressed from `24.48%` to `25.04%` (`+2.29%`)
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `null`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `null`
+- Gate result:
+  - training passed with `2/2` comparable primary metrics improved
+  - holdout passed because no comparable primary metric regressed more than `5%`
+  - overall suite result: `passed`
+- Notable behavior:
+  - the candidate never monetized `RCL2` into built extension capacity in any `6/6` cases:
+    - candidate `firstExtensionTick`: `null` in all `6/6` cases
+    - candidate finished with `0` built extensions in all `6/6` cases
+    - candidate `energySpentOnBuild`: `0` in all `6/6` cases
+  - every case instead ended with exactly one pending extension site and otherwise unchanged room shape:
+    - final candidate room state included `1` extension construction site in all `6/6` cases
+    - `RCL2` timing was identical in all `6/6` cases
+  - representative `5k` runs finished with the same workforce and no realized extension capacity on either side:
+    - `train-c-5k`: role counts `harvester 2`, `worker 7` -> `harvester 2`, `worker 7`; `energySpentOnBuild 0 -> 0`; `energySpentOnUpgrade 15664 -> 15778`
+    - `holdout-b-5k`: role counts `harvester 2`, `worker 7` -> `harvester 2`, `worker 7`; `energySpentOnBuild 0 -> 0`; `energySpentOnUpgrade 18763 -> 18817`
+  - short cases ended in the same regime:
+    - `train-a-2k` and `holdout-a-2k` both finished with `1` pending extension site and zero build spend
+
+### Interpretation
+
+- This experiment did not actually test whether one early `RCL2` extension can pay for itself.
+- Even though the suite passed its numeric gates, the candidate never crossed the first Screeps-world threshold that matters here:
+  - an extension construction site adds no spawn capacity until it is completed
+  - this candidate never invested any build energy into that site
+  - so it realized exactly `0` of the intended `+50` room-energy gain
+- The strongest read is therefore that this was a null-treatment result, not a true extension-monetization win.
+- The branch only managed to place one late extension site, and it placed it too late to be built before the run ended.
+- The unchanged `RCL2` timing, unchanged final role counts, and zero build spend across all cases all support that reading.
+- That means the small primary-metric gains are not evidence that a single early extension is valuable in this opener window.
+- They are more plausibly explained by secondary side effects of the late pending site or by tiny execution-path differences rather than by real extra spawn liquidity.
+- After evaluation, the experiment-specific bot changes were reverted so the workspace returns to the committed baseline while the result remains documented.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: if the room receives one free completed and immediately usable `RCL2` extension at the moment it reaches `RCL2`, the result will isolate whether `+50` room energy capacity has any standalone value at all.
+- Hypothesis B: if a free completed first extension still fails to move `spawnWaitingForSufficientEnergyPct` or controller progress meaningfully, then one-extension value is simply too small to matter in this opener window even with zero build tax.
+- Hypothesis C: if the free-extension variant helps materially while the build-it-yourself variant does not, the dominant bottleneck is extension execution timing rather than extension value.
+
+### Decision
+
+- `continue`
+- Do not promote this behavior as the new baseline. Keep the lesson that the branch only placed a late pending site and never monetized it, revert the runtime change, and next isolate the pure value of one completed `RCL2` extension.
+
+## Entry `exp-2026-04-09-rcl2-free-first-extension-value`
+
+- Status: `planned`
+- Owner: `OpenCode`
+- Date: `2026-04-09`
+
+### Hypothesis
+
+- The completed one-extension/no-extra-growth run passed numerically without ever building the extension, so it did not actually test extension value.
+- If the opener receives one free completed and immediately usable `RCL2` extension as soon as it reaches `RCL2`, while workforce growth stays otherwise unchanged, the result should isolate whether `+50` room energy capacity alone has meaningful opener value.
+- If even that free completed extension fails, the first-extension idea is too weak in this opener window; if it helps, build timing rather than extension value is the real blocker.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Rationale from prior evidence:
+  - the completed one-extension/no-extra-growth run never built the extension in any `6/6` cases even though every case finished with one pending site:
+    - candidate `firstExtensionTick`: `null` in all `6/6`
+    - candidate `energySpentOnBuild`: `0` in all `6/6`
+    - candidate final room state: `1` extension construction site in all `6/6`
+  - `RCL2` timing and final workforce stayed unchanged in all cases, so the prior run did not realize any true extension-capacity gain
+  - Screeps world constraints imply the next clean decomposition is to separate extension value from extension build execution:
+    - an incomplete site provides zero spawn capacity
+    - one completed `RCL2` extension adds only `+50` room energy capacity
+    - testing that `+50` directly is the fastest way to decide whether the first extension is worth pursuing at all
+- Change tested:
+  - keep the current direct-spend/no-extra-reserve branch as the base control path
+  - when the room reaches `RCL2`, grant exactly one completed and immediately usable extension at a valid tile near the spawn
+  - keep post-`RCL2` worker-demand flooring, body cadence, and discretionary growth otherwise aligned with the control path
+  - do not grant or request any additional `RCL2` extensions in this experiment
+- Key evaluation focus:
+  - `firstExtensionTick`
+  - `spawnWaitingForSufficientEnergyPct`
+  - `controllerProgressToRCL3Pct`
+  - `RCL2` timing
+  - final role counts in representative `5k` runs
+  - whether a free completed first extension materially outperforms the unbuilt-site result
