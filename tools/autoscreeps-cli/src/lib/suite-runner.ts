@@ -89,10 +89,13 @@ export type SuiteGateSummary = {
   };
 };
 
+export type SuiteVerdict = "measurement-failure" | "candidate-passed" | "candidate-failed-gates";
+
 export type SuiteSummary = {
   overall: SuiteCohortSummary;
   cohorts: Partial<Record<"train" | "holdout", SuiteCohortSummary>>;
   gates: SuiteGateSummary;
+  verdict: SuiteVerdict;
 };
 
 export type SuiteRunResult = {
@@ -185,7 +188,8 @@ export function summarizeSuiteResults(gatesOrManifest: SuiteGates | { gates: Sui
       ...(train ? { train } : {}),
       ...(holdout ? { holdout } : {})
     },
-    gates: gateSummary
+    gates: gateSummary,
+    verdict: classifySuiteVerdict(cases, gateSummary)
   };
 }
 
@@ -239,6 +243,7 @@ async function runResolvedSuite(
       scenarioName: testCase.scenario.config.name,
       runId: null,
       status: "pending",
+      failureKind: null,
       error: null,
       startedAt: null,
       finishedAt: null
@@ -297,10 +302,12 @@ async function runResolvedSuite(
         });
 
         suiteCase.status = details.run.status === "completed" ? "completed" : "failed";
+        suiteCase.failureKind = details.run.failureKind ?? null;
         suiteCase.error = details.run.error;
         suiteCase.finishedAt = details.run.finishedAt ?? timestamp();
       } catch (error) {
         suiteCase.status = "failed";
+        suiteCase.failureKind = "execution";
         suiteCase.error = error instanceof Error ? error.message : String(error);
         suiteCase.finishedAt = timestamp();
       }
@@ -465,6 +472,14 @@ function evaluateSuiteGates(
       regressions
     }
   };
+}
+
+function classifySuiteVerdict(cases: SuiteCaseDetails[], gateSummary: SuiteGateSummary): SuiteVerdict {
+  if (cases.some((testCase) => testCase.failureKind === "telemetry" || testCase.details?.run.failureKind === "telemetry")) {
+    return "measurement-failure";
+  }
+
+  return gateSummary.passed ? "candidate-passed" : "candidate-failed-gates";
 }
 
 function metricValue(summary: UserRunSummaryMetrics, metric: SuiteSummaryMetric): number | null {

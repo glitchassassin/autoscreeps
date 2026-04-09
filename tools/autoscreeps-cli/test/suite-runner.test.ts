@@ -117,6 +117,43 @@ describe("suite runner", () => {
       { metric: "sourceCoveragePct", regressionPct: 8 }
     ]);
     expect(summary.gates.passed).toBe(false);
+    expect(summary.verdict).toBe("candidate-failed-gates");
+  });
+
+  it("classifies telemetry failures ahead of gate results", () => {
+    const summary = summarizeSuiteResults({
+      gates: {
+        primaryMetrics: ["controllerProgressToRCL3Pct"],
+        training: { minImprovedPrimaryMetrics: 0 },
+        holdout: { maxRegressionPct: 5 }
+      }
+    }, [
+      createCaseResult("train-a", "train", createRunDetails({
+        baseline: createSummary({
+          rcl3: null,
+          controllerProgressToRCL3Pct: 10,
+          spawnWaitingForSufficientEnergyPct: 10,
+          firstExtensionTick: null,
+          allRcl2ExtensionsTick: null,
+          sourceCoveragePct: 10,
+          sourceUptimePct: 10
+        }),
+        candidate: createSummary({
+          rcl3: null,
+          controllerProgressToRCL3Pct: 12,
+          spawnWaitingForSufficientEnergyPct: 10,
+          firstExtensionTick: null,
+          allRcl2ExtensionsTick: null,
+          sourceCoveragePct: 10,
+          sourceUptimePct: 10
+        }),
+        failureKind: "telemetry",
+        status: "failed"
+      }))
+    ]);
+
+    expect(summary.gates.passed).toBe(true);
+    expect(summary.verdict).toBe("measurement-failure");
   });
 
   it("runs manifest cases through the duel runner and collects case results", async () => {
@@ -226,6 +263,8 @@ function createCaseResult(id: string, cohort: "train" | "holdout", details: RunD
 function createRunDetails(input: {
   runId?: string;
   scenarioName?: string;
+  status?: "completed" | "failed";
+  failureKind?: "telemetry" | "execution" | null;
   baseline: UserRunSummaryMetrics;
   candidate: UserRunSummaryMetrics;
 }): RunDetails {
@@ -233,7 +272,8 @@ function createRunDetails(input: {
     run: {
       id: input.runId ?? "run-1",
       type: "duel",
-      status: "completed",
+      status: input.status ?? "completed",
+      failureKind: input.failureKind ?? null,
       createdAt: "2026-01-01T00:00:00.000Z",
       startedAt: "2026-01-01T00:00:01.000Z",
       finishedAt: "2026-01-01T00:00:02.000Z",

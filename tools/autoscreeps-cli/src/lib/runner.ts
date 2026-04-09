@@ -3,6 +3,7 @@ import path from "node:path";
 import { buildVariantPackage } from "./build.ts";
 import type {
   EventRecord,
+  RunFailureKind,
   RunDetails,
   RunIndexEntry,
   RunMetrics,
@@ -10,6 +11,7 @@ import type {
   RunSample,
   RunSampleRoomMetrics,
   RunTerminationReason,
+  TelemetryHealth,
   TerminalOutcome,
   UserBadge,
   UserSampleMetrics,
@@ -18,7 +20,7 @@ import type {
   VariantRecord,
   VariantRole
 } from "./contracts.ts";
-import { autoscreepsTelemetrySegmentId, buildTelemetryByRole } from "./bot-telemetry.ts";
+import { autoscreepsTelemetrySegmentId, inspectTelemetryByRole, type BotTelemetryInspection } from "./bot-telemetry.ts";
 import { copyFileToScreepsService, resetPrivateServer, restartScreepsService } from "./docker.ts";
 import { createWorkspaceSnapshot, parseVariantSource, resolveRepoRoot, withGitWorktree } from "./git.ts";
 import { appendEvent, appendIndexEntry, appendRunSample, createRunWorkspace, writeMetrics, writeRunRecord, writeVariantRecords } from "./history.ts";
@@ -86,6 +88,23 @@ type PendingScenarioRoomMutation = {
   mutation: ScenarioRoomMutation;
 };
 
+type TelemetryInspectionsByRole = Record<VariantRole, BotTelemetryInspection>;
+
+class TelemetryHealthError extends Error {
+  readonly failureKind = "telemetry" as const;
+  readonly role: VariantRole;
+  readonly gameTime: number;
+  readonly health: TelemetryHealth;
+
+  constructor(role: VariantRole, gameTime: number, health: TelemetryHealth) {
+    super(`Telemetry ${health.status} for ${role} at tick ${gameTime}: ${health.message ?? "unknown telemetry failure"}`);
+    this.name = "TelemetryHealthError";
+    this.role = role;
+    this.gameTime = gameTime;
+    this.health = health;
+  }
+}
+
 export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails> {
   const repoRoot = await resolveRepoRoot(input.cwd);
   const scenario = "scenario" in input ? input.scenario : await loadScenario(input.scenarioPath);
@@ -110,6 +129,7 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
     id: runId,
     type: "duel",
     status: "running",
+    failureKind: null,
     createdAt: timestamp(),
     startedAt: null,
     finishedAt: null,
@@ -145,6 +165,8 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
 
   let variants: Record<VariantRole, VariantRecord> | null = null;
   let metrics: RunMetrics | null = null;
+  let cli: ScreepsServerCli | null = null;
+  let simulationRunning = false;
 
   try {
     const preparedBaseline = await prepareVariant({
@@ -176,7 +198,7 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
     await resetPrivateServer(repoRoot);
 
     const api = new ScreepsApiClient(runRecord.server.httpUrl);
-    const cli = new ScreepsServerCli({
+    cli = new ScreepsServerCli({
       repoRoot,
       host: runRecord.server.cliHost,
       port: runRecord.server.cliPort
@@ -261,6 +283,7 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
     }));
     await writeRunRecord(runDir, runRecord);
     await cli.resumeSimulation();
+    simulationRunning = true;
     await logEvent(runDir, "info", "simulation.running", "Simulation resumed.", {
       startGameTime: runRecord.run.startGameTime,
       targetGameTime
@@ -286,7 +309,7 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
           pendingRoomMutations = await applyScenarioRoomMutations({
             pendingRoomMutations,
             api,
-            cli,
+            cli: cli!,
             credentials,
             rooms: runRecord.rooms,
             runDir,
@@ -296,7 +319,7 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
 
         const captureSample = shouldCaptureRunSample(runRecord.run.startGameTime!, lastSampleGameTime, gameTime, sampleEveryTicks);
         let stats: StatsResponse | null = null;
-        let telemetryData: Record<VariantRole, string | null> | null = null;
+        let telemetryByRole: TelemetryInspectionsByRole | null = null;
         let roomData: RunSample["rooms"] | null = null;
 
         if (runRecord.run.terminalConditions || captureSample) {
@@ -310,10 +333,11 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
             api.getRoomObjects(runRecord.rooms.baseline),
             api.getRoomObjects(runRecord.rooms.candidate)
           ]);
-          telemetryData = {
+          telemetryByRole = inspectTelemetryByRole({
             baseline: baselineTelemetry,
             candidate: candidateTelemetry
-          };
+          });
+          await ensureTelemetryHealth(runDir, gameTime, telemetryByRole);
           roomData = {
             baseline: buildSampleRoomMetrics(runRecord.rooms.baseline, baselineRoomObjects),
             candidate: buildSampleRoomMetrics(runRecord.rooms.candidate, candidateRoomObjects)
@@ -348,7 +372,7 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
         }
 
         if (captureSample && stats) {
-          const sample = buildRunSample(gameTime, stats, credentials, telemetryData, roomData);
+          const sample = buildRunSample(gameTime, stats, credentials, telemetryByRole, roomData);
           samples.push(sample);
           lastSampleGameTime = gameTime;
           await appendRunSample(runDir, sample);
@@ -365,6 +389,7 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
     });
 
     await cli.pauseSimulation();
+    simulationRunning = false;
     const endGameTime = await cli.getGameTime();
     runRecord.run.endGameTime = endGameTime;
     runRecord.run.terminationReason = waitResult.reason;
@@ -411,10 +436,12 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
         api.getRoomObjects(runRecord.rooms.baseline),
         api.getRoomObjects(runRecord.rooms.candidate)
       ]);
-      const finalSample = buildRunSample(endGameTime, finalStats, credentials, {
+      const telemetryByRole = inspectTelemetryByRole({
         baseline: baselineTelemetry,
         candidate: candidateTelemetry
-      }, {
+      });
+      await ensureTelemetryHealth(runDir, endGameTime, telemetryByRole);
+      const finalSample = buildRunSample(endGameTime, finalStats, credentials, telemetryByRole, {
         baseline: buildSampleRoomMetrics(runRecord.rooms.baseline, baselineRoomObjects),
         candidate: buildSampleRoomMetrics(runRecord.rooms.candidate, candidateRoomObjects)
       });
@@ -442,10 +469,19 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
     await writeRunRecord(runDir, runRecord);
   } catch (error) {
     runRecord.status = "failed";
+    runRecord.failureKind = classifyFailureKind(error);
     runRecord.finishedAt = timestamp();
     runRecord.error = error instanceof Error ? error.stack ?? error.message : String(error);
     await writeRunRecord(runDir, runRecord);
     await logEvent(runDir, "error", "run.failed", "Experiment run failed.", { error: runRecord.error });
+  } finally {
+    if (simulationRunning && cli) {
+      try {
+        await cli.pauseSimulation();
+      } catch {
+        // Best effort cleanup after a failed run.
+      }
+    }
   }
 
   if (historyRoot !== null) {
@@ -669,7 +705,7 @@ function buildRunSample(
   gameTime: number,
   stats: StatsResponse,
   credentials: Record<VariantRole, { username: string }>,
-  telemetryData: Record<VariantRole, string | null> | null,
+  telemetryData: TelemetryInspectionsByRole | null,
   roomData: Record<VariantRole, RunSampleRoomMetrics> | null
 ): RunSample {
   const sample: RunSample = {
@@ -685,10 +721,41 @@ function buildRunSample(
   }
 
   if (telemetryData) {
-    sample.telemetry = buildTelemetryByRole(telemetryData);
+    sample.telemetry = {
+      baseline: telemetryData.baseline.snapshot,
+      candidate: telemetryData.candidate.snapshot
+    };
+    sample.telemetryHealth = {
+      baseline: telemetryData.baseline.health,
+      candidate: telemetryData.candidate.health
+    };
   }
 
   return sample;
+}
+
+async function ensureTelemetryHealth(
+  runDir: string,
+  gameTime: number,
+  telemetryByRole: TelemetryInspectionsByRole
+): Promise<void> {
+  for (const role of variantRoles) {
+    const inspection = telemetryByRole[role];
+    if (inspection.health.status !== "parse_error" && inspection.health.status !== "runtime_error") {
+      continue;
+    }
+
+    await logEvent(runDir, "error", "telemetry.failed", "Telemetry health check failed.", {
+      role,
+      gameTime,
+      telemetry: inspection.health
+    });
+    throw new TelemetryHealthError(role, gameTime, inspection.health);
+  }
+}
+
+function classifyFailureKind(error: unknown): RunFailureKind {
+  return error instanceof TelemetryHealthError ? "telemetry" : "execution";
 }
 
 function buildSampleRoomMetrics(room: string, response: Awaited<ReturnType<ScreepsApiClient["getRoomObjects"]>>): RunSampleRoomMetrics {

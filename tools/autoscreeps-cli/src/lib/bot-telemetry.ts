@@ -1,27 +1,60 @@
-import type { BotTelemetrySnapshot, VariantRole } from "./contracts.ts";
+import type { BotTelemetrySnapshot, TelemetryHealth, VariantRole } from "./contracts.ts";
 
 export const autoscreepsTelemetrySegmentId = 42;
 
+export type BotTelemetryInspection = {
+  snapshot: BotTelemetrySnapshot | null;
+  health: TelemetryHealth;
+};
+
 export function parseBotTelemetry(value: string | null): BotTelemetrySnapshot | null {
+  return inspectBotTelemetry(value).snapshot;
+}
+
+export function inspectBotTelemetry(value: string | null): BotTelemetryInspection {
   if (!value) {
-    return null;
+    return {
+      snapshot: null,
+      health: {
+        status: "missing",
+        message: null
+      }
+    };
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(value);
-  } catch {
-    return null;
+  } catch (error) {
+    return {
+      snapshot: null,
+      health: {
+        status: "parse_error",
+        message: error instanceof Error ? error.message : String(error)
+      }
+    };
   }
 
   if (!isRecord(parsed)) {
-    return null;
+    return {
+      snapshot: null,
+      health: {
+        status: "parse_error",
+        message: "Telemetry payload must be a JSON object."
+      }
+    };
   }
 
   const schemaVersion = parsed.schemaVersion;
   const gameTime = parsed.gameTime;
   if (typeof schemaVersion !== "number" || typeof gameTime !== "number") {
-    return null;
+    return {
+      snapshot: null,
+      health: {
+        status: "parse_error",
+        message: "Telemetry payload is missing required numeric schemaVersion/gameTime fields."
+      }
+    };
   }
 
   const snapshot: BotTelemetrySnapshot = {
@@ -124,13 +157,31 @@ export function parseBotTelemetry(value: string | null): BotTelemetrySnapshot | 
     snapshot.counters = parsed.counters;
   }
 
-  return snapshot;
+  return {
+    snapshot,
+    health: snapshot.debugError
+      ? {
+        status: "runtime_error",
+        message: snapshot.debugError
+      }
+      : {
+        status: "ok",
+        message: null
+      }
+  };
 }
 
 export function buildTelemetryByRole(values: Record<VariantRole, string | null>): Record<VariantRole, BotTelemetrySnapshot | null> {
   return {
     baseline: parseBotTelemetry(values.baseline),
     candidate: parseBotTelemetry(values.candidate)
+  };
+}
+
+export function inspectTelemetryByRole(values: Record<VariantRole, string | null>): Record<VariantRole, BotTelemetryInspection> {
+  return {
+    baseline: inspectBotTelemetry(values.baseline),
+    candidate: inspectBotTelemetry(values.candidate)
   };
 }
 

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildTelemetryByRole, parseBotTelemetry } from "../src/lib/bot-telemetry.ts";
+import { buildTelemetryByRole, inspectBotTelemetry, inspectTelemetryByRole, parseBotTelemetry } from "../src/lib/bot-telemetry.ts";
 
 describe("bot telemetry", () => {
   it("parses a valid telemetry payload", () => {
-    const parsed = parseBotTelemetry(JSON.stringify({
+    const raw = JSON.stringify({
       schemaVersion: 5,
       gameTime: 250,
       colonyMode: "normal",
@@ -68,7 +68,9 @@ describe("bot telemetry", () => {
       },
       milestones: { rcl2Tick: 125 },
       counters: { creepDeaths: 3 }
-    }));
+    });
+    const parsed = parseBotTelemetry(raw);
+    const inspection = inspectBotTelemetry(raw);
 
     expect(parsed).toEqual({
       schemaVersion: 5,
@@ -136,18 +138,79 @@ describe("bot telemetry", () => {
       milestones: { rcl2Tick: 125 },
       counters: { creepDeaths: 3 }
     });
+    expect(inspection).toMatchObject({
+      health: {
+        status: "ok",
+        message: null
+      }
+    });
   });
 
-  it("returns null for malformed telemetry and builds role maps", () => {
+  it("classifies malformed and missing telemetry health", () => {
     expect(parseBotTelemetry("{bad json")).toBeNull();
     expect(parseBotTelemetry(JSON.stringify({ schemaVersion: "1", gameTime: 25 }))).toBeNull();
+    expect(inspectBotTelemetry("{bad json")).toMatchObject({
+      snapshot: null,
+      health: {
+        status: "parse_error"
+      }
+    });
+    expect(inspectBotTelemetry(null)).toEqual({
+      snapshot: null,
+      health: {
+        status: "missing",
+        message: null
+      }
+    });
+  });
 
+  it("surfaces runtime telemetry errors without discarding the snapshot", () => {
+    const inspection = inspectBotTelemetry(JSON.stringify({
+      schemaVersion: 5,
+      gameTime: 250,
+      debugError: "RangeError: boom"
+    }));
+
+    expect(inspection).toEqual({
+      snapshot: {
+        schemaVersion: 5,
+        gameTime: 250,
+        debugError: "RangeError: boom"
+      },
+      health: {
+        status: "runtime_error",
+        message: "RangeError: boom"
+      }
+    });
+  });
+
+  it("builds telemetry and health maps by role", () => {
     expect(buildTelemetryByRole({
       baseline: JSON.stringify({ schemaVersion: 1, gameTime: 25 }),
       candidate: null
     })).toEqual({
       baseline: { schemaVersion: 1, gameTime: 25 },
       candidate: null
+    });
+
+    expect(inspectTelemetryByRole({
+      baseline: JSON.stringify({ schemaVersion: 1, gameTime: 25 }),
+      candidate: null
+    })).toEqual({
+      baseline: {
+        snapshot: { schemaVersion: 1, gameTime: 25 },
+        health: {
+          status: "ok",
+          message: null
+        }
+      },
+      candidate: {
+        snapshot: null,
+        health: {
+          status: "missing",
+          message: null
+        }
+      }
     });
   });
 });

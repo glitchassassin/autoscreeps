@@ -42,6 +42,13 @@ export type VariantInput = {
 
 export type RunStatus = "running" | "completed" | "failed";
 
+export type RunFailureKind = "telemetry" | "execution";
+
+export type TelemetryHealth = {
+  status: "ok" | "missing" | "parse_error" | "runtime_error";
+  message: string | null;
+};
+
 export type SuiteCaseStatus = "pending" | RunStatus;
 
 export type SuiteSource =
@@ -81,6 +88,7 @@ export type SuiteCaseRecord = {
   scenarioName: string | null;
   runId: string | null;
   status: SuiteCaseStatus;
+  failureKind?: RunFailureKind | null;
   error: string | null;
   startedAt: string | null;
   finishedAt: string | null;
@@ -200,6 +208,7 @@ export type RunRecord = {
   id: string;
   type: "duel";
   status: RunStatus;
+  failureKind?: RunFailureKind | null;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
@@ -292,6 +301,7 @@ export type RunSample = {
   users: Record<VariantRole, UserSampleMetrics>;
   rooms?: Record<VariantRole, RunSampleRoomMetrics>;
   telemetry?: Record<VariantRole, BotTelemetrySnapshot | null>;
+  telemetryHealth?: Record<VariantRole, TelemetryHealth>;
 };
 
 export type UserRunSummaryMetrics = {
