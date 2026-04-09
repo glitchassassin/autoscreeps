@@ -93,13 +93,13 @@ describe("telemetry", () => {
         worker: 1
       },
       spawn: {
-        queueDepth: 5,
+        queueDepth: 2,
         isSpawning: false,
-        nextRole: "worker",
+        nextRole: "courier",
         unmetDemand: {
           harvester: 0,
-          courier: 0,
-          worker: 5
+          courier: 1,
+          worker: 1
         }
       },
       sources: {
@@ -206,11 +206,11 @@ describe("telemetry", () => {
         worker: 1
       },
       spawn: {
-        queueDepth: 5,
-        nextRole: "worker",
+        queueDepth: 2,
+        nextRole: "courier",
         unmetDemand: {
-          courier: 0,
-          worker: 5
+          courier: 1,
+          worker: 1
         }
       },
       sources: {

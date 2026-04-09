@@ -43,40 +43,58 @@ describe("runWorker", () => {
     expect(creep.upgradeController).toHaveBeenCalledTimes(1);
   });
 
-  it("harvests directly before RCL3 when empty", () => {
-    const creep = makeWorker({ sitePos: { x: 12, y: 11, roomName: "W0N0" }, controllerLevel: 2, energy: 0, freeCapacity: 50 });
+  it("picks up dropped energy before RCL3 when empty", () => {
+    const creep = makeWorker({
+      sitePos: { x: 12, y: 11, roomName: "W0N0" },
+      controllerLevel: 2,
+      energy: 0,
+      freeCapacity: 50,
+      droppedResources: [
+        {
+          id: "drop-1",
+          amount: 100,
+          pos: { x: 12, y: 10, roomName: "W0N0" },
+          resourceType: RESOURCE_ENERGY
+        } as Resource<ResourceConstant>
+      ]
+    });
 
     runWorker(creep);
 
-    expect(creep.harvest).toHaveBeenCalledTimes(1);
+    expect(creep.pickup).toHaveBeenCalledTimes(1);
+    expect(creep.harvest).not.toHaveBeenCalled();
     expect(creep.upgradeController).not.toHaveBeenCalled();
   });
 
-  it("feeds the spawn before upgrading when pre-RCL3 demand is still queued", () => {
+  it("upgrades instead of feeding the spawn before RCL3", () => {
     const creep = makeWorker({ sitePos: { x: 12, y: 11, roomName: "W0N0" }, controllerLevel: 2, spawnFreeCapacity: 300 });
-
-    runWorker(creep);
-
-    expect(creep.transfer).toHaveBeenCalledTimes(1);
-    expect(creep.upgradeController).not.toHaveBeenCalled();
-  });
-
-  it("returns to controller upgrading once pre-RCL3 spawn demand is cleared", () => {
-    const testGlobal = globalThis as typeof globalThis & { Game: Game };
-    const creep = makeWorker({ sitePos: { x: 12, y: 11, roomName: "W0N0" }, controllerLevel: 2, spawnFreeCapacity: 300, workParts: 2 });
-
-    testGlobal.Game.creeps = {
-      harvesterA: makeDemandCreep("harvester", 2),
-      harvesterB: makeDemandCreep("harvester", 2),
-      workerA: creep,
-      workerB: makeDemandCreep("worker", 2),
-      workerC: makeDemandCreep("worker", 2)
-    };
 
     runWorker(creep);
 
     expect(creep.transfer).not.toHaveBeenCalled();
     expect(creep.upgradeController).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to source-adjacent drops when no handoff drop exists", () => {
+    const creep = makeWorker({
+      sitePos: { x: 12, y: 11, roomName: "W0N0" },
+      controllerLevel: 2,
+      energy: 0,
+      freeCapacity: 50,
+      droppedResources: [
+        {
+          id: "drop-1",
+          amount: 100,
+          pos: { x: 9, y: 10, roomName: "W0N0" },
+          resourceType: RESOURCE_ENERGY
+        } as Resource<ResourceConstant>
+      ]
+    });
+
+    runWorker(creep);
+
+    expect(creep.pickup).toHaveBeenCalledTimes(1);
+    expect(creep.harvest).not.toHaveBeenCalled();
   });
 
   it("defaults to upgrading when the nearest build site is far away", () => {
@@ -96,6 +114,7 @@ function makeWorker(input: {
   freeCapacity?: number;
   spawnFreeCapacity?: number;
   workParts?: number;
+  droppedResources?: Resource<ResourceConstant>[];
 }): Creep {
   const site = {
     id: "site-1",
@@ -145,7 +164,8 @@ function makeWorker(input: {
           return [source];
         }
         if (type === FIND_DROPPED_RESOURCES) {
-          return [];
+          const resources = input.droppedResources ?? [];
+          return opts?.filter ? resources.filter(opts.filter) : resources;
         }
 
         return [];
@@ -168,16 +188,5 @@ function makeWorker(input: {
     build: vi.fn(() => OK),
     upgradeController: vi.fn(() => OK),
     moveTo: vi.fn()
-  } as unknown as Creep;
-}
-
-function makeDemandCreep(role: WorkerRole, workParts: number): Creep {
-  return {
-    memory: {
-      role,
-      working: true,
-      homeRoom: "W0N0"
-    },
-    body: Array.from({ length: workParts }, () => ({ type: WORK, hits: 100 }))
   } as unknown as Creep;
 }

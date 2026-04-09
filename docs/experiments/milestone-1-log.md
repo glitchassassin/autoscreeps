@@ -2835,9 +2835,11 @@ node src/cli.ts experiment run suite \
 
 ## Entry `exp-2026-04-09-opener-source-claim-cleanup-only`
 
-- Status: `planned`
+- Status: `superseded`
 - Owner: `OpenCode`
 - Date: `2026-04-09`
+
+- Superseded before implementation by `exp-2026-04-09-opener-source-sitter-runner-bootstrap` after deciding to test the larger structural source-residency lever before another queue-only ablation.
 
 ### Hypothesis
 
@@ -2862,3 +2864,155 @@ node src/cli.ts experiment run suite \
   - `activeHarvestingSourceUptimePct`
   - `spawnIdlePct`
   - whether representative `5k` runs fall back to `2 harvester / 7 worker` or retain better source metrics without the `2 harvester / 9 worker` overshoot
+
+## Entry `exp-2026-04-09-opener-source-sitter-runner-bootstrap`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-09`
+
+### Hypothesis
+
+- The completed source-hot idle-reduction run improved controller progress and source-side metrics, but it still left the opener far below the two-source harvest ceiling while the spawn remained mostly idle and often waited on banked energy.
+- The strongest remaining bottleneck is the direct-harvest travel model itself: pre-`RCL3` workers still leave the source to spend energy, so active source coverage collapses whenever the same creeps become spenders.
+- If the next candidate replaces pre-`RCL3` direct-harvest spending with a dedicated source-sitter plus runner/bootstrap split, both sources should stay actively harvested much more consistently, source idle should fall sharply, and the spawn bank should refill more predictably while queued demand exists.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Change tested:
+  - keep the standard `duel-basic` scenario with no free extensions or other room mutations on either side
+  - keep the current source-claim cleanup and active-source telemetry from the latest baseline
+  - replace the pre-`RCL3` direct-harvest/direct-spend loop with a narrow source-sitter/bootstrap split:
+    - make `harvester` stay source-side and drop harvested energy instead of leaving the source to spend it
+    - revive `courier` before `RCL3` so source drops are carried to `spawn` and `extensions` first, then handed off toward workers when refill demand is clear
+    - make pre-`RCL3` `worker` stop direct harvesting and consume dropped energy for controller progress instead
+  - replace the old pre-`RCL3` work-part demand with a staged role-count demand around `1 harvester -> 1 courier -> 2 harvesters -> 1 worker`, then only add the second courier or worker when backlog or `RCL2` pressure appears
+  - keep post-`RCL3` logic unchanged so the run isolates the pre-`RCL3` source-residency and bank-refill model
+- Key evaluation focus:
+  - `sourceHarvestUtilizationPct`
+  - `activeHarvestingSourceUptimePct`
+  - `sourceHarvestEnergyPerTick`
+  - `spawnWaitingForSufficientEnergyPct`
+  - `spawnIdlePct`
+  - `controllerProgressToRCL3Pct`
+  - `backlogEnergy`
+  - whether representative `5k` runs keep both sources actively harvested while the spawn queue stays non-empty longer than the current `2 harvester / 9 worker` direct-spend shape
+
+### Command
+
+- `node src/cli.ts experiment run suite --manifest ../../experiments/suites/milestone-1-opener.yaml --baseline-source git:HEAD --baseline-package bots/basic --candidate-source workspace --candidate-package bots/basic`
+- Suite ID: `2026-04-09T23-25-49-508Z-3e775b73`
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-09T23-25-49-509Z-7765e04b`
+  - `train-b-2k`: `2026-04-09T23-27-44-655Z-57488dde`
+  - `train-c-5k`: `2026-04-09T23-29-37-257Z-ba523e1f`
+  - `train-d-5k`: `2026-04-09T23-33-12-252Z-fddf3b93`
+  - `holdout-a-2k`: `2026-04-09T23-36-44-712Z-b1e6f76d`
+  - `holdout-b-5k`: `2026-04-09T23-38-35-173Z-57879bfc`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `21.21` to `11.74`
+  - `spawnWaitingForSufficientEnergyPct`: improved from `29.95%` to `26.02%`
+  - upstream and spawn metrics:
+    - `spawnIdlePct`: `60.78% -> 67.96%`
+    - `sourceHarvestEnergyPerTick`: `4.51 -> 6.19`
+    - `sourceHarvestUtilizationPct`: `20.63 -> 27.89`
+    - `activeHarvestingSourceCoveragePct`: `61.52 -> 78.83`
+    - `activeHarvestingSourceUptimePct`: `43.66 -> 62.74`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `27.25` to `12.43`
+  - `spawnWaitingForSufficientEnergyPct`: improved from `27.68%` to `18.21%`
+  - upstream and spawn metrics:
+    - `spawnIdlePct`: `63.41% -> 75.81%`
+    - `sourceHarvestEnergyPerTick`: `4.59 -> 6.23`
+    - `sourceHarvestUtilizationPct`: `22.95 -> 31.14`
+    - `activeHarvestingSourceCoveragePct`: `67.99 -> 88.02`
+    - `activeHarvestingSourceUptimePct`: `51.22 -> 77.56`
+- Gate result:
+  - training failed because only `1/3` primary metrics improved
+  - holdout failed because `controllerProgressToRCL3Pct` regressed by more than the allowed `5%` ceiling (`27.25 -> 12.43`, about `-54.38%`)
+  - overall suite result: gates failed
+- Notable behavior:
+  - the source-side objective worked, but the colony stopped growing into spend-capable bodies:
+    - `train-c-5k`: baseline finished at `2 harvester / 9 worker`; candidate plateaued at `2 harvester / 2 courier / 2 worker`
+    - `holdout-b-5k`: baseline finished at `2 harvester / 9 worker`; candidate plateaued at `2 harvester / 2 courier / 2 worker`
+  - representative `5k` runs ended with `queueDepth 0` and all `unmetDemand 0` on the candidate even while dropped-energy backlog remained:
+    - `train-c-5k`: `backlogEnergy 0 -> 132`; `controllerProgress 17521 -> 8483`
+    - `holdout-b-5k`: `backlogEnergy 0 -> 1880`; `oldestDropAge 4595`; `controllerProgress 20445 -> 8334`
+  - the candidate delivered much more energy into handoff logistics than into the spawn bank:
+    - `train-c-5k`: delivered energy `spawn 6923 -> 4674`; candidate `worker_handoff 23326`
+    - `holdout-b-5k`: delivered energy `spawn 7622 -> 4483`; candidate `worker_handoff 16317`
+  - candidate workers only selected upgrade work in the representative `5k` runs, while couriers accumulated long idle-with-energy tails:
+    - `train-c-5k`: `workerTaskSelections.worker.upgrade 8659`; `withEnergyNoSpendTicks.courier 3750`
+    - `holdout-b-5k`: `workerTaskSelections.worker.upgrade 8531`; `withEnergyNoSpendTicks.courier 1391`
+
+### Interpretation
+
+- This experiment strongly supported the source-residency part of the hypothesis, but it failed the milestone objective.
+- The sitter-plus-runner split materially improved real intake and active source coverage on both cohorts:
+  - harvest energy rose by about `+37%` on train and `+36%` on holdout
+  - active-harvest coverage and uptime both improved by large margins on both cohorts
+  - `spawnWaitingForSufficientEnergyPct` also improved, so the candidate did a better job keeping refill energy available for the spawn bank than the previous source-hot demand experiment
+- But the colony converted that cleaner intake into much worse controller progress:
+  - `spawnIdlePct` got markedly worse on both cohorts even while spawn waiting improved
+  - the candidate stopped at `6` creeps with `queueDepth 0`, `unmetDemand 0`, and only `2` workers in both representative `5k` cases
+  - one holdout source finished with `1880` dropped energy and `oldestDropAge 4595`, which means the transport-and-spend loop did not monetize the extra harvested energy fast enough
+- Against Screeps world constraints, the strongest interpretation is that the dominant bottleneck moved from source travel to spend-side demand:
+  - a two-source room still has a hard gross ceiling of `20 e/t`, so the candidate's `~6.2 e/t` is better but still far from saturation
+  - pre-`RCL3`, the main useful sinks are more bodies and more upgrading, not just cleaner handoffs
+  - the candidate appears to have treated `2 harvester / 2 courier / 2 worker` as "enough" even when the spawn was mostly idle and the room still had accessible energy on the ground
+- Keep this architectural direction, but change the demand contract next. The next highest-value test is not another courier-route rewrite; it is asking for more spend-capable worker bodies once spawn refill is covered and backlog or courier idle stays high.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: if the sitter-plus-runner opener adds backlog-aware or courier-idle-aware pre-`RCL3` worker demand once spawn refill is covered, `spawnIdlePct` and `controllerProgressToRCL3Pct` should recover without giving back most of the source-side gains.
+- Hypothesis B: if extra spenders fix the regression while the source metrics stay strong, the dominant failure in this run was undersized spend demand or queue accounting rather than the sitter-runner split itself.
+- Hypothesis C: if controller progress still lags after spender-demand expansion, the next single-rule test should let loaded couriers spend directly when they have no valid logistics target.
+
+### Decision
+
+- `continue`
+- Keep the source-sitter plus runner architecture as the current direction and next isolate the spend-side demand contract so backlog or courier-idle pressure can ask the spawn for more worker/upgrader bodies.
+
+## Entry `exp-2026-04-09-opener-source-sitter-runner-spender-demand`
+
+- Status: `planned`
+- Owner: `OpenCode`
+- Date: `2026-04-09`
+
+### Hypothesis
+
+- The completed source-sitter plus runner run proved that pre-`RCL3` source residency and dedicated transport can improve real harvest throughput, active source coverage, and spawn-bank refill timing.
+- But it also showed that the colony can still plateau at `2 harvester / 2 courier / 2 worker` while `queueDepth` falls to `0` and large dropped-energy backlogs remain, which means spend-capable body demand is now the dominant bottleneck.
+- If the next candidate keeps the sitter-plus-runner architecture but increases pre-`RCL3` worker demand whenever spawn refill is covered and backlog or courier idle remains high, it should convert the extra intake into more controller progress without throwing away the source-side gains.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Planned change:
+  - keep the standard `duel-basic` scenario with no free extensions or other room mutations on either side
+  - keep the source-sitter plus runner/bootstrap split from the previous experiment
+  - keep courier routing and handoff behavior unchanged so the run isolates spend-demand sizing rather than transport contracts
+  - revise pre-`RCL3` demand so once spawn refill is covered, persistent source backlog, courier idle-with-energy pressure, or obvious underpopulation can demand additional `worker` bodies instead of treating `2 harvester / 2 courier / 2 worker` as sufficient
+  - keep post-`RCL3` logic unchanged so the run isolates pre-`RCL3` spend-side demand on top of the new source-resident pipeline
+- Key evaluation focus:
+  - `controllerProgressToRCL3Pct`
+  - `spawnIdlePct`
+  - `spawnWaitingForSufficientEnergyPct`
+  - `sourceHarvestUtilizationPct`
+  - `activeHarvestingSourceUptimePct`
+  - `backlogEnergy`
+  - whether representative `5k` runs grow past the current `2 harvester / 2 courier / 2 worker` plateau while keeping source backlog controlled

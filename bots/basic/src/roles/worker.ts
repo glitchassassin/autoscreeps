@@ -1,13 +1,11 @@
-import { findClosestConstructionSiteMatching, findClosestEnergyDrop, harvestNearestSource, isSourceAdjacentPosition, moveToTarget, pickupEnergyDrop, positionsAreNear, updateWorkingState } from "../creep-utils";
-import { summarizeSpawnDemandForRoom } from "../spawn";
+import { findClosestConstructionSiteMatching, findClosestEnergyDrop, isSourceAdjacentPosition, moveToTarget, pickupEnergyDrop, positionsAreNear, updateWorkingState } from "../creep-utils";
 import { recordTelemetryAction, recordTelemetryTargetFailure, recordTelemetryTaskSelection } from "../telemetry-state";
 
 const workerBuildRangeThreshold = 3;
-type EnergyFeedTarget = StructureSpawn | StructureExtension;
 
 export function runWorker(creep: Creep): void {
   if (isPreRcl3OwnedRoom(creep.room)) {
-    runDirectSpendWorker(creep);
+    runBootstrapWorker(creep);
     return;
   }
 
@@ -87,30 +85,28 @@ function tryPickupNearbyHandoffEnergy(creep: Creep): boolean {
   return true;
 }
 
-function runDirectSpendWorker(creep: Creep): void {
+function runBootstrapWorker(creep: Creep): void {
   updateWorkingState(creep);
 
   if (!creep.memory.working) {
-    harvestNearestSource(creep);
-    return;
-  }
-
-  if (shouldPrioritizeSpawnFeed(creep.room)) {
-    const energyTarget = findQueueAwareEnergyTarget(creep);
-    if (energyTarget) {
-      recordTelemetryTaskSelection(creep.memory.role, "feed");
-      const result = creep.transfer(energyTarget, RESOURCE_ENERGY);
-      recordTelemetryAction(creep, "transfer", result, {
-        targetType: energyTarget.structureType,
-        targetKey: energyTarget.id
-      });
-      if (result === ERR_NOT_IN_RANGE) {
-        moveToTarget(creep, energyTarget);
-      }
-      if (result === OK || result === ERR_NOT_IN_RANGE) {
-        return;
-      }
+    if (tryPickupNearbyHandoffEnergy(creep)) {
+      return;
     }
+
+    const handoffDrop = findClosestEnergyDrop(creep, (resource) => !isSourceAdjacentPosition(creep.room, resource.pos));
+    if (handoffDrop) {
+      pickupEnergyDrop(creep, handoffDrop);
+      return;
+    }
+
+    const sourceDrop = findClosestEnergyDrop(creep, (resource) => isSourceAdjacentPosition(creep.room, resource.pos));
+    if (sourceDrop) {
+      pickupEnergyDrop(creep, sourceDrop);
+      return;
+    }
+
+    recordTelemetryTargetFailure(creep, "no_energy_drop");
+    return;
   }
 
   const controller = creep.room.controller;
@@ -152,22 +148,4 @@ function positionRange(left: RoomPosition, right: RoomPosition): number {
 
 function isPreRcl3OwnedRoom(room: Room): boolean {
   return Boolean(room.controller?.my && room.controller.level < 3);
-}
-
-function shouldPrioritizeSpawnFeed(room: Room): boolean {
-  return summarizeSpawnDemandForRoom(room).totalUnmetDemand > 0;
-}
-
-function findQueueAwareEnergyTarget(creep: Creep): EnergyFeedTarget | null {
-  const structures = creep.room.find(FIND_MY_STRUCTURES, {
-    filter: (structure): structure is EnergyFeedTarget => {
-      if (structure.structureType !== STRUCTURE_SPAWN && structure.structureType !== STRUCTURE_EXTENSION) {
-        return false;
-      }
-
-      return structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
-    }
-  });
-
-  return creep.pos.findClosestByPath(structures);
 }

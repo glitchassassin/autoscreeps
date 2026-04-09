@@ -43,44 +43,24 @@ describe("spawn manager", () => {
     const spawn = makeSpawn();
     const request = createSpawnRequest(spawn);
 
-    expect(request?.memory.role).toBe("harvester");
+    expect(request?.memory.role).toBe("courier");
   });
 
-  it("spawns a worker once dedicated harvester throughput is covered", () => {
+  it("spawns a second harvester once the first courier exists", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game };
 
     testGlobal.Game.creeps = {
       harvesterA: makeCreep("harvester", 2),
-      harvesterB: makeCreep("harvester", 2)
+      courierA: makeCreep("courier", 0)
     };
 
     const spawn = makeSpawn();
     const request = createSpawnRequest(spawn);
 
-    expect(request?.memory.role).toBe("worker");
+    expect(request?.memory.role).toBe("harvester");
   });
 
-  it("summarizes unmet demand across dynamic roles", () => {
-    const testGlobal = globalThis as typeof globalThis & { Game: Game };
-
-    testGlobal.Game.creeps = {
-      harvesterA: makeCreep("harvester", 2),
-      harvesterB: makeCreep("harvester", 2),
-      workerA: makeCreep("worker", 1)
-    };
-
-    expect(summarizeSpawnDemand(makeSpawn().room)).toEqual({
-      unmetDemand: {
-        harvester: 0,
-        courier: 0,
-        worker: 5
-      },
-      nextRole: "worker",
-      totalUnmetDemand: 5
-    });
-  });
-
-  it("keeps one extra affordable worker queued once harvest coverage is met", () => {
+  it("spawns a worker once both source sitters are active", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game };
 
     testGlobal.Game.creeps = {
@@ -94,26 +74,76 @@ describe("spawn manager", () => {
         sourceId: "source-b",
         pos: { x: 20, y: 21, roomName: "W0N0" }
       }),
-      workerA: makeCreep("worker", 1),
-      workerB: makeCreep("worker", 1),
-      workerC: makeCreep("worker", 1),
-      workerD: makeCreep("worker", 1),
-      workerE: makeCreep("worker", 1),
-      workerF: makeCreep("worker", 1)
+      courierA: makeCreep("courier", 0)
+    };
+
+    const spawn = makeSpawn();
+    const request = createSpawnRequest(spawn);
+
+    expect(request?.memory.role).toBe("worker");
+  });
+
+  it("summarizes unmet demand across dynamic roles", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+
+    testGlobal.Game.creeps = {
+      harvesterA: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-a",
+        pos: { x: 10, y: 11, roomName: "W0N0" }
+      }),
+      harvesterB: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-b",
+        pos: { x: 20, y: 21, roomName: "W0N0" }
+      }),
+      courierA: makeCreep("courier", 0),
+      workerA: makeCreep("worker", 1)
     };
 
     expect(summarizeSpawnDemand(makeSpawn().room)).toEqual({
       unmetDemand: {
         harvester: 0,
         courier: 0,
-        worker: 1
+        worker: 0
       },
-      nextRole: "worker",
+      nextRole: null,
+      totalUnmetDemand: 0
+    });
+  });
+
+  it("adds a second courier when backlog remains after the first worker", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+
+    testGlobal.Game.creeps = {
+      harvesterA: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-a",
+        pos: { x: 10, y: 11, roomName: "W0N0" }
+      }),
+      harvesterB: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-b",
+        pos: { x: 20, y: 21, roomName: "W0N0" }
+      }),
+      courierA: makeCreep("courier", 0),
+      workerA: makeCreep("worker", 1)
+    };
+
+    const spawn = makeSpawn({ droppedResources: [makeDroppedEnergy(200, { x: 9, y: 10, roomName: "W0N0" })] });
+
+    expect(summarizeSpawnDemand(spawn.room)).toEqual({
+      unmetDemand: {
+        harvester: 0,
+        courier: 1,
+        worker: 0
+      },
+      nextRole: "courier",
       totalUnmetDemand: 1
     });
   });
 
-  it("keeps demand queued until both sources are actively harvested", () => {
+  it("does not spawn a worker before both source sitters are active", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game };
 
     testGlobal.Game.creeps = {
@@ -127,23 +157,17 @@ describe("spawn manager", () => {
         sourceId: "source-b",
         pos: { x: 25, y: 25, roomName: "W0N0" }
       }),
-      workerA: makeCreep("worker", 1),
-      workerB: makeCreep("worker", 1),
-      workerC: makeCreep("worker", 1),
-      workerD: makeCreep("worker", 1),
-      workerE: makeCreep("worker", 1),
-      workerF: makeCreep("worker", 1),
-      workerG: makeCreep("worker", 1)
+      courierA: makeCreep("courier", 0)
     };
 
     expect(summarizeSpawnDemand(makeSpawn().room)).toEqual({
       unmetDemand: {
         harvester: 0,
         courier: 0,
-        worker: 1
+        worker: 0
       },
-      nextRole: "worker",
-      totalUnmetDemand: 1
+      nextRole: null,
+      totalUnmetDemand: 0
     });
   });
 
@@ -151,8 +175,17 @@ describe("spawn manager", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game };
 
     testGlobal.Game.creeps = {
-      harvesterA: makeCreep("harvester", 2),
-      harvesterB: makeCreep("harvester", 2)
+      harvesterA: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-a",
+        pos: { x: 10, y: 11, roomName: "W0N0" }
+      }),
+      harvesterB: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-b",
+        pos: { x: 20, y: 21, roomName: "W0N0" }
+      }),
+      courierA: makeCreep("courier", 0)
     };
 
     const request = createSpawnRequest(makeSpawn({ energyAvailable: 550, energyCapacityAvailable: 550, controllerLevel: 2 }));
@@ -197,6 +230,7 @@ function makeSpawn(input: {
   energyAvailable?: number;
   energyCapacityAvailable?: number;
   controllerLevel?: number;
+  droppedResources?: Resource<ResourceConstant>[];
 } = {}): StructureSpawn {
   return {
     name: "Spawn1",
@@ -216,7 +250,11 @@ function makeSpawn(input: {
             { id: "source-b", pos: { x: 20, y: 20, roomName: "W0N0" } }
           ] as Source[];
         }
-        if (type === FIND_MY_CONSTRUCTION_SITES || type === FIND_DROPPED_RESOURCES) {
+        if (type === FIND_DROPPED_RESOURCES) {
+          const values = input.droppedResources ?? [];
+          return opts?.filter ? values.filter(opts.filter) : values;
+        }
+        if (type === FIND_MY_CONSTRUCTION_SITES) {
           const values: unknown[] = [];
           return opts?.filter ? values.filter(opts.filter) : values;
         }
@@ -247,4 +285,13 @@ function makeCreep(
     body: Array.from({ length: workParts }, () => ({ type: WORK, hits: 100 })),
     pos: input.pos ?? { x: 15, y: 15, roomName: "W0N0" }
   } as unknown as Creep;
+}
+
+function makeDroppedEnergy(amount: number, pos: { x: number; y: number; roomName: string }): Resource<ResourceConstant> {
+  return {
+    id: `${pos.x}-${pos.y}`,
+    amount,
+    pos,
+    resourceType: RESOURCE_ENERGY
+  } as Resource<ResourceConstant>;
 }

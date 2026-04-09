@@ -6,6 +6,7 @@ type SpawnRequest = {
 
 const preRcl3BodyCostCapByRole: Partial<Record<WorkerRole, number>> = {
   harvester: 300,
+  courier: 300,
   worker: 300
 };
 
@@ -160,54 +161,64 @@ function determineDesiredCreeps(room: Room | null): Record<WorkerRole, number> {
 }
 
 function summarizePreRcl3Demand(room: Room): SpawnDemandSummary {
+  const desiredCreeps = determinePreRcl3DesiredCreeps(room);
   const unmetDemand: Record<WorkerRole, number> = {
     harvester: 0,
     courier: 0,
     worker: 0
   };
+  let nextRole: WorkerRole | null = null;
+  let totalUnmetDemand = 0;
+
+  for (const role of roleOrder) {
+    const deficit = Math.max(desiredCreeps[role] - countRole(role, room.name), 0);
+    unmetDemand[role] = deficit;
+    totalUnmetDemand += deficit;
+
+    if (nextRole === null && deficit > 0) {
+      nextRole = role;
+    }
+  }
+
+  return {
+    unmetDemand,
+    nextRole,
+    totalUnmetDemand
+  };
+}
+
+function determinePreRcl3DesiredCreeps(room: Room): Record<WorkerRole, number> {
   const sourceCount = Math.max(countSources(room), 1);
   const activeHarvestingSourceCount = countActiveHarvestingSources(room);
   const sourceBacklog = countSourceBacklog(room);
   const controllerLevel = room.controller?.level ?? 1;
-  const harvesterWorkTarget = sourceCount * 2;
-  const baseWorkerWorkTarget = sourceCount * 3 + Math.floor(sourceBacklog / 300);
-  const currentHarvesterWork = countRoleWork("harvester", room.name);
-  const currentWorkerWork = countRoleWork("worker", room.name);
-  const harvesterWorkPerCreep = estimateRoleWorkPerSpawn(
-    "harvester",
-    room.energyAvailable,
-    room.energyCapacityAvailable,
-    controllerLevel
-  );
-  const workerWorkPerCreep = estimateRoleWorkPerSpawn(
-    "worker",
-    room.energyAvailable,
-    room.energyCapacityAvailable,
-    controllerLevel
-  );
-  const workerWorkTarget = Math.max(
-    baseWorkerWorkTarget,
-    determinePreRcl3WorkerFloor(
-      baseWorkerWorkTarget,
-      harvesterWorkTarget,
-      currentHarvesterWork,
-      currentWorkerWork,
-      workerWorkPerCreep,
-      sourceCount,
-      activeHarvestingSourceCount
-    )
-  );
-  const harvesterWorkDeficit = Math.max(harvesterWorkTarget - currentHarvesterWork, 0);
-  const workerWorkDeficit = Math.max(workerWorkTarget - currentWorkerWork, 0);
-
-  unmetDemand.harvester = Math.ceil(harvesterWorkDeficit / harvesterWorkPerCreep);
-  unmetDemand.worker = Math.ceil(workerWorkDeficit / workerWorkPerCreep);
-
-  return {
-    unmetDemand,
-    nextRole: harvesterWorkDeficit > 0 ? "harvester" : workerWorkDeficit > 0 ? "worker" : null,
-    totalUnmetDemand: unmetDemand.harvester + unmetDemand.worker
+  const harvesters = countRole("harvester", room.name);
+  const couriers = countRole("courier", room.name);
+  const workers = countRole("worker", room.name);
+  const fullSourceSitterCount = Math.min(sourceCount, 2);
+  const desired: Record<WorkerRole, number> = {
+    harvester: 1,
+    courier: 0,
+    worker: 0
   };
+
+  if (harvesters > 0) {
+    desired.courier = 1;
+  }
+  if (couriers > 0) {
+    desired.harvester = fullSourceSitterCount;
+  }
+  if (couriers > 0 && activeHarvestingSourceCount >= fullSourceSitterCount) {
+    desired.worker = 1;
+  }
+  if (workers > 0 && (sourceBacklog >= 150 || controllerLevel >= 2)) {
+    desired.courier = Math.max(desired.courier, fullSourceSitterCount);
+  }
+  if (workers > 0 && (sourceBacklog >= 300 || controllerLevel >= 2)) {
+    desired.worker = 2;
+  }
+
+  return desired;
 }
 
 function countRole(role: WorkerRole, roomName?: string): number {
@@ -217,20 +228,6 @@ function countRole(role: WorkerRole, roomName?: string): number {
     if (creep.memory.role === role && (!roomName || creep.memory.homeRoom === roomName)) {
       total += 1;
     }
-  }
-
-  return total;
-}
-
-function countRoleWork(role: WorkerRole, roomName?: string): number {
-  let total = 0;
-
-  for (const creep of Object.values(Game.creeps)) {
-    if (creep.memory.role !== role || (roomName && creep.memory.homeRoom !== roomName)) {
-      continue;
-    }
-
-    total += countWorkParts(creep);
   }
 
   return total;
@@ -293,12 +290,6 @@ function positionsAreNear(position: RoomPosition, target: RoomPosition): boolean
   return position.roomName === target.roomName && Math.max(Math.abs(position.x - target.x), Math.abs(position.y - target.y)) <= 1;
 }
 
-function estimateRoleWorkPerSpawn(role: WorkerRole, availableEnergy: number, fallbackEnergy: number, controllerLevel?: number): number {
-  const body = chooseSpawnBodyForEnergy(role, availableEnergy, controllerLevel)
-    ?? chooseSpawnBodyForEnergy(role, fallbackEnergy, controllerLevel);
-  return Math.max(countBodyPart(body, WORK), 1);
-}
-
 function chooseSpawnBody(role: WorkerRole, room: Room): BodyPartConstant[] | null {
   return chooseSpawnBodyForEnergy(role, room.energyAvailable, room.controller?.my ? room.controller.level : undefined);
 }
@@ -337,23 +328,6 @@ function chooseSpawnBodyPlan(role: WorkerRole, availableEnergy: number, controll
   return chooseBodyPlan(role, effectiveEnergy);
 }
 
-function determinePreRcl3WorkerFloor(
-  baseWorkerWorkTarget: number,
-  harvesterWorkTarget: number,
-  currentHarvesterWork: number,
-  currentWorkerWork: number,
-  workerWorkPerCreep: number,
-  sourceCount: number,
-  activeHarvestingSourceCount: number
-): number {
-  if (currentHarvesterWork < harvesterWorkTarget || currentWorkerWork < baseWorkerWorkTarget) {
-    return 0;
-  }
-
-  const missingActiveSources = Math.max(sourceCount - activeHarvestingSourceCount, 0);
-  return baseWorkerWorkTarget + workerWorkPerCreep * (1 + missingActiveSources);
-}
-
 function countActiveHarvestingSources(room: Room): number {
   const sourcesById = new Map(room.find(FIND_SOURCES).map((source) => [source.id, source]));
   const activeSources = new Set<string>();
@@ -375,33 +349,6 @@ function countActiveHarvestingSources(room: Room): number {
   }
 
   return activeSources.size;
-}
-
-function countWorkParts(creep: Creep): number {
-  if (Array.isArray(creep.body)) {
-    return creep.body.filter((part) => part.type === WORK && (part.hits === undefined || part.hits > 0)).length;
-  }
-
-  return fallbackRoleWorkParts(creep.memory.role);
-}
-
-function countBodyPart(body: BodyPartConstant[] | null, part: BodyPartConstant): number {
-  if (!body) {
-    return 0;
-  }
-
-  return body.filter((bodyPart) => bodyPart === part).length;
-}
-
-function fallbackRoleWorkParts(role: WorkerRole): number {
-  if (role === "harvester") {
-    return 2;
-  }
-  if (role === "worker") {
-    return 1;
-  }
-
-  return 0;
 }
 
 function isPreRcl3OwnedRoom(room: Room | null): boolean {
