@@ -46,8 +46,18 @@ export type ScenarioSuiteRunInput = {
 export type SuiteHarvestModeMetric = "harvestingSourceCoveragePct" | "harvestingSourceUptimePct";
 export type SuiteActiveHarvestMetric = "activeHarvestingSourceCoveragePct" | "activeHarvestingSourceUptimePct";
 export type SuiteExtensionMetric = "firstExtensionTick" | "allRcl2ExtensionsTick";
+export type SuiteSourcePipelineMetric = "sourceHarvestEnergyPerTick" | "sourceHarvestUtilizationPct";
+export type SuiteSpawnPipelineMetric = "spawnIdlePct" | "spawnSpawningPct" | "spawnWaitingForSufficientEnergyPct";
+export type SuiteCreepPipelineMetric = "creepIdlePct" | "creepActivePct" | "creepWaitingForEnergyPct";
 
-type SuiteSummaryMetric = SuitePrimaryMetric | SuiteHarvestModeMetric | SuiteActiveHarvestMetric | SuiteExtensionMetric;
+type SuiteSummaryMetric =
+  | SuitePrimaryMetric
+  | SuiteHarvestModeMetric
+  | SuiteActiveHarvestMetric
+  | SuiteExtensionMetric
+  | SuiteSourcePipelineMetric
+  | SuiteSpawnPipelineMetric
+  | SuiteCreepPipelineMetric;
 
 type MetricComparison<Metric extends string> = {
   metric: Metric;
@@ -64,6 +74,9 @@ export type SuiteMetricComparison = MetricComparison<SuitePrimaryMetric>;
 export type SuiteHarvestModeMetricComparison = MetricComparison<SuiteHarvestModeMetric>;
 export type SuiteActiveHarvestMetricComparison = MetricComparison<SuiteActiveHarvestMetric>;
 export type SuiteExtensionMetricComparison = MetricComparison<SuiteExtensionMetric>;
+export type SuiteSourcePipelineMetricComparison = MetricComparison<SuiteSourcePipelineMetric>;
+export type SuiteSpawnPipelineMetricComparison = MetricComparison<SuiteSpawnPipelineMetric>;
+export type SuiteCreepPipelineMetricComparison = MetricComparison<SuiteCreepPipelineMetric>;
 
 export type SuiteCohortSummary = {
   caseCount: number;
@@ -73,6 +86,9 @@ export type SuiteCohortSummary = {
   harvestModeMetrics: Record<SuiteHarvestModeMetric, SuiteHarvestModeMetricComparison>;
   activeHarvestMetrics: Record<SuiteActiveHarvestMetric, SuiteActiveHarvestMetricComparison>;
   extensionMetrics: Record<SuiteExtensionMetric, SuiteExtensionMetricComparison>;
+  sourcePipelineMetrics: Record<SuiteSourcePipelineMetric, SuiteSourcePipelineMetricComparison>;
+  spawnPipelineMetrics: Record<SuiteSpawnPipelineMetric, SuiteSpawnPipelineMetricComparison>;
+  creepPipelineMetrics: Record<SuiteCreepPipelineMetric, SuiteCreepPipelineMetricComparison>;
 };
 
 export type SuiteGateSummary = {
@@ -107,6 +123,9 @@ export type SuiteRunResult = {
 const suiteHarvestModeMetrics: SuiteHarvestModeMetric[] = ["harvestingSourceCoveragePct", "harvestingSourceUptimePct"];
 const suiteActiveHarvestMetrics: SuiteActiveHarvestMetric[] = ["activeHarvestingSourceCoveragePct", "activeHarvestingSourceUptimePct"];
 const suiteExtensionMetrics: SuiteExtensionMetric[] = ["firstExtensionTick", "allRcl2ExtensionsTick"];
+const suiteSourcePipelineMetrics: SuiteSourcePipelineMetric[] = ["sourceHarvestEnergyPerTick", "sourceHarvestUtilizationPct"];
+const suiteSpawnPipelineMetrics: SuiteSpawnPipelineMetric[] = ["spawnIdlePct", "spawnSpawningPct", "spawnWaitingForSufficientEnergyPct"];
+const suiteCreepPipelineMetrics: SuiteCreepPipelineMetric[] = ["creepIdlePct", "creepActivePct", "creepWaitingForEnergyPct"];
 
 export async function runExperimentSuite(
   input: SuiteRunInput,
@@ -389,6 +408,15 @@ function summarizeCohort(cases: SuiteCaseDetails[], metrics: SuitePrimaryMetric[
   const extensionMetrics = Object.fromEntries(
     suiteExtensionMetrics.map((metric) => [metric, compareMetric(cases, metric)])
   ) as Record<SuiteExtensionMetric, SuiteExtensionMetricComparison>;
+  const sourcePipelineMetrics = Object.fromEntries(
+    suiteSourcePipelineMetrics.map((metric) => [metric, compareMetric(cases, metric)])
+  ) as Record<SuiteSourcePipelineMetric, SuiteSourcePipelineMetricComparison>;
+  const spawnPipelineMetrics = Object.fromEntries(
+    suiteSpawnPipelineMetrics.map((metric) => [metric, compareMetric(cases, metric)])
+  ) as Record<SuiteSpawnPipelineMetric, SuiteSpawnPipelineMetricComparison>;
+  const creepPipelineMetrics = Object.fromEntries(
+    suiteCreepPipelineMetrics.map((metric) => [metric, compareMetric(cases, metric)])
+  ) as Record<SuiteCreepPipelineMetric, SuiteCreepPipelineMetricComparison>;
 
   return {
     caseCount: cases.length,
@@ -397,7 +425,10 @@ function summarizeCohort(cases: SuiteCaseDetails[], metrics: SuitePrimaryMetric[
     primaryMetrics,
     harvestModeMetrics,
     activeHarvestMetrics,
-    extensionMetrics
+    extensionMetrics,
+    sourcePipelineMetrics,
+    spawnPipelineMetrics,
+    creepPipelineMetrics
   };
 }
 
@@ -490,8 +521,22 @@ function metricValue(summary: UserRunSummaryMetrics, metric: SuiteSummaryMetric)
       return summary.controllerLevelMilestones["3"] ?? null;
     case "controllerProgressToRCL3Pct":
       return summary.controllerProgressToRCL3Pct;
+    case "sourceHarvestEnergyPerTick":
+      return summary.sourceHarvestEnergyPerTick;
+    case "sourceHarvestUtilizationPct":
+      return summary.sourceHarvestUtilizationPct;
+    case "spawnIdlePct":
+      return summary.spawnIdlePct;
+    case "spawnSpawningPct":
+      return summary.spawnSpawningPct;
     case "spawnWaitingForSufficientEnergyPct":
       return summary.spawnWaitingForSufficientEnergyPct;
+    case "creepIdlePct":
+      return summary.creepIdlePct;
+    case "creepActivePct":
+      return summary.creepActivePct;
+    case "creepWaitingForEnergyPct":
+      return summary.creepWaitingForEnergyPct;
     case "sourceCoveragePct":
       return summary.sourceCoveragePct;
     case "sourceUptimePct":
@@ -520,6 +565,10 @@ function metricDirection(metric: SuiteSummaryMetric): SuiteMetricComparison["dir
     case "allRcl2ExtensionsTick":
       return "lower-is-better";
     case "controllerProgressToRCL3Pct":
+    case "sourceHarvestEnergyPerTick":
+    case "sourceHarvestUtilizationPct":
+    case "spawnSpawningPct":
+    case "creepActivePct":
     case "sourceCoveragePct":
     case "sourceUptimePct":
     case "harvestingSourceCoveragePct":
@@ -527,6 +576,10 @@ function metricDirection(metric: SuiteSummaryMetric): SuiteMetricComparison["dir
     case "activeHarvestingSourceCoveragePct":
     case "activeHarvestingSourceUptimePct":
       return "higher-is-better";
+    case "spawnIdlePct":
+    case "creepIdlePct":
+    case "creepWaitingForEnergyPct":
+      return "lower-is-better";
   }
 }
 

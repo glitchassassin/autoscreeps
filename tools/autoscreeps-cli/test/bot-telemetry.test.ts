@@ -4,7 +4,7 @@ import { buildTelemetryByRole, inspectBotTelemetry, inspectTelemetryByRole, pars
 describe("bot telemetry", () => {
   it("parses a valid telemetry payload", () => {
     const raw = JSON.stringify({
-      schemaVersion: 5,
+      schemaVersion: 6,
       gameTime: 250,
       colonyMode: "normal",
       totalCreeps: 4,
@@ -21,6 +21,7 @@ describe("bot telemetry", () => {
         assignments: { sourceA: 1 },
         harvestingStaffed: 1,
         harvestingAssignments: { sourceA: 1 },
+        harvestedEnergy: 42,
         activeHarvestingStaffed: 1,
         activeHarvestingAssignments: { sourceA: 1 },
         adjacentHarvesters: { sourceA: 1 },
@@ -54,7 +55,19 @@ describe("bot telemetry", () => {
         sourceDropPickupLatencyTotal: 15,
         sourceDropPickupLatencySamples: 1,
         pickupToSpendLatencyTotal: 8,
-        pickupToSpendLatencySamples: 1
+        pickupToSpendLatencySamples: 1,
+        spawnObservedTicks: 25,
+        spawnIdleTicks: 5,
+        spawnSpawningTicks: 10,
+        spawnWaitingForSufficientEnergyTicks: 10,
+        sourceObservedTicks: 25,
+        sourceTotalTicks: 50,
+        sourceStaffedTicks: 30,
+        sourceFullyStaffedTicks: 8,
+        harvestingSourceStaffedTicks: 20,
+        harvestingSourceFullyStaffedTicks: 4,
+        activeHarvestingSourceStaffedTicks: 12,
+        activeHarvestingSourceFullyStaffedTicks: 2
       },
       creeps: {
         harvesterA: {
@@ -73,7 +86,7 @@ describe("bot telemetry", () => {
     const inspection = inspectBotTelemetry(raw);
 
     expect(parsed).toEqual({
-      schemaVersion: 5,
+      schemaVersion: 6,
       gameTime: 250,
       colonyMode: "normal",
       totalCreeps: 4,
@@ -90,6 +103,7 @@ describe("bot telemetry", () => {
         assignments: { sourceA: 1 },
         harvestingStaffed: 1,
         harvestingAssignments: { sourceA: 1 },
+        harvestedEnergy: 42,
         activeHarvestingStaffed: 1,
         activeHarvestingAssignments: { sourceA: 1 },
         adjacentHarvesters: { sourceA: 1 },
@@ -123,7 +137,19 @@ describe("bot telemetry", () => {
         sourceDropPickupLatencyTotal: 15,
         sourceDropPickupLatencySamples: 1,
         pickupToSpendLatencyTotal: 8,
-        pickupToSpendLatencySamples: 1
+        pickupToSpendLatencySamples: 1,
+        spawnObservedTicks: 25,
+        spawnIdleTicks: 5,
+        spawnSpawningTicks: 10,
+        spawnWaitingForSufficientEnergyTicks: 10,
+        sourceObservedTicks: 25,
+        sourceTotalTicks: 50,
+        sourceStaffedTicks: 30,
+        sourceFullyStaffedTicks: 8,
+        harvestingSourceStaffedTicks: 20,
+        harvestingSourceFullyStaffedTicks: 4,
+        activeHarvestingSourceStaffedTicks: 12,
+        activeHarvestingSourceFullyStaffedTicks: 2
       },
       creeps: {
         harvesterA: {

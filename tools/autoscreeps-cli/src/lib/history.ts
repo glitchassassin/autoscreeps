@@ -354,11 +354,19 @@ function normalizeUserRunSummaryMetrics(summary: UserRunSummaryMetrics): UserRun
 
   return {
     ...summary,
+    sourceHarvestEnergyPerTick: summary.sourceHarvestEnergyPerTick ?? null,
+    sourceHarvestCeilingEnergyPerTick: summary.sourceHarvestCeilingEnergyPerTick ?? null,
+    sourceHarvestUtilizationPct: summary.sourceHarvestUtilizationPct ?? null,
+    spawnIdlePct: summary.spawnIdlePct ?? null,
+    spawnSpawningPct: summary.spawnSpawningPct ?? null,
     spawnWaitingForSufficientEnergyPct:
       summary.spawnWaitingForSufficientEnergyPct
       ?? legacySummary.spawnIdleWithDemandPct
       ?? legacySummary.spawnIdlePct
-      ?? null
+      ?? null,
+    creepIdlePct: summary.creepIdlePct ?? null,
+    creepActivePct: summary.creepActivePct ?? null,
+    creepWaitingForEnergyPct: summary.creepWaitingForEnergyPct ?? null
   };
 }
 

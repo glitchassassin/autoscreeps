@@ -84,15 +84,29 @@ describe("telemetry spend attribution", () => {
 
     expect(ensureTelemetryState().loop?.deliveredEnergyByTargetType[STRUCTURE_SPAWN]).toBe(50);
   });
+
+  it("attributes harvested energy to the active source on the same tick", () => {
+    const creep = installCreep("creepA", "harvester", 0, false, "source-1");
+
+    recordTelemetryAction(creep, "harvest", OK, {
+      sourceId: "source-1",
+      targetKey: "source-1"
+    });
+    setEnergy(creep, 4);
+    observeTelemetryTick();
+
+    expect(ensureTelemetryState().sources?.["source-1"]?.harvestedEnergy).toBe(4);
+  });
 });
 
-function installCreep(name: string, role: WorkerRole, energy: number, working: boolean): Creep {
+function installCreep(name: string, role: WorkerRole, energy: number, working: boolean, sourceId?: string): Creep {
   const creep = {
     name,
     memory: {
       role,
       working,
-      homeRoom: "W0N0"
+      homeRoom: "W0N0",
+      sourceId
     },
     pos: {
       x: 10,

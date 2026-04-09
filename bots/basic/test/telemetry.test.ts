@@ -82,7 +82,7 @@ describe("telemetry", () => {
     const snapshot = createTelemetrySnapshot(spawn, Memory.telemetry!);
 
     expect(snapshot).toEqual({
-      schemaVersion: 5,
+      schemaVersion: 6,
       gameTime: 25,
       debugError: null,
       colonyMode: "normal",
@@ -114,6 +114,7 @@ describe("telemetry", () => {
           "source-a": 1,
           "source-b": 1
         },
+        harvestedEnergy: 0,
         activeHarvestingStaffed: 1,
         activeHarvestingAssignments: {
           "source-a": 1
@@ -161,7 +162,19 @@ describe("telemetry", () => {
         sourceDropPickupLatencyTotal: 0,
         sourceDropPickupLatencySamples: 0,
         pickupToSpendLatencyTotal: 0,
-        pickupToSpendLatencySamples: 0
+        pickupToSpendLatencySamples: 0,
+        spawnObservedTicks: 0,
+        spawnIdleTicks: 0,
+        spawnSpawningTicks: 0,
+        spawnWaitingForSufficientEnergyTicks: 0,
+        sourceObservedTicks: 0,
+        sourceTotalTicks: 0,
+        sourceStaffedTicks: 0,
+        sourceFullyStaffedTicks: 0,
+        harvestingSourceStaffedTicks: 0,
+        harvestingSourceFullyStaffedTicks: 0,
+        activeHarvestingSourceStaffedTicks: 0,
+        activeHarvestingSourceFullyStaffedTicks: 0
       },
       creeps: {},
       milestones: {
@@ -185,7 +198,7 @@ describe("telemetry", () => {
     const rawSegment = testGlobal.RawMemory.segments[telemetrySegmentId];
     expect(typeof rawSegment).toBe("string");
     expect(JSON.parse(rawSegment as string)).toMatchObject({
-      schemaVersion: 5,
+      schemaVersion: 6,
       gameTime: 25,
       roleCounts: {
         harvester: 2,
@@ -204,6 +217,7 @@ describe("telemetry", () => {
         total: 2,
         staffed: 2,
         harvestingStaffed: 2,
+        harvestedEnergy: 0,
         activeHarvestingStaffed: 1,
         backlogEnergy: 75
       },
@@ -224,7 +238,19 @@ describe("telemetry", () => {
         },
         withEnergyNoSpendTicks: {
           worker: 1
-        }
+        },
+        spawnObservedTicks: 1,
+        spawnIdleTicks: 0,
+        spawnSpawningTicks: 0,
+        spawnWaitingForSufficientEnergyTicks: 1,
+        sourceObservedTicks: 1,
+        sourceTotalTicks: 2,
+        sourceStaffedTicks: 2,
+        sourceFullyStaffedTicks: 1,
+        harvestingSourceStaffedTicks: 2,
+        harvestingSourceFullyStaffedTicks: 1,
+        activeHarvestingSourceStaffedTicks: 1,
+        activeHarvestingSourceFullyStaffedTicks: 0
       },
       creeps: {
         harvesterA: {

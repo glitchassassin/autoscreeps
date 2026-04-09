@@ -3,7 +3,7 @@ import { ensureTelemetryState, observeTelemetryTick } from "./telemetry-state";
 
 export const telemetrySegmentId = 42;
 export const telemetrySampleEveryTicks = 25;
-export const telemetrySchemaVersion = 5;
+export const telemetrySchemaVersion = 6;
 
 export type BotTelemetrySnapshot = {
   schemaVersion: number;
@@ -24,6 +24,7 @@ export type BotTelemetrySnapshot = {
     assignments: Record<string, number>;
     harvestingStaffed: number;
     harvestingAssignments: Record<string, number>;
+    harvestedEnergy: number;
     activeHarvestingStaffed: number;
     activeHarvestingAssignments: Record<string, number>;
     adjacentHarvesters: Record<string, number>;
@@ -56,7 +57,7 @@ export function recordTelemetry(primarySpawn: StructureSpawn | null): void {
   RawMemory.setActiveSegments([telemetrySegmentId]);
 
   const telemetryState = ensureTelemetryState();
-  observeTelemetryTick();
+  observeTelemetryTick(primarySpawn);
   if (primarySpawn) {
     telemetryState.firstOwnedSpawnTick ??= Game.time;
   }
@@ -108,7 +109,7 @@ export function createTelemetrySnapshot(
       nextRole: demand.nextRole,
       unmetDemand: demand.unmetDemand
     },
-    sources: summarizeSourceStaffing(),
+    sources: summarizeSourceStaffing(telemetryState),
     loop: telemetryState.loop ?? emptyLoopState(),
     creeps: summarizeCreepDiagnostics(telemetryState),
     milestones: {
@@ -136,7 +137,7 @@ function countRoles(): Record<WorkerRole, number> {
   return counts;
 }
 
-function summarizeSourceStaffing(): BotTelemetrySnapshot["sources"] {
+function summarizeSourceStaffing(telemetryState: TelemetryMemoryState): BotTelemetrySnapshot["sources"] {
   const assignments: Record<string, number> = {};
   const harvestingAssignments: Record<string, number> = {};
   const activeHarvestingAssignments: Record<string, number> = {};
@@ -144,7 +145,8 @@ function summarizeSourceStaffing(): BotTelemetrySnapshot["sources"] {
   const dropEnergy: Record<string, number> = {};
   const oldestDropAge: Record<string, number> = {};
   const overAssigned: Record<string, number> = {};
-  const successfulHarvestTicks = collectSuccessfulHarvestTicks();
+  const successfulHarvestTicks = collectSuccessfulHarvestTicks(telemetryState);
+  const harvestedEnergy = collectHarvestedEnergy(telemetryState);
   const sourcesById = new Map<string, Source>();
   let backlogEnergy = 0;
   let total = 0;
@@ -209,6 +211,7 @@ function summarizeSourceStaffing(): BotTelemetrySnapshot["sources"] {
     assignments,
     harvestingStaffed: Object.keys(harvestingAssignments).length,
     harvestingAssignments,
+    harvestedEnergy,
     activeHarvestingStaffed: Object.keys(activeHarvestingAssignments).length,
     activeHarvestingAssignments,
     adjacentHarvesters,
@@ -220,18 +223,28 @@ function summarizeSourceStaffing(): BotTelemetrySnapshot["sources"] {
   };
 }
 
-function collectSuccessfulHarvestTicks(): Record<string, number> {
+function collectSuccessfulHarvestTicks(telemetryState: TelemetryMemoryState): Record<string, number> {
   const ticks: Record<string, number> = {};
 
-  if (!Memory.telemetry?.sources) {
+  if (!telemetryState.sources) {
     return ticks;
   }
 
-  for (const [sourceId, state] of Object.entries(Memory.telemetry.sources)) {
-    ticks[sourceId] = state.successfulHarvestTicks;
+  for (const [sourceId, state] of Object.entries(telemetryState.sources)) {
+    ticks[sourceId] = state.successfulHarvestTicks ?? 0;
   }
 
   return ticks;
+}
+
+function collectHarvestedEnergy(telemetryState: TelemetryMemoryState): number {
+  let total = 0;
+
+  for (const state of Object.values(telemetryState.sources ?? {})) {
+    total += state.harvestedEnergy ?? 0;
+  }
+
+  return total;
 }
 
 function summarizeCreepDiagnostics(telemetryState: TelemetryMemoryState): BotTelemetrySnapshot["creeps"] {
@@ -276,7 +289,19 @@ function emptyLoopState(): TelemetryLoopState {
     sourceDropPickupLatencyTotal: 0,
     sourceDropPickupLatencySamples: 0,
     pickupToSpendLatencyTotal: 0,
-    pickupToSpendLatencySamples: 0
+    pickupToSpendLatencySamples: 0,
+    spawnObservedTicks: 0,
+    spawnIdleTicks: 0,
+    spawnSpawningTicks: 0,
+    spawnWaitingForSufficientEnergyTicks: 0,
+    sourceObservedTicks: 0,
+    sourceTotalTicks: 0,
+    sourceStaffedTicks: 0,
+    sourceFullyStaffedTicks: 0,
+    harvestingSourceStaffedTicks: 0,
+    harvestingSourceFullyStaffedTicks: 0,
+    activeHarvestingSourceStaffedTicks: 0,
+    activeHarvestingSourceFullyStaffedTicks: 0
   };
 }
 

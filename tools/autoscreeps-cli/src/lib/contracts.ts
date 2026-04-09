@@ -157,6 +157,7 @@ export type BotTelemetrySnapshot = {
     assignments: Record<string, number>;
     harvestingStaffed: number;
     harvestingAssignments: Record<string, number>;
+    harvestedEnergy?: number;
     activeHarvestingStaffed?: number;
     activeHarvestingAssignments?: Record<string, number>;
     adjacentHarvesters?: Record<string, number>;
@@ -191,6 +192,18 @@ export type BotTelemetrySnapshot = {
     sourceDropPickupLatencySamples?: number;
     pickupToSpendLatencyTotal?: number;
     pickupToSpendLatencySamples?: number;
+    spawnObservedTicks?: number;
+    spawnIdleTicks?: number;
+    spawnSpawningTicks?: number;
+    spawnWaitingForSufficientEnergyTicks?: number;
+    sourceObservedTicks?: number;
+    sourceTotalTicks?: number;
+    sourceStaffedTicks?: number;
+    sourceFullyStaffedTicks?: number;
+    harvestingSourceStaffedTicks?: number;
+    harvestingSourceFullyStaffedTicks?: number;
+    activeHarvestingSourceStaffedTicks?: number;
+    activeHarvestingSourceFullyStaffedTicks?: number;
   };
   creeps?: Record<string, {
     role: string;
@@ -314,7 +327,15 @@ export type UserRunSummaryMetrics = {
   firstExtensionTick: number | null;
   allRcl2ExtensionsTick: number | null;
   telemetrySampleCount: number;
+  sourceHarvestEnergyPerTick: number | null;
+  sourceHarvestCeilingEnergyPerTick: number | null;
+  sourceHarvestUtilizationPct: number | null;
+  spawnIdlePct: number | null;
+  spawnSpawningPct: number | null;
   spawnWaitingForSufficientEnergyPct: number | null;
+  creepIdlePct: number | null;
+  creepActivePct: number | null;
+  creepWaitingForEnergyPct: number | null;
   sourceCoveragePct: number | null;
   sourceUptimePct: number | null;
   harvestingSourceCoveragePct: number | null;

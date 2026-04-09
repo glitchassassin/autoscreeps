@@ -28,6 +28,18 @@ declare global {
     sourceDropPickupLatencySamples: number;
     pickupToSpendLatencyTotal: number;
     pickupToSpendLatencySamples: number;
+    spawnObservedTicks: number;
+    spawnIdleTicks: number;
+    spawnSpawningTicks: number;
+    spawnWaitingForSufficientEnergyTicks: number;
+    sourceObservedTicks: number;
+    sourceTotalTicks: number;
+    sourceStaffedTicks: number;
+    sourceFullyStaffedTicks: number;
+    harvestingSourceStaffedTicks: number;
+    harvestingSourceFullyStaffedTicks: number;
+    activeHarvestingSourceStaffedTicks: number;
+    activeHarvestingSourceFullyStaffedTicks: number;
   }
 
   interface TelemetryCreepActionState {
@@ -65,6 +77,7 @@ declare global {
 
   interface TelemetrySourceRuntimeState {
     successfulHarvestTicks: number;
+    harvestedEnergy: number;
   }
 
   interface TelemetryMemoryState {

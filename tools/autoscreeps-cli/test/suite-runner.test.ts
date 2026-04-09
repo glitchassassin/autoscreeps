@@ -25,10 +25,17 @@ describe("suite runner", () => {
           rcl3: 250,
           controllerProgressToRCL3Pct: 60,
           spawnWaitingForSufficientEnergyPct: 40,
+          spawnIdlePct: 10,
+          spawnSpawningPct: 50,
           firstExtensionTick: 140,
           allRcl2ExtensionsTick: 180,
+          sourceHarvestEnergyPerTick: 6,
+          sourceHarvestUtilizationPct: 30,
           sourceCoveragePct: 50,
           sourceUptimePct: 0,
+          creepIdlePct: 25,
+          creepActivePct: 55,
+          creepWaitingForEnergyPct: 20,
           harvestingSourceCoveragePct: 45,
           harvestingSourceUptimePct: 0,
           activeHarvestingSourceCoveragePct: 20,
@@ -38,10 +45,17 @@ describe("suite runner", () => {
           rcl3: 200,
           controllerProgressToRCL3Pct: 80,
           spawnWaitingForSufficientEnergyPct: 10,
+          spawnIdlePct: 5,
+          spawnSpawningPct: 85,
           firstExtensionTick: 110,
           allRcl2ExtensionsTick: 150,
+          sourceHarvestEnergyPerTick: 8,
+          sourceHarvestUtilizationPct: 40,
           sourceCoveragePct: 75,
           sourceUptimePct: 50,
+          creepIdlePct: 15,
+          creepActivePct: 75,
+          creepWaitingForEnergyPct: 10,
           harvestingSourceCoveragePct: 60,
           harvestingSourceUptimePct: 25,
           activeHarvestingSourceCoveragePct: 40,
@@ -53,10 +67,17 @@ describe("suite runner", () => {
           rcl3: 200,
           controllerProgressToRCL3Pct: 70,
           spawnWaitingForSufficientEnergyPct: 20,
+          spawnIdlePct: 5,
+          spawnSpawningPct: 75,
           firstExtensionTick: 120,
           allRcl2ExtensionsTick: 160,
+          sourceHarvestEnergyPerTick: 9,
+          sourceHarvestUtilizationPct: 45,
           sourceCoveragePct: 100,
           sourceUptimePct: 100,
+          creepIdlePct: 12,
+          creepActivePct: 78,
+          creepWaitingForEnergyPct: 10,
           harvestingSourceCoveragePct: 60,
           harvestingSourceUptimePct: 40,
           activeHarvestingSourceCoveragePct: 35,
@@ -66,10 +87,17 @@ describe("suite runner", () => {
           rcl3: 200,
           controllerProgressToRCL3Pct: 72,
           spawnWaitingForSufficientEnergyPct: 21,
+          spawnIdlePct: 8,
+          spawnSpawningPct: 71,
           firstExtensionTick: 118,
           allRcl2ExtensionsTick: 150,
+          sourceHarvestEnergyPerTick: 8.5,
+          sourceHarvestUtilizationPct: 42.5,
           sourceCoveragePct: 92,
           sourceUptimePct: 100,
+          creepIdlePct: 20,
+          creepActivePct: 65,
+          creepWaitingForEnergyPct: 15,
           harvestingSourceCoveragePct: 57,
           harvestingSourceUptimePct: 35,
           activeHarvestingSourceCoveragePct: 30,
@@ -110,6 +138,31 @@ describe("suite runner", () => {
       baseline: 160,
       candidate: 150,
       improved: true
+    });
+    expect(summary.cohorts.train?.sourcePipelineMetrics.sourceHarvestUtilizationPct).toMatchObject({
+      baseline: 30,
+      candidate: 40,
+      improved: true
+    });
+    expect(summary.cohorts.train?.spawnPipelineMetrics.spawnSpawningPct).toMatchObject({
+      baseline: 50,
+      candidate: 85,
+      improved: true
+    });
+    expect(summary.cohorts.holdout?.spawnPipelineMetrics.spawnIdlePct).toMatchObject({
+      baseline: 5,
+      candidate: 8,
+      regressionPct: 60
+    });
+    expect(summary.cohorts.holdout?.creepPipelineMetrics.creepActivePct).toMatchObject({
+      baseline: 78,
+      candidate: 65,
+      regressionPct: 16.67
+    });
+    expect(summary.cohorts.holdout?.creepPipelineMetrics.creepWaitingForEnergyPct).toMatchObject({
+      baseline: 10,
+      candidate: 15,
+      regressionPct: 50
     });
     expect(summary.gates.training.passed).toBe(true);
     expect(summary.gates.holdout.passed).toBe(false);
@@ -356,10 +409,18 @@ function createSummary(input: {
   rcl3: number | null;
   controllerProgressToRCL3Pct: number | null;
   spawnWaitingForSufficientEnergyPct: number | null;
+  spawnIdlePct?: number | null;
+  spawnSpawningPct?: number | null;
   firstExtensionTick: number | null;
   allRcl2ExtensionsTick: number | null;
+  sourceHarvestEnergyPerTick?: number | null;
+  sourceHarvestCeilingEnergyPerTick?: number | null;
+  sourceHarvestUtilizationPct?: number | null;
   sourceCoveragePct: number | null;
   sourceUptimePct: number | null;
+  creepIdlePct?: number | null;
+  creepActivePct?: number | null;
+  creepWaitingForEnergyPct?: number | null;
   harvestingSourceCoveragePct?: number | null;
   harvestingSourceUptimePct?: number | null;
   activeHarvestingSourceCoveragePct?: number | null;
@@ -384,7 +445,15 @@ function createSummary(input: {
     firstExtensionTick: input.firstExtensionTick,
     allRcl2ExtensionsTick: input.allRcl2ExtensionsTick,
     telemetrySampleCount: 4,
+    sourceHarvestEnergyPerTick: input.sourceHarvestEnergyPerTick ?? null,
+    sourceHarvestCeilingEnergyPerTick: input.sourceHarvestCeilingEnergyPerTick ?? 20,
+    sourceHarvestUtilizationPct: input.sourceHarvestUtilizationPct ?? null,
+    spawnIdlePct: input.spawnIdlePct ?? null,
+    spawnSpawningPct: input.spawnSpawningPct ?? null,
     spawnWaitingForSufficientEnergyPct: input.spawnWaitingForSufficientEnergyPct,
+    creepIdlePct: input.creepIdlePct ?? null,
+    creepActivePct: input.creepActivePct ?? null,
+    creepWaitingForEnergyPct: input.creepWaitingForEnergyPct ?? null,
     sourceCoveragePct: input.sourceCoveragePct,
     sourceUptimePct: input.sourceUptimePct,
     harvestingSourceCoveragePct: input.harvestingSourceCoveragePct ?? input.sourceCoveragePct,

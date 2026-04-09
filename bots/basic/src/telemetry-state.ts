@@ -1,3 +1,5 @@
+import { summarizeSpawnDemand } from "./spawn";
+
 let fallbackTelemetryState: TelemetryMemoryState | null = null;
 
 export function ensureTelemetryState(): TelemetryMemoryState {
@@ -34,6 +36,12 @@ export function ensureTelemetryState(): TelemetryMemoryState {
   Memory.telemetry.creeps ??= {};
   Memory.telemetry.drops ??= {};
   Memory.telemetry.sources ??= {};
+  normalizeLoopState(Memory.telemetry.loop);
+
+  for (const sourceState of Object.values(Memory.telemetry.sources)) {
+    sourceState.successfulHarvestTicks ??= 0;
+    sourceState.harvestedEnergy ??= 0;
+  }
 
   return Memory.telemetry;
 }
@@ -131,10 +139,11 @@ export function recordTelemetryTaskSelection(role: string, task: string): void {
   increment(state.loop!.workerTaskSelections, `${role}.${task}`);
 }
 
-export function observeTelemetryTick(): void {
+export function observeTelemetryTick(primarySpawn: StructureSpawn | null = null): void {
   const state = ensureTelemetryState();
   syncDropRuntimeState(state);
   observeCreeps(state);
+  observeSpawnAndSourcePipeline(state, primarySpawn);
   pruneTelemetryState(state);
 }
 
@@ -179,6 +188,11 @@ function observeCreeps(state: TelemetryMemoryState): void {
 
     if (energyDelta > 0) {
       add(loop.energyGained, role, energyDelta);
+
+      if (currentAction?.result === OK && currentAction.action === "harvest" && currentAction.sourceId) {
+        const sourceState = ensureSourceRuntimeState(currentAction.sourceId, state);
+        sourceState.harvestedEnergy += energyDelta;
+      }
     }
     if (energyDelta < 0) {
       add(loop.energySpent, role, Math.abs(energyDelta));
@@ -271,10 +285,109 @@ function ensureCreepRuntimeState(creepName: string, creep: Creep, state: Telemet
 
 function ensureSourceRuntimeState(sourceId: string, state: TelemetryMemoryState): TelemetrySourceRuntimeState {
   state.sources![sourceId] ??= {
-    successfulHarvestTicks: 0
+    successfulHarvestTicks: 0,
+    harvestedEnergy: 0
   };
 
   return state.sources![sourceId]!;
+}
+
+function normalizeLoopState(loop: TelemetryLoopState): void {
+  loop.spawnObservedTicks ??= 0;
+  loop.spawnIdleTicks ??= 0;
+  loop.spawnSpawningTicks ??= 0;
+  loop.spawnWaitingForSufficientEnergyTicks ??= 0;
+  loop.sourceObservedTicks ??= 0;
+  loop.sourceTotalTicks ??= 0;
+  loop.sourceStaffedTicks ??= 0;
+  loop.sourceFullyStaffedTicks ??= 0;
+  loop.harvestingSourceStaffedTicks ??= 0;
+  loop.harvestingSourceFullyStaffedTicks ??= 0;
+  loop.activeHarvestingSourceStaffedTicks ??= 0;
+  loop.activeHarvestingSourceFullyStaffedTicks ??= 0;
+}
+
+function observeSpawnAndSourcePipeline(state: TelemetryMemoryState, primarySpawn: StructureSpawn | null): void {
+  const loop = state.loop!;
+  const spawn = primarySpawn ?? findPrimarySpawn();
+  if (spawn) {
+    loop.spawnObservedTicks += 1;
+
+    if (spawn.spawning) {
+      loop.spawnSpawningTicks += 1;
+    } else if (summarizeSpawnDemand(spawn.room).totalUnmetDemand > 0) {
+      loop.spawnWaitingForSufficientEnergyTicks += 1;
+    } else {
+      loop.spawnIdleTicks += 1;
+    }
+  }
+
+  const coverage = summarizeCurrentSourceCoverage();
+  if (coverage.total <= 0) {
+    return;
+  }
+
+  loop.sourceObservedTicks += 1;
+  loop.sourceTotalTicks += coverage.total;
+  loop.sourceStaffedTicks += coverage.staffed;
+  loop.harvestingSourceStaffedTicks += coverage.harvestingStaffed;
+  loop.activeHarvestingSourceStaffedTicks += coverage.activeHarvestingStaffed;
+
+  if (coverage.staffed >= coverage.total) {
+    loop.sourceFullyStaffedTicks += 1;
+  }
+  if (coverage.harvestingStaffed >= coverage.total) {
+    loop.harvestingSourceFullyStaffedTicks += 1;
+  }
+  if (coverage.activeHarvestingStaffed >= coverage.total) {
+    loop.activeHarvestingSourceFullyStaffedTicks += 1;
+  }
+}
+
+function summarizeCurrentSourceCoverage(): {
+  total: number;
+  staffed: number;
+  harvestingStaffed: number;
+  activeHarvestingStaffed: number;
+} {
+  const sourcesById = new Map<string, Source>();
+  const staffed = new Set<string>();
+  const harvestingStaffed = new Set<string>();
+  const activeHarvestingStaffed = new Set<string>();
+
+  for (const room of Object.values(Game.rooms)) {
+    for (const source of room.find(FIND_SOURCES)) {
+      sourcesById.set(source.id, source);
+    }
+  }
+
+  for (const creep of Object.values(Game.creeps)) {
+    const sourceId = creep.memory.sourceId;
+    if (!sourceId || !sourcesById.has(sourceId)) {
+      continue;
+    }
+
+    staffed.add(sourceId);
+    if (!creep.memory.working) {
+      harvestingStaffed.add(sourceId);
+
+      const source = sourcesById.get(sourceId);
+      if (source && positionsAreNear(creep.pos, source.pos)) {
+        activeHarvestingStaffed.add(sourceId);
+      }
+    }
+  }
+
+  return {
+    total: sourcesById.size,
+    staffed: staffed.size,
+    harvestingStaffed: harvestingStaffed.size,
+    activeHarvestingStaffed: activeHarvestingStaffed.size
+  };
+}
+
+function findPrimarySpawn(): StructureSpawn | null {
+  return Object.values(Game.spawns)[0] ?? null;
 }
 
 function resolveCreepName(creep: Creep): string {
@@ -316,7 +429,19 @@ function createLoopState(): TelemetryLoopState {
     sourceDropPickupLatencyTotal: 0,
     sourceDropPickupLatencySamples: 0,
     pickupToSpendLatencyTotal: 0,
-    pickupToSpendLatencySamples: 0
+    pickupToSpendLatencySamples: 0,
+    spawnObservedTicks: 0,
+    spawnIdleTicks: 0,
+    spawnSpawningTicks: 0,
+    spawnWaitingForSufficientEnergyTicks: 0,
+    sourceObservedTicks: 0,
+    sourceTotalTicks: 0,
+    sourceStaffedTicks: 0,
+    sourceFullyStaffedTicks: 0,
+    harvestingSourceStaffedTicks: 0,
+    harvestingSourceFullyStaffedTicks: 0,
+    activeHarvestingSourceStaffedTicks: 0,
+    activeHarvestingSourceFullyStaffedTicks: 0
   };
 }
 
