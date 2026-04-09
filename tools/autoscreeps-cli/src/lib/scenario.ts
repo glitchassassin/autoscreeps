@@ -30,6 +30,15 @@ export const terminalConditionSetSchema = z.object({
   message: "terminalConditions must declare at least one win or fail condition."
 });
 
+export const scenarioRoomMutationSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("grant-completed-extension-on-controller-level"),
+    role: z.enum(["baseline", "candidate"]),
+    level: z.number().int().min(1).max(8),
+    count: z.number().int().positive().default(1)
+  })
+]);
+
 export const scenarioRunSchema = z.object({
   tickDuration: z.number().int().positive().default(250),
   maxTicks: z.number().int().positive(),
@@ -48,6 +57,7 @@ export const scenarioSchema = z.object({
   map: z.string().min(1).optional(),
   mapGenerator: mapGeneratorSchema.optional(),
   rooms: z.tuple([z.string().min(1), z.string().min(1)]).optional(),
+  roomMutations: z.array(scenarioRoomMutationSchema).default([]),
   run: scenarioRunSchema,
   server: z
     .object({
@@ -79,6 +89,7 @@ export const scenarioSchema = z.object({
 });
 
 export type ScenarioConfig = z.infer<typeof scenarioSchema>;
+export type ScenarioRoomMutation = z.infer<typeof scenarioRoomMutationSchema>;
 export type TerminalCondition = z.infer<typeof terminalConditionSchema>;
 export type TerminalConditionSet = z.infer<typeof terminalConditionSetSchema>;
 

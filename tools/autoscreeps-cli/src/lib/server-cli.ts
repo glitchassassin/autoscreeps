@@ -116,6 +116,149 @@ export class ScreepsServerCli {
     await this.evaluate(expression);
   }
 
+  async placeCompletedExtensionNearSpawn(input: {
+    username: string;
+    room: string;
+    targetCount?: number;
+    minControllerLevel?: number;
+  }): Promise<{
+    inserted: number;
+    total: number;
+    positions: Array<{ x: number; y: number }>;
+  }> {
+    const params = {
+      username: input.username,
+      room: input.room,
+      targetCount: input.targetCount ?? 1,
+      minControllerLevel: input.minControllerLevel ?? 2
+    };
+    const expression = `Promise.resolve().then(async function () {
+      const params = ${JSON.stringify(params)};
+      const user = await storage.db.users.findOne({ username: params.username });
+      if (!user) {
+        throw new Error("User not found: " + params.username);
+      }
+
+      const controller = await storage.db['rooms.objects'].findOne({ $and: [{ room: params.room }, { type: 'controller' }] });
+      if (!controller || controller.user !== String(user._id)) {
+        throw new Error("Room is not owned by user: " + params.room);
+      }
+      if ((controller.level || 0) < params.minControllerLevel) {
+        throw new Error("Controller level is below " + params.minControllerLevel + ": " + params.room);
+      }
+
+      const terrain = await storage.db['rooms.terrain'].findOne({ room: params.room });
+      if (!terrain || typeof terrain.terrain !== 'string') {
+        throw new Error("Terrain not found: " + params.room);
+      }
+
+      const roomObjects = await storage.db['rooms.objects'].find({ room: params.room });
+      const ownedSpawn = roomObjects.find(function (object) {
+        return object.type === 'spawn' && object.user === String(user._id);
+      });
+      if (!ownedSpawn) {
+        throw new Error("Owned spawn not found in room: " + params.room);
+      }
+
+      const obstacleTypes = new Set(['wall', 'constructedWall', 'spawn', 'extension', 'link', 'storage', 'tower', 'observer', 'powerSpawn']);
+      const positions = [];
+      const existingCount = roomObjects.filter(function (object) {
+        return object.type === 'extension' && object.user === String(user._id);
+      }).length;
+      const targetCount = Math.max(0, params.targetCount);
+
+      function isWall(x, y) {
+        const code = parseInt(terrain.terrain.charAt(y * 50 + x), 10);
+        return (code & 1) !== 0;
+      }
+
+      function isBlocked(x, y) {
+        return roomObjects.some(function (object) {
+          return object.x === x && object.y === y && (object.type === 'constructionSite' || obstacleTypes.has(object.type));
+        });
+      }
+
+      function isNearExit(x, y) {
+        return roomObjects.some(function (object) {
+          return object.type === 'exit' && object.x > x - 2 && object.x < x + 2 && object.y > y - 2 && object.y < y + 2;
+        });
+      }
+
+      function buildCandidateOffsets(maxRadius) {
+        const offsets = [
+          { dx: 1, dy: 0 },
+          { dx: 0, dy: 1 },
+          { dx: -1, dy: 0 },
+          { dx: 0, dy: -1 },
+          { dx: 1, dy: 1 },
+          { dx: 1, dy: -1 },
+          { dx: -1, dy: 1 },
+          { dx: -1, dy: -1 }
+        ];
+
+        for (let radius = 2; radius <= maxRadius; radius += 1) {
+          for (let y = -radius; y <= radius; y += 1) {
+            for (let x = -radius; x <= radius; x += 1) {
+              if (Math.max(Math.abs(x), Math.abs(y)) !== radius) {
+                continue;
+              }
+              offsets.push({ dx: x, dy: y });
+            }
+          }
+        }
+
+        return offsets;
+      }
+
+      for (const offset of buildCandidateOffsets(5)) {
+        if (existingCount + positions.length >= targetCount) {
+          break;
+        }
+
+        const x = ownedSpawn.x + offset.dx;
+        const y = ownedSpawn.y + offset.dy;
+        if (x <= 1 || x >= 48 || y <= 1 || y >= 48) {
+          continue;
+        }
+        if (isWall(x, y) || isBlocked(x, y) || isNearExit(x, y)) {
+          continue;
+        }
+
+        const extension = {
+          type: 'extension',
+          room: params.room,
+          x,
+          y,
+          user: String(user._id),
+          store: { energy: 0 },
+          storeCapacityResource: { energy: 50 },
+          hits: 1000,
+          hitsMax: 1000,
+          notifyWhenAttacked: true
+        };
+        await storage.db['rooms.objects'].insert(extension);
+        roomObjects.push(extension);
+        positions.push({ x, y });
+      }
+
+      const total = existingCount + positions.length;
+      if (total < targetCount) {
+        throw new Error("Unable to place enough extensions near spawn in room: " + params.room);
+      }
+      if (positions.length > 0) {
+        await storage.env.sadd(storage.env.keys.ACTIVE_ROOMS, params.room);
+      }
+
+      return {
+        inserted: positions.length,
+        total,
+        positions
+      };
+    })`;
+
+    return await this.evaluate(expression);
+  }
+
   async getGameTime(): Promise<number> {
     const value = await this.evaluate<string>("storage.env.get(storage.env.keys.GAMETIME)");
     const gameTime = Number(value);
@@ -126,7 +269,8 @@ export class ScreepsServerCli {
   }
 
   async evaluate<T>(expression: string): Promise<T> {
-    const command = `Promise.resolve().then(() => (${expression})).then((value) => JSON.stringify({ ok: true, value })).catch((error) => JSON.stringify({ ok: false, error: String(error && (error.stack || error)) }))`;
+    const normalizedExpression = expression.replace(/\r?\n\s*/g, " ").trim();
+    const command = `Promise.resolve().then(() => (${normalizedExpression})).then((value) => JSON.stringify({ ok: true, value })).catch((error) => JSON.stringify({ ok: false, error: String(error && (error.stack || error)) }))`;
 
     const { stdout } = await execa(
       "docker",

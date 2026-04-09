@@ -25,7 +25,7 @@ import { appendEvent, appendIndexEntry, appendRunSample, createRunWorkspace, wri
 import { generateExperimentMap } from "./map-generator.ts";
 import { buildRunSummaryMetrics, shouldCaptureRunSample } from "./run-samples.ts";
 import { loadScenario } from "./scenario.ts";
-import type { ScenarioConfig, TerminalCondition, TerminalConditionSet } from "./scenario.ts";
+import type { ScenarioConfig, ScenarioRoomMutation, TerminalCondition, TerminalConditionSet } from "./scenario.ts";
 import { ScreepsApiClient, type StatsResponse } from "./screeps-api.ts";
 import { ScreepsServerCli } from "./server-cli.ts";
 import { timestamp } from "./utils.ts";
@@ -79,6 +79,11 @@ type UserTerminalStats = UserSampleMetrics;
 type TerminalEvaluation = {
   status: "won" | "failed";
   condition: TerminalCondition;
+};
+
+type PendingScenarioRoomMutation = {
+  id: number;
+  mutation: ScenarioRoomMutation;
 };
 
 export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails> {
@@ -250,6 +255,10 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
       candidate: null
     };
     const samples: RunSample[] = [];
+    let pendingRoomMutations: PendingScenarioRoomMutation[] = scenario.config.roomMutations.map((mutation, index) => ({
+      id: index + 1,
+      mutation
+    }));
     await writeRunRecord(runDir, runRecord);
     await cli.resumeSimulation();
     await logEvent(runDir, "info", "simulation.running", "Simulation resumed.", {
@@ -272,6 +281,18 @@ export async function runDuelExperiment(input: DuelRunInput): Promise<RunDetails
         }
 
         lastReportedGameTime = gameTime;
+
+        if (pendingRoomMutations.length > 0) {
+          pendingRoomMutations = await applyScenarioRoomMutations({
+            pendingRoomMutations,
+            api,
+            cli,
+            credentials,
+            rooms: runRecord.rooms,
+            runDir,
+            gameTime
+          });
+        }
 
         const captureSample = shouldCaptureRunSample(runRecord.run.startGameTime!, lastSampleGameTime, gameTime, sampleEveryTicks);
         let stats: StatsResponse | null = null;
@@ -552,6 +573,63 @@ async function resolveExperimentWorld(input: {
       value: scenario.map
     }
   };
+}
+
+async function applyScenarioRoomMutations(input: {
+  pendingRoomMutations: PendingScenarioRoomMutation[];
+  api: Pick<ScreepsApiClient, "getRoomObjects">;
+  cli: Pick<ScreepsServerCli, "placeCompletedExtensionNearSpawn">;
+  credentials: Record<VariantRole, { username: string }>;
+  rooms: Record<VariantRole, string>;
+  runDir: string;
+  gameTime: number;
+}): Promise<PendingScenarioRoomMutation[]> {
+  if (input.pendingRoomMutations.length === 0) {
+    return [];
+  }
+
+  const roomObjectsByRole: Partial<Record<VariantRole, Awaited<ReturnType<ScreepsApiClient["getRoomObjects"]>>>> = {};
+  for (const role of new Set(input.pendingRoomMutations.map(({ mutation }) => mutation.role))) {
+    roomObjectsByRole[role] = await input.api.getRoomObjects(input.rooms[role]);
+  }
+
+  const remaining: PendingScenarioRoomMutation[] = [];
+  for (const pendingRoomMutation of input.pendingRoomMutations) {
+    const mutation = pendingRoomMutation.mutation;
+    const room = input.rooms[mutation.role];
+    const roomObjects = roomObjectsByRole[mutation.role];
+    if (!roomObjects) {
+      remaining.push(pendingRoomMutation);
+      continue;
+    }
+
+    const roomSummary = summarizeLiveRoom(room, roomObjects);
+    if (roomSummary.controllerLevel === null || roomSummary.controllerLevel < mutation.level) {
+      remaining.push(pendingRoomMutation);
+      continue;
+    }
+
+    switch (mutation.type) {
+      case "grant-completed-extension-on-controller-level": {
+        const result = await input.cli.placeCompletedExtensionNearSpawn({
+          username: input.credentials[mutation.role].username,
+          room,
+          targetCount: mutation.count,
+          minControllerLevel: mutation.level
+        });
+        await logEvent(input.runDir, "info", "scenario.room-mutation.applied", "Applied scenario room mutation.", {
+          gameTime: input.gameTime,
+          mutationId: pendingRoomMutation.id,
+          role: mutation.role,
+          mutation,
+          result
+        });
+        break;
+      }
+    }
+  }
+
+  return remaining;
 }
 
 function delay(ms: number): Promise<void> {

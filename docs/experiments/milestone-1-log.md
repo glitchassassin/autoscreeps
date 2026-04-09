@@ -2487,7 +2487,7 @@ node src/cli.ts experiment run suite \
 
 ## Entry `exp-2026-04-09-rcl2-free-first-extension-value`
 
-- Status: `planned`
+- Status: `completed`
 - Owner: `OpenCode`
 - Date: `2026-04-09`
 
@@ -2501,7 +2501,7 @@ node src/cli.ts experiment run suite \
 
 - Variant or branch: `git:HEAD` vs `workspace`
 - Bot package: `bots/basic`
-- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Suite: `experiments/suites/exp-2026-04-09-rcl2-free-first-extension-value.yaml`
 - Rationale from prior evidence:
   - the completed one-extension/no-extra-growth run never built the extension in any `6/6` cases even though every case finished with one pending site:
     - candidate `firstExtensionTick`: `null` in all `6/6`
@@ -2513,8 +2513,9 @@ node src/cli.ts experiment run suite \
     - one completed `RCL2` extension adds only `+50` room energy capacity
     - testing that `+50` directly is the fastest way to decide whether the first extension is worth pursuing at all
 - Change tested:
+  - keep the baseline and candidate bot bundles behavior-identical so the treatment isolates extension value rather than bot logic changes
   - keep the current direct-spend/no-extra-reserve branch as the base control path
-  - when the room reaches `RCL2`, grant exactly one completed and immediately usable extension at a valid tile near the spawn
+  - when the candidate room reaches `RCL2`, grant exactly one completed owned extension at a valid tile near the spawn with zero build spend
   - keep post-`RCL2` worker-demand flooring, body cadence, and discretionary growth otherwise aligned with the control path
   - do not grant or request any additional `RCL2` extensions in this experiment
 - Key evaluation focus:
@@ -2524,3 +2525,113 @@ node src/cli.ts experiment run suite \
   - `RCL2` timing
   - final role counts in representative `5k` runs
   - whether a free completed first extension materially outperforms the unbuilt-site result
+- Command:
+  - `node src/cli.ts experiment run suite --manifest ../../experiments/suites/exp-2026-04-09-rcl2-free-first-extension-value.yaml --baseline-source git:HEAD --baseline-package bots/basic --candidate-source workspace --candidate-package bots/basic`
+- Suite ID: `2026-04-09T15-40-12-434Z-68a8a569`
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-09T15-40-12-437Z-97bcb4f1`
+  - `train-b-2k`: `2026-04-09T15-42-07-413Z-2e3f9725`
+  - `train-c-5k`: `2026-04-09T15-43-55-064Z-c98f113d`
+  - `train-d-5k`: `2026-04-09T15-47-23-332Z-bd16ff01`
+  - `holdout-a-2k`: `2026-04-09T15-50-58-469Z-c3ab5164`
+  - `holdout-b-5k`: `2026-04-09T15-52-47-029Z-1b242ccd`
+
+### Results
+
+- Validation:
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `18.65` to `18.42` (`-1.23%`)
+  - `spawnWaitingForSufficientEnergyPct`: regressed from `25.93%` to `26.05%` (`+0.46%`)
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `987.5`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `null`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `24.90` to `24.78` (`-0.48%`)
+  - `spawnWaitingForSufficientEnergyPct`: improved from `23.26%` to `22.98%` (`-1.20%`)
+  - extension timing:
+    - `firstExtensionTick`: baseline `null`, candidate `824`
+    - `allRcl2ExtensionsTick`: baseline `null`, candidate `null`
+- Gate result:
+  - training failed with `0` improved primary metrics
+  - holdout passed because no comparable primary metric regressed more than `5%`
+  - overall suite result: `failed`
+- Notable behavior:
+  - the candidate realized the intended treatment in all `6/6` cases and did so at the same sampled `RCL2` milestone rather than as a later build artifact:
+    - candidate `firstExtensionTick`: `1146`, `832`, `875`, `1100`, `985`, `663`
+    - candidate `firstExtensionTick` matched sampled `RCL2` timing in all `6/6` cases
+    - candidate `allRcl2ExtensionsTick`: `null` in all `6/6` cases
+  - the free completed extension still did not create a material primary-metric win:
+    - `controllerProgressToRCL3Pct` regressed in all `6/6` cases
+    - `spawnWaitingForSufficientEnergyPct` was unchanged in `3/6`, worse in `1/6`, and better in only `2/6` cases
+    - the clearest negative short case was `train-b-2k`: `controllerProgressToRCL3Pct 12.46 -> 12.28`; `spawnWaitingForSufficientEnergyPct 31.51% -> 32.88%`
+  - representative `5k` runs ended in the same workforce shape on both sides even though the candidate kept one extra completed extension:
+    - `train-c-5k`: role counts `harvester 2`, `worker 7` -> `harvester 2`, `worker 7`; `energySpentOnBuild 0 -> 0`; `energySpentOnUpgrade 15664 -> 15493`; final controller progress `15518 -> 15357`
+    - `holdout-b-5k`: role counts `harvester 2`, `worker 7` -> `harvester 2`, `worker 7`; `energySpentOnBuild 0 -> 0`; `energySpentOnUpgrade 18760 -> 18685`; final controller progress `18599 -> 18534`
+  - the candidate's harvest-continuity metrics also failed to reveal a compensating upside:
+    - train `harvestingSourceCoveragePct`: `80.91 -> 79.44`
+    - train `harvestingSourceUptimePct`: `70.12 -> 67.74`
+    - holdout `harvestingSourceCoveragePct`: `83.56 -> 83.56`
+    - holdout `harvestingSourceUptimePct`: `72.40 -> 71.84`
+
+### Interpretation
+
+- This experiment did not support the hypothesis.
+- Unlike the previous one-extension/no-extra-growth run, this was a real treatment rather than a null extension-site result:
+  - baseline and candidate bot behavior stayed aligned
+  - the candidate received one completed extension in all `6/6` cases
+  - the extension appeared at the same sampled `RCL2` milestone rather than later after a build diversion
+- That makes the main conclusion much cleaner: one extra `RCL2` extension by itself is too small to matter in this opener window.
+- The strongest read after checking the result against Screeps world constraints is:
+  - one extension changes room capacity only from `300` to `350`
+  - spawning still depends on stored energy on hand, not just the higher ceiling
+  - the run ended with the same `2 harvester / 7 worker` shape on both sides, so the extra `+50` capacity did not unlock a meaningfully different workforce or spawn cadence
+- The representative `5k` runs support that read.
+- The candidate kept the extra extension with zero build tax, but controller progress and upgrade spend still stayed slightly below baseline.
+- In other words, the failed first-extension monetization run was not losing mainly because of the build cost of the first extension.
+- It was also losing because a single `+50` capacity step is below the threshold that changes this opener in practice.
+- After reviewing the result with Screeps world-model constraints, the next clean branch is not more one-extension tuning.
+- It is testing whether a room-scale `RCL2` capacity jump matters at all once the full extension band is available for free.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: if the room receives all five completed `RCL2` extensions immediately at `RCL2`, the `300 -> 550` capacity jump will be large enough to create a real spawn-liquidity and controller-progress improvement.
+- Hypothesis B: if even five free completed `RCL2` extensions fail, early extension capacity itself is not a primary opener lever and future work should move away from extension-first theories entirely.
+- Hypothesis C: if five free completed extensions help materially while one free completed extension did not, extension value exists only at the full `RCL2` room-capacity threshold, not at the single-slot scale.
+
+### Decision
+
+- `continue`
+- Do not promote one free completed extension as a new baseline behavior. Keep the lesson that the single-slot `RCL2` capacity step is too small to matter by itself, keep the generic room-mutation experiment support, and move next to a full-band `RCL2` capacity-value test.
+
+## Entry `exp-2026-04-09-rcl2-free-five-extension-value`
+
+- Status: `planned`
+- Owner: `OpenCode`
+- Date: `2026-04-09`
+
+### Hypothesis
+
+- The completed free-first-extension run proved that one free completed extension is value-neutral to slightly negative even when it comes online exactly at `RCL2` and carries zero build tax.
+- That result implies the single-slot `300 -> 350` capacity step is below the threshold that changes the opener.
+- If the room instead receives all five completed `RCL2` extensions immediately at `RCL2`, the full `300 -> 550` room-capacity jump may finally be large enough to change spawn liquidity, body cadence, and controller progress.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Planned change:
+  - keep baseline and candidate bot behavior identical so the treatment stays value-only
+  - when the candidate room reaches `RCL2`, grant all five completed owned extensions at valid tiles near the spawn
+  - keep all extension build spend at zero so the experiment isolates full-band capacity value rather than construction economics
+  - keep workforce-demand logic otherwise unchanged so the result answers whether full `RCL2` capacity matters at all before any further strategy rewrite
+- Key evaluation focus:
+  - `spawnWaitingForSufficientEnergyPct`
+  - `controllerProgressToRCL3Pct`
+  - `T_RCL3`
+  - `allRcl2ExtensionsTick`
+  - whether representative `5k` runs finally diverge from the baseline `2 harvester / 7 worker` shape or materially improve upgrade spend

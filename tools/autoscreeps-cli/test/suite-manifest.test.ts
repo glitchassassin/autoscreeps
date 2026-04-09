@@ -23,6 +23,10 @@ describe("suite manifests", () => {
       "name: duel-basic",
       "mapGenerator:",
       "  type: mirrored-random-1x1",
+      "roomMutations:",
+      "  - type: grant-completed-extension-on-controller-level",
+      "    role: candidate",
+      "    level: 2",
       "run:",
       "  maxTicks: 200"
     ].join("\n"), "utf8");
@@ -54,6 +58,14 @@ describe("suite manifests", () => {
       type: "mirrored-random-1x1",
       sourceMapId: "fixed-map"
     });
+    expect(scenario.config.roomMutations).toEqual([
+      {
+        type: "grant-completed-extension-on-controller-level",
+        role: "candidate",
+        level: 2,
+        count: 1
+      }
+    ]);
     expect(scenario.config.run.tickDuration).toBe(25);
     expect(scenario.config.run.maxTicks).toBe(2000);
     expect(scenario.config.run.sampleEveryTicks).toBe(25);

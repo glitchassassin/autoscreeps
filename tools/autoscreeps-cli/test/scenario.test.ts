@@ -104,4 +104,38 @@ describe("loadScenario", () => {
 
     await expect(loadScenario(scenarioPath)).rejects.toThrow("terminalConditions must declare at least one win or fail condition");
   });
+
+  it("parses room mutations", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "autoscreeps-scenario-"));
+    tempPaths.push(tempDir);
+    const scenarioPath = path.join(tempDir, "scenario.yaml");
+
+    await fs.writeFile(
+      scenarioPath,
+      [
+        "version: 1",
+        "name: room-mutation-duel",
+        "mapGenerator:",
+        "  type: mirrored-random-1x1",
+        "roomMutations:",
+        "  - type: grant-completed-extension-on-controller-level",
+        "    role: candidate",
+        "    level: 2",
+        "run:",
+        "  maxTicks: 200"
+      ].join("\n"),
+      "utf8"
+    );
+
+    const scenario = await loadScenario(scenarioPath);
+
+    expect(scenario.config.roomMutations).toEqual([
+      {
+        type: "grant-completed-extension-on-controller-level",
+        role: "candidate",
+        level: 2,
+        count: 1
+      }
+    ]);
+  });
 });

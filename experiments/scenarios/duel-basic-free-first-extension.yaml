@@ -1,0 +1,15 @@
+version: 1
+name: duel-basic-free-first-extension
+description: Run a basic head-to-head experiment on mirrored copies of a random 1x1 sector, granting the candidate one completed extension at RCL2.
+reset: full
+mapGenerator:
+  type: mirrored-random-1x1
+roomMutations:
+  - type: grant-completed-extension-on-controller-level
+    role: candidate
+    level: 2
+run:
+  maxTicks: 200
+  pollIntervalMs: 1000
+  maxWallClockMs: 300000
+  maxStalledPolls: 30
