@@ -7,7 +7,7 @@ gates:
   primaryMetrics:
     - T_RCL3
     - controllerProgressToRCL3Pct
-    - spawnIdlePct
+    - spawnWaitingForSufficientEnergyPct
   training:
     minImprovedPrimaryMetrics: 2
   holdout:

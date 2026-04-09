@@ -25,7 +25,7 @@ Milestone 1 is intentionally limited to economy, recovery, and observability. Ad
 
 - `T_RCL3`: first tick an owned controller reaches RCL 3.
 - `controllerProgressToRCL3Pct`: normalized progress from owned `RCL1` start to owned `RCL3` completion at end of run.
-- `spawnIdlePct`: percent of sampled ticks where a spawn is idle while the bot reports unmet spawn demand.
+- `spawnWaitingForSufficientEnergyPct`: percent of sampled ticks where spawn demand exists but the spawn is still waiting for enough energy to start the next creep.
 - `recoveryLatency`: ticks from a deterministic disruption event to restoration of minimum viable staffing.
 - `completionRate5k`: fraction of runs that reach the tick budget without collapse.
 

@@ -475,8 +475,8 @@ function metricValue(summary: UserRunSummaryMetrics, metric: SuiteSummaryMetric)
       return summary.controllerLevelMilestones["3"] ?? null;
     case "controllerProgressToRCL3Pct":
       return summary.controllerProgressToRCL3Pct;
-    case "spawnIdlePct":
-      return summary.spawnIdlePct;
+    case "spawnWaitingForSufficientEnergyPct":
+      return summary.spawnWaitingForSufficientEnergyPct;
     case "sourceCoveragePct":
       return summary.sourceCoveragePct;
     case "sourceUptimePct":
@@ -500,7 +500,7 @@ function metricDirection(metric: SuiteSummaryMetric): SuiteMetricComparison["dir
   switch (metric) {
     case "T_RCL2":
     case "T_RCL3":
-    case "spawnIdlePct":
+    case "spawnWaitingForSufficientEnergyPct":
     case "firstExtensionTick":
     case "allRcl2ExtensionsTick":
       return "lower-is-better";

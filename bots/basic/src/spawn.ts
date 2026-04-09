@@ -4,6 +4,11 @@ type SpawnRequest = {
   name: string;
 };
 
+const preRcl3BodyCostCapByRole: Partial<Record<WorkerRole, number>> = {
+  harvester: 300,
+  worker: 300
+};
+
 export type SpawnDemandSummary = {
   unmetDemand: Record<WorkerRole, number>;
   nextRole: WorkerRole | null;
@@ -33,16 +38,10 @@ const bodyPlans: Record<WorkerRole, Array<{ cost: number; body: BodyPartConstant
 
 const roleOrder: WorkerRole[] = ["harvester", "courier", "worker"];
 
+type BodyPlan = { cost: number; body: BodyPartConstant[] };
+
 export function chooseBody(role: WorkerRole, availableEnergy: number): BodyPartConstant[] | null {
-  let selected: BodyPartConstant[] | null = null;
-
-  for (const plan of bodyPlans[role]) {
-    if (plan.cost <= availableEnergy) {
-      selected = plan.body;
-    }
-  }
-
-  return selected;
+  return chooseBodyPlan(role, availableEnergy)?.body ?? null;
 }
 
 export function createSpawnRequest(spawn: StructureSpawn): SpawnRequest | null {
@@ -50,12 +49,18 @@ export function createSpawnRequest(spawn: StructureSpawn): SpawnRequest | null {
     return null;
   }
 
-  const nextRole = summarizeSpawnDemand(spawn.room).nextRole;
+  const demand = summarizeSpawnDemand(spawn.room);
+  const nextRole = demand.nextRole;
   if (!nextRole) {
     return null;
   }
 
-  const body = chooseBody(nextRole, spawn.room.energyAvailable);
+  const fullAffordabilityCost = determineQueueHeadFullAffordabilityCost(spawn.room, nextRole);
+  if (fullAffordabilityCost !== null && spawn.room.energyAvailable < fullAffordabilityCost) {
+    return null;
+  }
+
+  const body = chooseSpawnBody(nextRole, spawn.room);
   if (!body) {
     return null;
   }
@@ -162,12 +167,27 @@ function summarizePreRcl3Demand(room: Room): SpawnDemandSummary {
   };
   const sourceCount = Math.max(countSources(room), 1);
   const sourceBacklog = countSourceBacklog(room);
+  const controllerLevel = room.controller?.level ?? 1;
   const harvesterWorkTarget = sourceCount * 2;
-  const workerWorkTarget = sourceCount * 3 + Math.floor(sourceBacklog / 300);
+  const baseWorkerWorkTarget = sourceCount * 3 + Math.floor(sourceBacklog / 300);
   const currentHarvesterWork = countRoleWork("harvester", room.name);
   const currentWorkerWork = countRoleWork("worker", room.name);
-  const harvesterWorkPerCreep = estimateRoleWorkPerSpawn("harvester", room);
-  const workerWorkPerCreep = estimateRoleWorkPerSpawn("worker", room);
+  const harvesterWorkPerCreep = estimateRoleWorkPerSpawn(
+    "harvester",
+    room.energyAvailable,
+    room.energyCapacityAvailable,
+    controllerLevel
+  );
+  const workerWorkPerCreep = estimateRoleWorkPerSpawn(
+    "worker",
+    room.energyAvailable,
+    room.energyCapacityAvailable,
+    controllerLevel
+  );
+  const workerWorkTarget = Math.max(
+    baseWorkerWorkTarget,
+    determinePreRcl3WorkerFloor(baseWorkerWorkTarget, harvesterWorkTarget, currentHarvesterWork, currentWorkerWork, workerWorkPerCreep)
+  );
   const harvesterWorkDeficit = Math.max(harvesterWorkTarget - currentHarvesterWork, 0);
   const workerWorkDeficit = Math.max(workerWorkTarget - currentWorkerWork, 0);
 
@@ -264,9 +284,62 @@ function positionsAreNear(position: RoomPosition, target: RoomPosition): boolean
   return position.roomName === target.roomName && Math.max(Math.abs(position.x - target.x), Math.abs(position.y - target.y)) <= 1;
 }
 
-function estimateRoleWorkPerSpawn(role: WorkerRole, room: Room): number {
-  const body = chooseBody(role, room.energyCapacityAvailable) ?? chooseBody(role, room.energyAvailable);
+function estimateRoleWorkPerSpawn(role: WorkerRole, availableEnergy: number, fallbackEnergy: number, controllerLevel?: number): number {
+  const body = chooseSpawnBodyForEnergy(role, availableEnergy, controllerLevel)
+    ?? chooseSpawnBodyForEnergy(role, fallbackEnergy, controllerLevel);
   return Math.max(countBodyPart(body, WORK), 1);
+}
+
+function chooseSpawnBody(role: WorkerRole, room: Room): BodyPartConstant[] | null {
+  return chooseSpawnBodyForEnergy(role, room.energyAvailable, room.controller?.my ? room.controller.level : undefined);
+}
+
+function determineQueueHeadFullAffordabilityCost(room: Room, role: WorkerRole): number | null {
+  const controllerLevel = room.controller?.my ? room.controller.level : undefined;
+  const fullPlan = chooseSpawnBodyPlan(role, room.energyCapacityAvailable, controllerLevel);
+  return fullPlan?.cost ?? null;
+}
+
+function chooseSpawnBodyForEnergy(
+  role: WorkerRole,
+  availableEnergy: number,
+  controllerLevel?: number
+): BodyPartConstant[] | null {
+  return chooseSpawnBodyPlan(role, availableEnergy, controllerLevel)?.body ?? null;
+}
+
+function chooseBodyPlan(role: WorkerRole, availableEnergy: number): BodyPlan | null {
+  let selected: BodyPlan | null = null;
+
+  for (const plan of bodyPlans[role]) {
+    if (plan.cost <= availableEnergy) {
+      selected = plan;
+    }
+  }
+
+  return selected;
+}
+
+function chooseSpawnBodyPlan(role: WorkerRole, availableEnergy: number, controllerLevel?: number): BodyPlan | null {
+  const effectiveEnergy = controllerLevel !== undefined && controllerLevel < 3
+    ? Math.min(availableEnergy, preRcl3BodyCostCapByRole[role] ?? availableEnergy)
+    : availableEnergy;
+
+  return chooseBodyPlan(role, effectiveEnergy);
+}
+
+function determinePreRcl3WorkerFloor(
+  baseWorkerWorkTarget: number,
+  harvesterWorkTarget: number,
+  currentHarvesterWork: number,
+  currentWorkerWork: number,
+  workerWorkPerCreep: number
+): number {
+  if (currentHarvesterWork < harvesterWorkTarget || currentWorkerWork < baseWorkerWorkTarget) {
+    return 0;
+  }
+
+  return baseWorkerWorkTarget + workerWorkPerCreep;
 }
 
 function countWorkParts(creep: Creep): number {

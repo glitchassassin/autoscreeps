@@ -12,7 +12,7 @@ describe("suite runner", () => {
       version: 1,
       name: "opener-suite",
       gates: {
-        primaryMetrics: ["T_RCL3", "controllerProgressToRCL3Pct", "spawnIdlePct", "sourceCoveragePct", "sourceUptimePct"],
+        primaryMetrics: ["T_RCL3", "controllerProgressToRCL3Pct", "spawnWaitingForSufficientEnergyPct", "sourceCoveragePct", "sourceUptimePct"],
         training: { minImprovedPrimaryMetrics: 2 },
         holdout: { maxRegressionPct: 5 }
       },
@@ -24,7 +24,7 @@ describe("suite runner", () => {
         baseline: createSummary({
           rcl3: 250,
           controllerProgressToRCL3Pct: 60,
-          spawnIdlePct: 40,
+          spawnWaitingForSufficientEnergyPct: 40,
           firstExtensionTick: 140,
           allRcl2ExtensionsTick: 180,
           sourceCoveragePct: 50,
@@ -37,7 +37,7 @@ describe("suite runner", () => {
         candidate: createSummary({
           rcl3: 200,
           controllerProgressToRCL3Pct: 80,
-          spawnIdlePct: 10,
+          spawnWaitingForSufficientEnergyPct: 10,
           firstExtensionTick: 110,
           allRcl2ExtensionsTick: 150,
           sourceCoveragePct: 75,
@@ -52,7 +52,7 @@ describe("suite runner", () => {
         baseline: createSummary({
           rcl3: 200,
           controllerProgressToRCL3Pct: 70,
-          spawnIdlePct: 20,
+          spawnWaitingForSufficientEnergyPct: 20,
           firstExtensionTick: 120,
           allRcl2ExtensionsTick: 160,
           sourceCoveragePct: 100,
@@ -65,7 +65,7 @@ describe("suite runner", () => {
         candidate: createSummary({
           rcl3: 200,
           controllerProgressToRCL3Pct: 72,
-          spawnIdlePct: 21,
+          spawnWaitingForSufficientEnergyPct: 21,
           firstExtensionTick: 118,
           allRcl2ExtensionsTick: 150,
           sourceCoveragePct: 92,
@@ -163,7 +163,7 @@ describe("suite runner", () => {
             baseline: createSummary({
               rcl3: 200,
               controllerProgressToRCL3Pct: 30,
-              spawnIdlePct: 25,
+               spawnWaitingForSufficientEnergyPct: 25,
               firstExtensionTick: 120,
               allRcl2ExtensionsTick: 150,
               sourceCoveragePct: 50,
@@ -172,7 +172,7 @@ describe("suite runner", () => {
             candidate: createSummary({
               rcl3: 200,
               controllerProgressToRCL3Pct: 30,
-              spawnIdlePct: 25,
+               spawnWaitingForSufficientEnergyPct: 25,
               firstExtensionTick: 120,
               allRcl2ExtensionsTick: 150,
               sourceCoveragePct: 50,
@@ -315,7 +315,7 @@ function createRunDetails(input: {
 function createSummary(input: {
   rcl3: number | null;
   controllerProgressToRCL3Pct: number | null;
-  spawnIdlePct: number | null;
+  spawnWaitingForSufficientEnergyPct: number | null;
   firstExtensionTick: number | null;
   allRcl2ExtensionsTick: number | null;
   sourceCoveragePct: number | null;
@@ -344,7 +344,7 @@ function createSummary(input: {
     firstExtensionTick: input.firstExtensionTick,
     allRcl2ExtensionsTick: input.allRcl2ExtensionsTick,
     telemetrySampleCount: 4,
-    spawnIdlePct: input.spawnIdlePct,
+    spawnWaitingForSufficientEnergyPct: input.spawnWaitingForSufficientEnergyPct,
     sourceCoveragePct: input.sourceCoveragePct,
     sourceUptimePct: input.sourceUptimePct,
     harvestingSourceCoveragePct: input.harvestingSourceCoveragePct ?? input.sourceCoveragePct,

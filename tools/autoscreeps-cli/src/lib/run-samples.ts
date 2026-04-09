@@ -134,7 +134,7 @@ function summarizeVariant(samples: RunSample[], role: VariantRole): UserRunSumma
     firstExtensionTick,
     allRcl2ExtensionsTick,
     telemetrySampleCount,
-    spawnIdlePct: toPercent(spawnIdleSamples, telemetrySampleCount),
+    spawnWaitingForSufficientEnergyPct: toPercent(spawnIdleSamples, telemetrySampleCount),
     sourceCoveragePct: toPercent(totalSourceCoverage, sourceCoverageSamples),
     sourceUptimePct: toPercent(fullyStaffedSamples, sourceCoverageSamples),
     harvestingSourceCoveragePct: toPercent(totalHarvestingSourceCoverage, harvestingSourceCoverageSamples),

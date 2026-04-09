@@ -129,6 +129,8 @@ function makeWorker(input: {
     },
     room: {
       name: "W0N0",
+      energyAvailable: 300,
+      energyCapacityAvailable: 300,
       controller,
       find: vi.fn((type: number, opts?: { filter?: (value: unknown) => boolean }) => {
         if (type === FIND_MY_CONSTRUCTION_SITES) {

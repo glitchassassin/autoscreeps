@@ -58,7 +58,7 @@ export type SuitePrimaryMetric =
   | "T_RCL2"
   | "T_RCL3"
   | "controllerProgressToRCL3Pct"
-  | "spawnIdlePct"
+  | "spawnWaitingForSufficientEnergyPct"
   | "sourceCoveragePct"
   | "sourceUptimePct";
 
@@ -304,7 +304,7 @@ export type UserRunSummaryMetrics = {
   firstExtensionTick: number | null;
   allRcl2ExtensionsTick: number | null;
   telemetrySampleCount: number;
-  spawnIdlePct: number | null;
+  spawnWaitingForSufficientEnergyPct: number | null;
   sourceCoveragePct: number | null;
   sourceUptimePct: number | null;
   harvestingSourceCoveragePct: number | null;

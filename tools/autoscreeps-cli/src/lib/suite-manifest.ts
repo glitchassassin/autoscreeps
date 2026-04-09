@@ -8,7 +8,7 @@ import { loadScenario, mapGeneratorSchema, roomSelectionStrategySchema, scenario
 export const defaultSuitePrimaryMetrics = [
   "T_RCL2",
   "T_RCL3",
-  "spawnIdlePct",
+  "spawnWaitingForSufficientEnergyPct",
   "sourceCoveragePct",
   "sourceUptimePct"
 ] as const;
@@ -23,7 +23,7 @@ export const suitePrimaryMetricSchema = z.enum([
   "T_RCL2",
   "T_RCL3",
   "controllerProgressToRCL3Pct",
-  "spawnIdlePct",
+  "spawnWaitingForSufficientEnergyPct",
   "sourceCoveragePct",
   "sourceUptimePct"
 ]);

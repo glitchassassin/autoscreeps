@@ -190,7 +190,7 @@ describe("run samples", () => {
     expect(summary.users.baseline.telemetrySampleCount).toBe(3);
     expect(summary.users.baseline.firstExtensionTick).toBe(125);
     expect(summary.users.baseline.allRcl2ExtensionsTick).toBe(150);
-    expect(summary.users.baseline.spawnIdlePct).toBeCloseTo(33.33, 2);
+    expect(summary.users.baseline.spawnWaitingForSufficientEnergyPct).toBeCloseTo(33.33, 2);
     expect(summary.users.baseline.sourceCoveragePct).toBeCloseTo(83.33, 2);
     expect(summary.users.baseline.sourceUptimePct).toBeCloseTo(66.67, 2);
     expect(summary.users.baseline.harvestingSourceCoveragePct).toBeCloseTo(33.33, 2);
@@ -203,7 +203,7 @@ describe("run samples", () => {
     expect(summary.users.candidate.firstExtensionTick).toBeNull();
     expect(summary.users.candidate.allRcl2ExtensionsTick).toBeNull();
     expect(summary.users.candidate.telemetrySampleCount).toBe(0);
-    expect(summary.users.candidate.spawnIdlePct).toBeNull();
+    expect(summary.users.candidate.spawnWaitingForSufficientEnergyPct).toBeNull();
     expect(summary.users.candidate.sourceCoveragePct).toBeNull();
     expect(summary.users.candidate.sourceUptimePct).toBeNull();
     expect(summary.users.candidate.harvestingSourceCoveragePct).toBeNull();

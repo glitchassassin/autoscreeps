@@ -275,7 +275,7 @@ function createSuiteRecord(id: string, createdAt: string): SuiteRecord {
       packagePath: "bots/basic"
     },
     gates: {
-      primaryMetrics: ["T_RCL2", "T_RCL3", "spawnIdlePct", "sourceCoveragePct", "sourceUptimePct"],
+      primaryMetrics: ["T_RCL2", "T_RCL3", "spawnWaitingForSufficientEnergyPct", "sourceCoveragePct", "sourceUptimePct"],
       training: { minImprovedPrimaryMetrics: 2 },
       holdout: { maxRegressionPct: 5 }
     },

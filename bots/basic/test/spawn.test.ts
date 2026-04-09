@@ -80,6 +80,58 @@ describe("spawn manager", () => {
     });
   });
 
+  it("keeps one extra affordable worker queued once harvest coverage is met", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+
+    testGlobal.Game.creeps = {
+      harvesterA: makeCreep("harvester", 2),
+      harvesterB: makeCreep("harvester", 2),
+      workerA: makeCreep("worker", 1),
+      workerB: makeCreep("worker", 1),
+      workerC: makeCreep("worker", 1),
+      workerD: makeCreep("worker", 1),
+      workerE: makeCreep("worker", 1),
+      workerF: makeCreep("worker", 1)
+    };
+
+    expect(summarizeSpawnDemand(makeSpawn().room)).toEqual({
+      unmetDemand: {
+        harvester: 0,
+        courier: 0,
+        worker: 1
+      },
+      nextRole: "worker",
+      totalUnmetDemand: 1
+    });
+  });
+
+  it("caps pre-RCL3 worker bodies to smaller cadence packets", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+
+    testGlobal.Game.creeps = {
+      harvesterA: makeCreep("harvester", 2),
+      harvesterB: makeCreep("harvester", 2)
+    };
+
+    const request = createSpawnRequest(makeSpawn({ energyAvailable: 550, energyCapacityAvailable: 550, controllerLevel: 2 }));
+
+    expect(request?.memory.role).toBe("worker");
+    expect(request?.body).toEqual([WORK, CARRY, CARRY, MOVE, MOVE]);
+  });
+
+  it("caps pre-RCL3 harvester bodies to smaller cadence packets", () => {
+    const request = createSpawnRequest(makeSpawn({ energyAvailable: 550, energyCapacityAvailable: 550, controllerLevel: 2 }));
+
+    expect(request?.memory.role).toBe("harvester");
+    expect(request?.body).toEqual([WORK, WORK, CARRY, MOVE]);
+  });
+
+  it("waits for the full pre-RCL3 cadence packet before spawning", () => {
+    const request = createSpawnRequest(makeSpawn({ energyAvailable: 250, energyCapacityAvailable: 550, controllerLevel: 2 }));
+
+    expect(request).toBeNull();
+  });
+
   it("passes the planned body and memory into spawnCreep", () => {
     const spawn = makeSpawn();
 
@@ -99,17 +151,21 @@ describe("spawn manager", () => {
   });
 });
 
-function makeSpawn(): StructureSpawn {
+function makeSpawn(input: {
+  energyAvailable?: number;
+  energyCapacityAvailable?: number;
+  controllerLevel?: number;
+} = {}): StructureSpawn {
   return {
     name: "Spawn1",
     spawning: null,
     room: {
       name: "W0N0",
-      energyAvailable: 300,
-      energyCapacityAvailable: 300,
+      energyAvailable: input.energyAvailable ?? 300,
+      energyCapacityAvailable: input.energyCapacityAvailable ?? 300,
       controller: {
         my: true,
-        level: 1
+        level: input.controllerLevel ?? 1
       },
       find: vi.fn((type: number, opts?: { filter?: (value: unknown) => boolean }) => {
         if (type === FIND_SOURCES) {
