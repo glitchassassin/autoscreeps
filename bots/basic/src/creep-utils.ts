@@ -11,6 +11,10 @@ export function updateWorkingState(creep: Creep): void {
   if (!creep.memory.working && creep.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
     creep.memory.working = true;
   }
+
+  if (creep.memory.working) {
+    delete creep.memory.sourceId;
+  }
 }
 
 export function moveToTarget(creep: Creep, target: MoveTarget): void {
@@ -128,7 +132,11 @@ function countAssignedSourceCreeps(sourceId: Id<Source>): number {
   let total = 0;
 
   for (const creep of Object.values(Game.creeps)) {
-    if ((creep.memory.role === "harvester" || creep.memory.role === "worker") && creep.memory.sourceId === sourceId) {
+    if (
+      (creep.memory.role === "harvester" || creep.memory.role === "worker")
+      && !creep.memory.working
+      && creep.memory.sourceId === sourceId
+    ) {
       total += 1;
     }
   }

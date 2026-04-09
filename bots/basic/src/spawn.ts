@@ -166,6 +166,7 @@ function summarizePreRcl3Demand(room: Room): SpawnDemandSummary {
     worker: 0
   };
   const sourceCount = Math.max(countSources(room), 1);
+  const activeHarvestingSourceCount = countActiveHarvestingSources(room);
   const sourceBacklog = countSourceBacklog(room);
   const controllerLevel = room.controller?.level ?? 1;
   const harvesterWorkTarget = sourceCount * 2;
@@ -186,7 +187,15 @@ function summarizePreRcl3Demand(room: Room): SpawnDemandSummary {
   );
   const workerWorkTarget = Math.max(
     baseWorkerWorkTarget,
-    determinePreRcl3WorkerFloor(baseWorkerWorkTarget, harvesterWorkTarget, currentHarvesterWork, currentWorkerWork, workerWorkPerCreep)
+    determinePreRcl3WorkerFloor(
+      baseWorkerWorkTarget,
+      harvesterWorkTarget,
+      currentHarvesterWork,
+      currentWorkerWork,
+      workerWorkPerCreep,
+      sourceCount,
+      activeHarvestingSourceCount
+    )
   );
   const harvesterWorkDeficit = Math.max(harvesterWorkTarget - currentHarvesterWork, 0);
   const workerWorkDeficit = Math.max(workerWorkTarget - currentWorkerWork, 0);
@@ -333,13 +342,39 @@ function determinePreRcl3WorkerFloor(
   harvesterWorkTarget: number,
   currentHarvesterWork: number,
   currentWorkerWork: number,
-  workerWorkPerCreep: number
+  workerWorkPerCreep: number,
+  sourceCount: number,
+  activeHarvestingSourceCount: number
 ): number {
   if (currentHarvesterWork < harvesterWorkTarget || currentWorkerWork < baseWorkerWorkTarget) {
     return 0;
   }
 
-  return baseWorkerWorkTarget + workerWorkPerCreep;
+  const missingActiveSources = Math.max(sourceCount - activeHarvestingSourceCount, 0);
+  return baseWorkerWorkTarget + workerWorkPerCreep * (1 + missingActiveSources);
+}
+
+function countActiveHarvestingSources(room: Room): number {
+  const sourcesById = new Map(room.find(FIND_SOURCES).map((source) => [source.id, source]));
+  const activeSources = new Set<string>();
+
+  for (const creep of Object.values(Game.creeps)) {
+    if (
+      creep.memory.homeRoom !== room.name
+      || creep.memory.working
+      || (creep.memory.role !== "harvester" && creep.memory.role !== "worker")
+      || !creep.memory.sourceId
+    ) {
+      continue;
+    }
+
+    const source = sourcesById.get(creep.memory.sourceId);
+    if (source && positionsAreNear(creep.pos, source.pos)) {
+      activeSources.add(source.id);
+    }
+  }
+
+  return activeSources.size;
 }
 
 function countWorkParts(creep: Creep): number {

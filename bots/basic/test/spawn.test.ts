@@ -84,14 +84,56 @@ describe("spawn manager", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game };
 
     testGlobal.Game.creeps = {
-      harvesterA: makeCreep("harvester", 2),
-      harvesterB: makeCreep("harvester", 2),
+      harvesterA: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-a",
+        pos: { x: 10, y: 11, roomName: "W0N0" }
+      }),
+      harvesterB: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-b",
+        pos: { x: 20, y: 21, roomName: "W0N0" }
+      }),
       workerA: makeCreep("worker", 1),
       workerB: makeCreep("worker", 1),
       workerC: makeCreep("worker", 1),
       workerD: makeCreep("worker", 1),
       workerE: makeCreep("worker", 1),
       workerF: makeCreep("worker", 1)
+    };
+
+    expect(summarizeSpawnDemand(makeSpawn().room)).toEqual({
+      unmetDemand: {
+        harvester: 0,
+        courier: 0,
+        worker: 1
+      },
+      nextRole: "worker",
+      totalUnmetDemand: 1
+    });
+  });
+
+  it("keeps demand queued until both sources are actively harvested", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+
+    testGlobal.Game.creeps = {
+      harvesterA: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-a",
+        pos: { x: 10, y: 11, roomName: "W0N0" }
+      }),
+      harvesterB: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-b",
+        pos: { x: 25, y: 25, roomName: "W0N0" }
+      }),
+      workerA: makeCreep("worker", 1),
+      workerB: makeCreep("worker", 1),
+      workerC: makeCreep("worker", 1),
+      workerD: makeCreep("worker", 1),
+      workerE: makeCreep("worker", 1),
+      workerF: makeCreep("worker", 1),
+      workerG: makeCreep("worker", 1)
     };
 
     expect(summarizeSpawnDemand(makeSpawn().room)).toEqual({
@@ -186,12 +228,23 @@ function makeSpawn(input: {
   } as unknown as StructureSpawn;
 }
 
-function makeCreep(role: WorkerRole, workParts: number): Creep {
+function makeCreep(
+  role: WorkerRole,
+  workParts: number,
+  input: {
+    working?: boolean;
+    sourceId?: string;
+    pos?: { x: number; y: number; roomName: string };
+  } = {}
+): Creep {
   return {
     memory: {
       role,
-      homeRoom: "W0N0"
+      working: input.working ?? true,
+      homeRoom: "W0N0",
+      sourceId: input.sourceId
     },
-    body: Array.from({ length: workParts }, () => ({ type: WORK, hits: 100 }))
+    body: Array.from({ length: workParts }, () => ({ type: WORK, hits: 100 })),
+    pos: input.pos ?? { x: 15, y: 15, roomName: "W0N0" }
   } as unknown as Creep;
 }

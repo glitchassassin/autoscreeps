@@ -2608,7 +2608,232 @@ node src/cli.ts experiment run suite \
 - `continue`
 - Do not promote one free completed extension as a new baseline behavior. Keep the lesson that the single-slot `RCL2` capacity step is too small to matter by itself, keep the generic room-mutation experiment support, and move next to a full-band `RCL2` capacity-value test.
 
-## Entry `exp-2026-04-09-rcl2-free-five-extension-value`
+## Entry `exp-2026-04-09-opener-idle-baseline`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-09`
+
+### Hypothesis
+
+- The newly added spawn, creep, and source idle metrics should be established first on the unmodified milestone-one opener before we design another treatment.
+- Running the standard `milestone-1-opener` suite with no free extensions or room mutations should tell us whether the opener is currently bottlenecked more by room-capacity limits or by idle time inside the harvest-to-upgrade pipeline.
+- If the idle metrics show large upstream waste, the next experiment should move away from free-extension value tests and toward reducing source, creep, and spawn idle time.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Change tested:
+  - keep the baseline and candidate on the standard opener with no free-extension treatment and no room mutation on either side
+  - use the current milestone-one suite to capture the new idle and source-pipeline metrics on real opener behavior
+  - treat the run as a null-treatment telemetry baseline rather than as an implementation promotion test
+- Key evaluation focus:
+  - `spawnIdlePct`
+  - `creepIdlePct`
+  - `sourceHarvestUtilizationPct`
+  - `activeHarvestingSourceUptimePct`
+  - `controllerProgressToRCL3Pct`
+  - `spawnWaitingForSufficientEnergyPct`
+- Command:
+  - `node src/cli.ts experiment run suite --manifest ../../experiments/suites/milestone-1-opener.yaml --baseline-source git:HEAD --baseline-package bots/basic --candidate-source workspace --candidate-package bots/basic`
+- Suite ID: `2026-04-09T21-13-11-834Z-30a45fd3`
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-09T21-13-11-836Z-c73bd071`
+  - `train-b-2k`: `2026-04-09T21-15-01-641Z-1990d25c`
+  - `train-c-5k`: `2026-04-09T21-16-52-093Z-7233f845`
+  - `train-d-5k`: `2026-04-09T21-20-32-491Z-b871104f`
+  - `holdout-a-2k`: `2026-04-09T21-24-13-708Z-80a28119`
+  - `holdout-b-5k`: `2026-04-09T21-26-09-999Z-825e85d6`
+
+### Results
+
+- Validation:
+  - no code changes were part of this run; this was a telemetry-baseline suite execution on the current opener
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: `18.59` vs `18.60`
+  - `spawnWaitingForSufficientEnergyPct`: `27.00%` vs `26.99%`
+  - idle and source pipeline metrics:
+    - `spawnIdlePct`: `64.80%` vs `64.81%`
+    - `creepIdlePct`: `19.88%` vs `19.88%`
+    - `sourceHarvestUtilizationPct`: `18.78%` vs `18.78%`
+    - `activeHarvestingSourceUptimePct`: `43.30%` vs `43.32%`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: `24.97` vs `24.96`
+  - `spawnWaitingForSufficientEnergyPct`: `25.28%` vs `25.30%`
+  - idle and source pipeline metrics:
+    - `spawnIdlePct`: `66.57%` vs `66.56%`
+    - `creepIdlePct`: `18.55%` vs `18.55%`
+    - `sourceHarvestUtilizationPct`: `21.18%` vs `21.18%`
+    - `activeHarvestingSourceUptimePct`: `46.17%` vs `46.19%`
+- Gate result:
+  - the suite verdict was `candidate-passed`, but the candidate was the same implementation as the baseline and the tiny differences were just mirror-noise in a null-treatment run
+  - the meaningful output from this suite is the absolute idle-time baseline, not the baseline-vs-candidate delta
+- Notable behavior:
+  - `firstExtensionTick` and `allRcl2ExtensionsTick` stayed `null` in all `6/6` cases, confirming this was a no-extension baseline rather than another extension-value run
+  - representative `5k` cases still finished in the same `2 harvester / 7 worker` colony shape with the spawn queue often collapsed to zero:
+    - `train-c-5k`: `controllerProgressToRCL3Pct 34.74`; `spawnIdlePct 75.41%`; `creepIdlePct 17.31%`; `sourceHarvestUtilizationPct 22.16%`; `activeHarvestingSourceUptimePct 50.55%`
+    - `holdout-b-5k`: `controllerProgressToRCL3Pct 41.66`; `spawnIdlePct 79.99%`; `creepIdlePct 13.80%`; `sourceHarvestUtilizationPct 26.76%`; `activeHarvestingSourceUptimePct 60.04%`
+  - final sampled `5k` telemetry showed that the colony often declared itself done even while the energy pipeline was still messy:
+    - `train-c-5k`: `queueDepth 0`, `unmetDemand 0`, source assignments `4/5`, `withEnergyNoSpendTicks harvester 4373 worker 4805`, `noTargetTicks.harvester 2148`
+    - `holdout-b-5k`: `queueDepth 0`, `unmetDemand 0`, source assignments `4/5`, `overAssigned 2/2`, `withEnergyNoSpendTicks harvester 3456 worker 3451`, `noTargetTicks.harvester 3029`
+  - workers continued spending a large number of lifetime ticks on direct harvest and travel instead of a tighter handoff pipeline:
+    - `train-c-5k` final phase totals: `worker.harvest 8814`, `worker.move 5223`, `worker.upgrade 13900`
+    - `holdout-b-5k` final phase totals: `worker.harvest 10077`, `worker.move 3943`, `worker.upgrade 15558`
+
+### Interpretation
+
+- This experiment supported the decision to stop chasing free extensions as the next branch.
+- The baseline opener is clearly idle-limited and intake-limited before it is extension-capacity-limited:
+  - the suite observed only about `3.76 e/t` train and `4.23 e/t` holdout harvested energy against a two-source theoretical gross ceiling of `20 e/t`
+  - spawn occupancy stayed low overall, with only about `7.91%` of ticks spent spawning and `64.80%` spent fully idle
+  - even in the better `5k` cases, the colony settled into `2 harvester / 7 worker` with `queueDepth 0` long before `RCL3`
+- Direct inspection of the sampled telemetry makes the failure mode more concrete:
+  - both sources are frequently remembered by many creeps at once, but only one or two creeps are actively harvesting at a given sample
+  - workers still spend heavy lifetime time in `harvest` and `move`, so the opener is paying a large direct-harvest travel tax rather than maintaining a cleaner source-to-spend pipeline
+  - harvesters accumulate thousands of `noTargetTicks` and both roles accumulate thousands of `withEnergyNoSpendTicks`, so energy is often present but not being converted efficiently into spawn starts or upgrade progress
+- After consulting the Screeps world-model references, the strongest interpretation is:
+  - the room is not near its source-income ceiling or its spawn-throughput ceiling
+  - a free `RCL2` capacity jump is therefore a second-order lever right now
+  - the next experiment should first keep sources hot and keep the queue alive longer before revisiting extension timing
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: if source assignment only counts actively gathering creeps and the spawn demand stays live until both sources are actively harvested, `sourceHarvestUtilizationPct` and `activeHarvestingSourceUptimePct` will improve materially.
+- Hypothesis B: if the queue stays alive while source activity is still incomplete, `spawnIdlePct` will fall and controller progress to `RCL3` will improve without any free-extension treatment.
+- Hypothesis C: if source-hot demand tuning improves source metrics but not controller progress, the remaining bottleneck is the direct-harvest travel loop and the next branch should split source sitters from runners instead of adding capacity.
+
+### Decision
+
+- `continue`
+- Replace the planned free-five-extension value test with this no-mutation idle baseline and move next to a source-hot idle-reduction experiment on the standard opener suite.
+
+## Entry `exp-2026-04-09-opener-source-hot-idle-reduction`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-09`
+
+### Hypothesis
+
+- The no-mutation idle baseline showed that the opener is leaving large amounts of source, creep, and spawn time unused before `RCL3`, while extension capacity remains completely unmonetized.
+- If the candidate keeps both sources actively harvested more consistently by removing stale source claims and by keeping pre-`RCL3` spawn demand alive until active source coverage is full, the room should push more energy into the controller without any free-extension treatment.
+- If that still fails, the next likely bottleneck is the direct-harvest travel model itself rather than spawn-demand tuning or room capacity.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Change tested:
+  - keep the standard `duel-basic` scenario with no free extensions or other room mutations on either side
+  - in source selection, stop counting workers that are in spend mode as source occupants so spending creeps do not keep claiming source slots while away from the source
+  - clear or ignore stale `sourceId` claims when a creep leaves gather mode so active-source coverage reflects actual gatherers rather than remembered assignments
+  - feed active source coverage into pre-`RCL3` spawn demand so the queue does not collapse to `0` while one or both sources still lack active harvesting coverage
+  - keep body sizing and extension timing unchanged in this branch so the result isolates idle reduction before any body-economy or extension-economy rewrite
+- Key evaluation focus:
+  - `spawnIdlePct`
+  - `creepIdlePct`
+  - `sourceHarvestUtilizationPct`
+  - `activeHarvestingSourceUptimePct`
+  - `controllerProgressToRCL3Pct`
+  - `spawnWaitingForSufficientEnergyPct`
+  - whether representative `5k` runs still collapse to `2 harvester / 7 worker` with `queueDepth 0` before both sources stay actively harvested
+
+### Command
+
+- `node src/cli.ts experiment run suite --manifest ../../experiments/suites/milestone-1-opener.yaml --baseline-source git:HEAD --baseline-package bots/basic --candidate-source workspace --candidate-package bots/basic`
+- Suite ID: `2026-04-09T22-12-09-866Z-4b8d48d0`
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-09T22-12-09-868Z-e64819f4`
+  - `train-b-2k`: `2026-04-09T22-14-02-595Z-879c45b7`
+  - `train-c-5k`: `2026-04-09T22-15-53-590Z-752ca684`
+  - `train-d-5k`: `2026-04-09T22-19-26-925Z-47f7c197`
+  - `holdout-a-2k`: `2026-04-09T22-22-59-924Z-59a8974d`
+  - `holdout-b-5k`: `2026-04-09T22-24-53-226Z-7a3b2ab7`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: improved from `18.61` to `21.32`
+  - `spawnWaitingForSufficientEnergyPct`: regressed from `26.99%` to `27.19%` (`+0.20 pts`, `+0.74%`)
+  - idle and source pipeline metrics:
+    - `spawnIdlePct`: `64.81% -> 63.55%`
+    - `creepIdlePct`: `19.88% -> 18.90%`
+    - `sourceHarvestEnergyPerTick`: `3.76 -> 4.41`
+    - `sourceHarvestUtilizationPct`: `18.78 -> 22.03`
+    - `activeHarvestingSourceCoveragePct`: `61.04 -> 64.98`
+    - `activeHarvestingSourceUptimePct`: `43.31 -> 51.18`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: improved from `24.96` to `27.32`
+  - `spawnWaitingForSufficientEnergyPct`: regressed from `25.29%` to `27.71%` (`+2.42 pts`, `+9.57%`)
+  - idle and source pipeline metrics:
+    - `spawnIdlePct`: `66.56% -> 63.38%`
+    - `creepIdlePct`: `18.55% -> 18.58%`
+    - `sourceHarvestEnergyPerTick`: `4.23 -> 4.59`
+    - `sourceHarvestUtilizationPct`: `21.18 -> 22.95`
+    - `activeHarvestingSourceCoveragePct`: `65.11 -> 67.97`
+    - `activeHarvestingSourceUptimePct`: `46.18 -> 51.19`
+- Gate result:
+  - training failed because only `1/3` primary metrics improved
+  - holdout failed because `spawnWaitingForSufficientEnergyPct` regressed more than `5%`
+  - overall suite result: `candidate-failed-gates`
+- Notable behavior:
+  - `firstExtensionTick` and `allRcl2ExtensionsTick` stayed `null` in all `6/6` cases, confirming this remained a no-extension opener run
+  - the treatment materially improved intake and controller progress on both cohorts without fixing spawn-bank timing:
+    - `train-c-5k`: `controllerProgressToRCL3Pct 34.79 -> 39.27`; `sourceHarvestUtilizationPct 22.16 -> 25.84`; `activeHarvestingSourceUptimePct 50.56 -> 60.71`
+    - `holdout-b-5k`: `controllerProgressToRCL3Pct 41.66 -> 45.82`; `sourceHarvestUtilizationPct 26.76 -> 29.23`; `activeHarvestingSourceUptimePct 60.04 -> 67.79`
+  - representative `5k` runs no longer finished at the old `2 harvester / 7 worker` shape:
+    - `train-c-5k` final sample: baseline `2 harvester / 7 worker`; candidate `2 harvester / 9 worker`
+    - `holdout-b-5k` final sample: baseline `2 harvester / 7 worker`; candidate `2 harvester / 9 worker`
+  - despite the larger workforce, the queue still collapsed to `0` by the end of both representative `5k` runs:
+    - `train-c-5k`: baseline `queueDepth 0`, `isSpawning false`, `activeHarvestingStaffed 2`; candidate `queueDepth 0`, `isSpawning false`, `activeHarvestingStaffed 1`
+    - `holdout-b-5k`: baseline `queueDepth 0`, `isSpawning false`, `activeHarvestingStaffed 1`; candidate `queueDepth 0`, `isSpawning false`, `activeHarvestingStaffed 1`
+  - end-state counters suggest the candidate often produced more energy than it could convert cleanly into new spawn starts:
+    - `train-c-5k`: `withEnergyNoSpendTicks harvester 4374 -> 4509`; `worker 4806 -> 5924`; `noTargetTicks.harvester 2148 -> 1717`
+    - `holdout-b-5k`: `withEnergyNoSpendTicks harvester 3456 -> 3519`; `worker 3451 -> 4449`; `noTargetTicks.harvester 3029 -> 2385`
+
+### Interpretation
+
+- This experiment partially supported the hypothesis.
+- The source-hot treatment achieved real upstream improvement:
+  - both cohorts improved `sourceHarvestEnergyPerTick`, `sourceHarvestUtilizationPct`, `activeHarvestingSourceCoveragePct`, and `activeHarvestingSourceUptimePct`
+  - both cohorts also improved `controllerProgressToRCL3Pct`
+- But the suite still failed because the treatment did not solve spawn-bank availability:
+  - `spawnWaitingForSufficientEnergyPct` regressed slightly on train and materially on holdout
+  - representative `5k` runs still drained `queueDepth` to `0` and sat idle at the spawn by the end of the run
+- After checking the result against Screeps world constraints, the strongest interpretation is:
+  - the room is still far below the owned-room two-source harvest ceiling of `20 e/t`, so this is not a source-cap ceiling yet
+  - spawning depends on `room.energyAvailable` in spawn/extensions, not on energy sitting in creep carry stores
+  - the candidate likely improved gross energy production and controller conversion, but the extra pre-`RCL3` demand pressure over-shifted energy into worker bodies and carried energy instead of keeping the spawn bank ready for the next full creep cost
+- The representative `5k` end states fit that read:
+  - the colony expanded from `2 harvester / 7 worker` to `2 harvester / 9 worker`
+  - controller progress rose strongly
+  - but worker `withEnergyNoSpendTicks` also rose sharply, especially on train, which is consistent with energy being present without turning into timely spawn starts
+- Holdout regressed harder on spawn waiting than train, which suggests the extra keepalive demand had less untapped upside there and more downside from bank depletion.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: keep the stale-source-claim cleanup, but remove the rule that keeps pre-`RCL3` spawn demand alive until active source coverage is full; source metrics should retain part of the gain while `spawnWaitingForSufficientEnergyPct` recovers.
+- Hypothesis B: if cleanup-only still loses most of the source-side improvement, the main lever was demand pressure rather than claim cleanup, and the next branch should add a bank-aware demand gate instead of removing the keepalive entirely.
+- Hypothesis C: if source-side gains persist but spawn waiting still fails after the ablation, the next bottleneck is explicit spawn-bank refill timing rather than source assignment or direct-harvest source residency.
+
+### Decision
+
+- `continue`
+- Keep the lesson that source-hot demand improves throughput, but next isolate the source-claim cleanup from the extra spawn-demand keepalive so we can test whether the claim cleanup carries the gain without the holdout spawn-wait regression.
+
+## Entry `exp-2026-04-09-opener-source-claim-cleanup-only`
 
 - Status: `planned`
 - Owner: `OpenCode`
@@ -2616,22 +2841,24 @@ node src/cli.ts experiment run suite \
 
 ### Hypothesis
 
-- The completed free-first-extension run proved that one free completed extension is value-neutral to slightly negative even when it comes online exactly at `RCL2` and carries zero build tax.
-- That result implies the single-slot `300 -> 350` capacity step is below the threshold that changes the opener.
-- If the room instead receives all five completed `RCL2` extensions immediately at `RCL2`, the full `300 -> 550` room-capacity jump may finally be large enough to change spawn liquidity, body cadence, and controller progress.
+- The completed source-hot idle-reduction run improved source coverage, harvest utilization, and controller progress, but it failed the suite gate because the extra pre-`RCL3` demand pressure appears to have pulled energy out of the spawn bank at the wrong times.
+- If the next candidate keeps the stale-source-claim cleanup while removing the active-coverage keepalive demand rule, it should preserve some of the source-side gains while reducing `spawnWaitingForSufficientEnergyPct`, especially on holdout.
+- If both source metrics and spawn waiting regress together, the current gains depended mainly on the extra demand pressure and the next branch should add an explicit bank-aware gate instead of a full removal.
 
 ### Experiment
 
 - Variant or branch: `git:HEAD` vs `workspace`
 - Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
 - Planned change:
-  - keep baseline and candidate bot behavior identical so the treatment stays value-only
-  - when the candidate room reaches `RCL2`, grant all five completed owned extensions at valid tiles near the spawn
-  - keep all extension build spend at zero so the experiment isolates full-band capacity value rather than construction economics
-  - keep workforce-demand logic otherwise unchanged so the result answers whether full `RCL2` capacity matters at all before any further strategy rewrite
+  - keep the standard `duel-basic` scenario with no free extensions or other room mutations on either side
+  - keep the source-selection cleanup that ignores spend-mode source claims and clears stale `sourceId` memory when creeps leave gather mode
+  - remove the extra pre-`RCL3` worker-demand pressure that keeps queue demand alive until active source coverage is full
+  - leave body sizing, extension timing, and post-`RCL3` logic unchanged so the run isolates claim cleanup from queue-pressure effects
 - Key evaluation focus:
   - `spawnWaitingForSufficientEnergyPct`
   - `controllerProgressToRCL3Pct`
-  - `T_RCL3`
-  - `allRcl2ExtensionsTick`
-  - whether representative `5k` runs finally diverge from the baseline `2 harvester / 7 worker` shape or materially improve upgrade spend
+  - `sourceHarvestUtilizationPct`
+  - `activeHarvestingSourceUptimePct`
+  - `spawnIdlePct`
+  - whether representative `5k` runs fall back to `2 harvester / 7 worker` or retain better source metrics without the `2 harvester / 9 worker` overshoot
