@@ -1,4 +1,5 @@
 import { findClosestConstructionSite, findClosestEnergyDrop, isSourceAdjacentPosition, moveToTarget, pickupEnergyDrop, positionsAreNear, updateWorkingState } from "../creep-utils";
+import { inspectSpawnBankPressure } from "../spawn";
 import { recordTelemetryAction, recordTelemetryTargetFailure } from "../telemetry-state";
 
 type RefillTarget = StructureSpawn | StructureExtension;
@@ -27,6 +28,14 @@ export function runCourier(creep: Creep): void {
     });
     if (result === ERR_NOT_IN_RANGE) {
       moveToTarget(creep, refillTarget);
+    }
+    return;
+  }
+
+  const bankReserveTarget = findBankReserveTarget(creep);
+  if (bankReserveTarget) {
+    if (!positionsAreNear(creep.pos, bankReserveTarget.pos)) {
+      moveToTarget(creep, bankReserveTarget);
     }
     return;
   }
@@ -67,6 +76,47 @@ function findRefillTarget(creep: Creep): RefillTarget | null {
   return creep.pos.findClosestByPath(targets);
 }
 
+function findBankReserveTarget(creep: Creep): StructureSpawn | null {
+  if (!shouldHoldCourierForSpawnFeedFloor(creep)) {
+    return null;
+  }
+
+  const spawns = creep.room.find(FIND_MY_SPAWNS);
+  const spawn = creep.pos.findClosestByPath(spawns);
+  if (!spawn) {
+    return null;
+  }
+
+  return hasOtherSpawnAdjacentLoadedCourier(creep, spawn) ? null : spawn;
+}
+
+function shouldHoldCourierForSpawnFeedFloor(creep: Creep): boolean {
+  if (!isPreRcl3OwnedRoom(creep.room)) {
+    return false;
+  }
+
+  const admissions = Memory.telemetry?.spawnAdmissions;
+  if (!admissions?.firstCourier3 || admissions.firstWorker4) {
+    return false;
+  }
+
+  const pressure = inspectSpawnBankPressure(creep.room);
+  return pressure.totalUnmetDemand > 0
+    && pressure.queueHeadCost !== null
+    && creep.room.energyAvailable >= pressure.queueHeadCost;
+}
+
+function hasOtherSpawnAdjacentLoadedCourier(creep: Creep, spawn: StructureSpawn): boolean {
+  return Object.values(Game.creeps).some((candidate) => (
+    candidate.name !== creep.name
+    && candidate.memory.homeRoom === creep.memory.homeRoom
+    && candidate.memory.role === "courier"
+    && candidate.memory.working
+    && getStoredEnergy(candidate) > 0
+    && positionsAreNear(candidate.pos, spawn.pos)
+  ));
+}
+
 function findHandoffTarget(creep: Creep): HandoffTarget | null {
   const workers = Object.values(Game.creeps).filter(
     (candidate) => candidate.memory.homeRoom === creep.memory.homeRoom && candidate.memory.role === "worker"
@@ -104,4 +154,12 @@ function findHandoffTarget(creep: Creep): HandoffTarget | null {
     pos: controller.pos,
     targetKey: controller.id
   };
+}
+
+function isPreRcl3OwnedRoom(room: Room): boolean {
+  return Boolean(room.controller?.my && room.controller.level < 3);
+}
+
+function getStoredEnergy(creep: Creep): number {
+  return typeof creep.store?.[RESOURCE_ENERGY] === "number" ? creep.store[RESOURCE_ENERGY] : 0;
 }

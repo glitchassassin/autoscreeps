@@ -3892,3 +3892,127 @@ node src/cli.ts experiment run suite \
 - `continue`
 - Keep this result as a clean causal failure that rules out the `courier #3 alone` branch. Do not describe it as a promotable improvement.
 - Next planned experiment: `exp-2026-04-10-opener-source-sitter-runner-courier3-worker3-hard-spawn-feed-floor`.
+
+## Entry `exp-2026-04-10-opener-source-sitter-runner-courier3-worker3-hard-spawn-feed-floor`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-10`
+- Type: `diagnostic/ablation`
+- Dominant bottleneck: `forced heavy-map 2/3/3 still lacks banked spawn energy at the right tick; a staged courier near spawn was too weak to change that one-spawn, full-cost-up-front constraint consistently`
+- Relevant theoretical headroom:
+  - owned two-source gross harvest ceiling remains `20 e/t`, while realized harvest in this branch stayed around `6.42-6.62 e/t`
+  - pre-`RCL7` rooms still have one serial spawn, full creep cost is paid up front, and only banked spawn/extension energy can start the next spawn
+  - dropped source energy still decays while stranded, but the failed `2/3/3` baseline was already losing more from bank timing and upgrade spend than from a harvest collapse
+
+### Hypothesis
+
+- The completed worker4-dependency ablation showed that sustained `courier #3` alone does not rescue the heavy-haul maps when the room is held at `2/3/3`.
+- If that forced `2/3/3` regime mainly fails because courier energy is being allocated away from the spawn bank too early, then a hard spawn-feed floor should recover a substantial fraction of the lost heavy-map `spawnWaitingForSufficientEnergyPct` and `controllerProgressToRCL3Pct` without changing courier admission.
+- If the rescue still fails, then the remaining missing complement is not simple courier staging near spawn; it is more likely `worker #4`, the broader `2/3/4` regime, or a stronger banked-energy reserve lever.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/exp-2026-04-10-opener-source-sitter-runner-courier3-worker3-hard-spawn-feed-floor.yaml`
+- Positive and negative controls:
+  - use `train-d-5k` and `holdout-b-5k` as positive controls because the earlier heavy-haul sustain wins only appeared on those maps once `courier #3` was sustained
+  - use `train-c-5k` as the negative control because it stayed worker-first and flat in the earlier focused runs despite sharing the same `5k` horizon
+- Change tested:
+  - keep the forced heavy-haul `2/3/3` branch from the completed worker4-dependency ablation unchanged on the baseline side
+  - on the candidate, keep the same courier admission and the same `worker #4` block so the room still lives in `2/3/3`
+  - add a hard pre-`RCL3` spawn-feed floor in that regime:
+    - when queued demand still exists and the room has already reached the next-spawn affordability threshold, keep one loaded courier staged at the spawn instead of sending every loaded courier into worker handoff immediately
+    - leave post-`RCL3` logic unchanged so the run isolates the staging-based spawn-feed rescue rather than a broader architecture rewrite
+- Key evaluation focus:
+  - `controllerProgressToRCL3Pct`
+  - `spawnWaitingForSufficientEnergyPct`
+  - `spawnWaitingWithSpawnAdjacentLoadedCourierTicks`
+  - `bankReserveRecoveryLatencyTotal / bankReserveRecoveryLatencySamples`
+  - delivered energy to `spawn` and `worker_handoff`
+  - `sourceDropToBankLatencyTotal / sourceDropToBankLatencySamples`
+  - exact first `courier #3` and `worker #4` admission ticks plus sampled `2/3/3` dwell so the run can separate rescue policy from a composition drift
+- Command:
+  - `node src/cli.ts experiment run suite --manifest ../../experiments/suites/exp-2026-04-10-opener-source-sitter-runner-courier3-worker3-hard-spawn-feed-floor.yaml --baseline-source git:HEAD --baseline-package bots/basic --candidate-source workspace --candidate-package bots/basic`
+- Suite ID: `2026-04-10T17-54-57-475Z-c14611f2`
+- Cases and run IDs:
+  - `train-c-5k`: `2026-04-10T17-54-57-477Z-32b32440`
+  - `train-d-5k`: `2026-04-10T17-58-42-761Z-7b9dfc20`
+  - `holdout-b-5k`: `2026-04-10T18-02-40-432Z-58743185`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+- All `3/3` focused-suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: improved from `30.45` to `30.51`
+  - `spawnWaitingForSufficientEnergyPct`: regressed from `14.00%` to `14.43%` (`+0.43 pts`, about `+3.07%`)
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: improved from `25.86` to `26.50`
+  - `spawnWaitingForSufficientEnergyPct`: improved from `18.15%` to `12.99%` (`-5.16 pts`, about `-28.43%`)
+- Gate result:
+  - training failed because only `1/3` primary metrics improved
+  - holdout passed because the comparable primary metrics improved and no regression crossed the `5%` ceiling
+  - overall focused-suite result: `candidate-failed-gates`
+- Notable behavior:
+  - the negative control stayed flat exactly as intended:
+    - `train-c-5k`: `controllerProgressToRCL3Pct 34.68 -> 34.67`; `spawnWaitingForSufficientEnergyPct 10.42% -> 10.43%`
+    - `train-c-5k`: final role counts `2/2/4 -> 2/2/4`; delivered energy `spawn 5904 -> 5904`; `worker_handoff 21896 -> 21896`
+  - the positive controls kept the same forced `2/3/3` regime and admission timing on both sides:
+    - `train-d-5k`: `firstCourier3 779 -> 780`; `firstWorker4 null -> null`; sampled `2/3/3` dwell `113 -> 112`
+    - `holdout-b-5k`: `firstCourier3 706 -> 707`; `firstWorker4 null -> null`; sampled `2/3/3` dwell `118 -> 124`
+  - the treatment-realization check was only small or mixed, not a strong rescue:
+    - `train-d-5k`: `spawnWaitingWithSpawnAdjacentLoadedCourierTicks 14 -> 14`; `bankReserveRecoveryLatency 75.23 -> 85.58`
+    - `holdout-b-5k`: `spawnWaitingWithSpawnAdjacentLoadedCourierTicks 15 -> 17`; `bankReserveRecoveryLatency 56.17 -> 39.47`
+  - `train-d-5k` stayed in the same overall regime despite a mild latency improvement:
+    - `controllerProgressToRCL3Pct 26.23 -> 26.34`; `spawnWaitingForSufficientEnergyPct 17.57% -> 18.43%`
+    - `sourceDropToBankLatency 546.05 -> 474.34`
+    - delivered energy `spawn 5820 -> 5797`; `worker_handoff 20580 -> 21003`
+    - `energySpentOnUpgrade 11816 -> 11864`
+  - `holdout-b-5k` improved on the primary metrics, but the underlying transport and delivery picture stayed mixed rather than looking like a clean spawn-bank rescue:
+    - `controllerProgressToRCL3Pct 25.86 -> 26.50`; `spawnWaitingForSufficientEnergyPct 18.15% -> 12.99%`
+    - `sourceDropToBankLatency 472.03 -> 679.22`
+    - delivered energy `spawn 5991 -> 5866`; `worker_handoff 19209 -> 20934`
+    - `energySpentOnUpgrade 11648 -> 11937`
+  - relative to the earlier sustained `2/3/4` heavy-haul baseline, the rescue missed the minimum meaningful effect:
+    - `train-d-5k`: earlier `2/3/4` progress was `32.54`; this candidate only reached `26.34`
+    - `holdout-b-5k`: earlier `2/3/4` progress was `32.93`; this candidate only reached `26.50`
+
+### Interpretation
+
+- This experiment did not provide a clean rescue of forced `2/3/3`.
+- The result is best recorded as a weak or under-realized treatment, not as a meaningful success:
+  - the negative control stayed flat, so there was no broad hidden branch change
+  - the positive controls stayed in the intended `2/3/3` regime, so the comparison was not confounded by reintroducing `worker #4`
+  - but the manipulation check barely moved on `train-d-5k` and only moved modestly on `holdout-b-5k`
+- Against Screeps hard constraints, that weak realization matters.
+- A courier staged near spawn is not the same thing as having enough banked spawn/extension energy ready when the spawn checks the next creep's full cost.
+- Since only banked room energy can start the next spawn, this staging rule was a weaker lever than the causal question really asked for.
+- Existing metrics were sufficient to explain the failure mode without rerunning the same staging rule:
+  - `spawnWaitingWithSpawnAdjacentLoadedCourierTicks` showed that the intended bank-adjacent reserve barely changed on one positive control and only slightly changed on the other
+  - `train-d-5k` stayed in the same performance regime despite the candidate
+  - `holdout-b-5k` improved on primary metrics, but the candidate still delivered less energy to `spawn`, more to `worker_handoff`, and much worse source-drop-to-bank latency
+- After consulting the Screeps world-model expert with only the goal, setup, observed behavior, metrics, and results, the strongest external read matched the run data:
+  - this was a weak staging treatment rather than a clean proof that spawn-bank allocation inside `2/3/3` is solved
+  - the next stronger test is a true banked-energy reserve keyed to the next queued creep cost, not another courier-staging variant
+- Result ruled out:
+  - the specific `one staged courier near spawn` hard-feed-floor rescue is not a reliable first-order fix for forced heavy-haul `2/3/3`
+  - this run did not rule out a stronger banked spawn-reserve floor keyed to real queue-head affordability
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: if forced `2/3/3` uses a true banked spawn-reserve floor that keeps `spawn + extensions` at or above the next queued creep's cost before worker handoff, the heavy maps should recover more of the lost spawn waiting and controller progress than this weak staging rule did.
+- Hypothesis B: if that banked reserve floor still fails, then `worker #4` or the broader `2/3/4` operating regime is the necessary heavy-map complement, not just better bank allocation inside `2/3/3`.
+- Hypothesis C: add `spawnBlockedDespiteAdjacentCourierClosingDeficitTicks` before that next run so the experiment can directly measure the exact waiting ticks where an adjacent courier could have closed the bank deficit but no spawn started.
+
+### Decision
+
+- `continue`
+- Keep this result as a mixed, under-realized diagnostic rather than a promotable improvement or a clean causal rescue.
+- Do not chain another staging-only tweak from it.
+- Next planned experiment: `exp-2026-04-10-opener-source-sitter-runner-courier3-worker3-banked-spawn-reserve-floor`.
