@@ -1,4 +1,4 @@
-import { summarizeSpawnDemand } from "./spawn";
+import { inspectPreRcl3ExtraWorkerGate, inspectSpawnBankPressure, type ExtraWorkerGateState } from "./spawn";
 
 let fallbackTelemetryState: TelemetryMemoryState | null = null;
 
@@ -11,6 +11,8 @@ export function ensureTelemetryState(): TelemetryMemoryState {
       debugError: null,
       rcl3Tick: null,
       loop: createLoopState(),
+      bank: createBankState(),
+      spawnAdmissions: createSpawnAdmissionsState(),
       creeps: {},
       drops: {},
       sources: {}
@@ -26,17 +28,23 @@ export function ensureTelemetryState(): TelemetryMemoryState {
     debugError: null,
     rcl3Tick: null,
     loop: createLoopState(),
+    bank: createBankState(),
+    spawnAdmissions: createSpawnAdmissionsState(),
     creeps: {},
     drops: {},
     sources: {}
   };
 
   Memory.telemetry.loop ??= createLoopState();
+  Memory.telemetry.bank ??= createBankState();
+  Memory.telemetry.spawnAdmissions ??= createSpawnAdmissionsState();
   Memory.telemetry.debugError ??= null;
   Memory.telemetry.creeps ??= {};
   Memory.telemetry.drops ??= {};
   Memory.telemetry.sources ??= {};
   normalizeLoopState(Memory.telemetry.loop);
+  normalizeBankState(Memory.telemetry.bank);
+  normalizeSpawnAdmissionsState(Memory.telemetry.spawnAdmissions);
 
   for (const sourceState of Object.values(Memory.telemetry.sources)) {
     sourceState.successfulHarvestTicks ??= 0;
@@ -90,12 +98,17 @@ export function recordTelemetryAction(
 
     if (action === "pickup") {
       creepState.lastPickupTick = Game.time;
+      creepState.lastBankPickupTick ??= Game.time;
       if (options.dropId) {
         const dropState = state.drops?.[options.dropId];
         if (dropState && !dropState.pickupLatencyRecorded) {
           loop.sourceDropPickupLatencyTotal += Game.time - dropState.firstSeenTick;
           loop.sourceDropPickupLatencySamples += 1;
           dropState.pickupLatencyRecorded = true;
+        }
+        if (dropState) {
+          creepState.lastSourcePickupTick ??= Game.time;
+          creepState.lastSourceDropFirstSeenTick ??= dropState.firstSeenTick;
         }
       }
     }
@@ -104,6 +117,9 @@ export function recordTelemetryAction(
       loop.pickupToSpendLatencyTotal += Game.time - creepState.lastPickupTick;
       loop.pickupToSpendLatencySamples += 1;
       creepState.lastPickupTick = null;
+      creepState.lastBankPickupTick = null;
+      creepState.lastSourcePickupTick = null;
+      creepState.lastSourceDropFirstSeenTick = null;
     }
   } else {
     increment(loop.actionFailures, `${role}.${action}.${result}`);
@@ -142,13 +158,16 @@ export function recordTelemetryTaskSelection(role: string, task: string): void {
 export function observeTelemetryTick(primarySpawn: StructureSpawn | null = null): void {
   const state = ensureTelemetryState();
   syncDropRuntimeState(state);
-  observeCreeps(state);
-  observeSpawnAndSourcePipeline(state, primarySpawn);
+  const bankStateAtStart = cloneBankState(state.bank ?? createBankState());
+  observeCreeps(state, bankStateAtStart);
+  observeSpawnAndSourcePipeline(state, primarySpawn, bankStateAtStart);
   pruneTelemetryState(state);
 }
 
-function observeCreeps(state: TelemetryMemoryState): void {
+function observeCreeps(state: TelemetryMemoryState, bankStateAtStart: TelemetryBankRuntimeState): void {
   const loop = state.loop!;
+  const loadedCouriersAtStart = new Set(bankStateAtStart.loadedCourierNames);
+  let loadedCourierIgnoredBankWhileLow = false;
 
   for (const [creepName, creep] of Object.entries(Game.creeps)) {
     const creepState = ensureCreepRuntimeState(creepName, creep, state) as ObservedTelemetryCreepState;
@@ -204,6 +223,24 @@ function observeCreeps(state: TelemetryMemoryState): void {
 
       if (action === "transfer" && pendingAction.targetType && spentEnergy > 0) {
         add(loop.deliveredEnergyByTargetType, pendingAction.targetType, spentEnergy);
+
+        if (bankStateAtStart.wasLow) {
+          add(loop.bankLowDeliveredEnergyByTargetType, pendingAction.targetType, spentEnergy);
+        }
+
+        if (isBankTargetType(pendingAction.targetType)) {
+          if (creepState.lastBankPickupTick !== null) {
+            loop.pickupToBankLatencyTotal += Game.time - creepState.lastBankPickupTick;
+            loop.pickupToBankLatencySamples += 1;
+            creepState.lastBankPickupTick = null;
+          }
+          if (creepState.lastSourcePickupTick !== null && creepState.lastSourceDropFirstSeenTick !== null) {
+            loop.sourceDropToBankLatencyTotal += Game.time - creepState.lastSourceDropFirstSeenTick;
+            loop.sourceDropToBankLatencySamples += 1;
+            creepState.lastSourcePickupTick = null;
+            creepState.lastSourceDropFirstSeenTick = null;
+          }
+        }
       }
       if (action === "build" && spentEnergy > 0) {
         loop.energySpentOnBuild += spentEnergy;
@@ -211,6 +248,10 @@ function observeCreeps(state: TelemetryMemoryState): void {
       if (action === "upgrade" && spentEnergy > 0) {
         loop.energySpentOnUpgrade += spentEnergy;
       }
+    }
+
+    if (bankStateAtStart.wasLow && loadedCouriersAtStart.has(creepName) && !isBankDirectedAction(currentAction)) {
+      loadedCourierIgnoredBankWhileLow = true;
     }
 
     increment(loop.phaseTicks, `${role}.${resolvePhase(creepState, creep)}`);
@@ -224,6 +265,10 @@ function observeCreeps(state: TelemetryMemoryState): void {
     creepState.lastWorking = creep.memory.working;
     creepState.pendingAction = currentAction;
     delete creepState.currentAction;
+  }
+
+  if (bankStateAtStart.wasLow && loadedCourierIgnoredBankWhileLow) {
+    loop.loadedCourierIdleWhileBankLowTicks += 1;
   }
 }
 
@@ -275,7 +320,10 @@ function ensureCreepRuntimeState(creepName: string, creep: Creep, state: Telemet
     lastSuccessfulAction: null,
     lastTarget: null,
     targetSwitches: 0,
-    lastPickupTick: null
+    lastPickupTick: null,
+    lastBankPickupTick: null,
+    lastSourcePickupTick: null,
+    lastSourceDropFirstSeenTick: null
   };
 
   const creepState = state.creeps![creepName]!;
@@ -292,11 +340,36 @@ function ensureSourceRuntimeState(sourceId: string, state: TelemetryMemoryState)
   return state.sources![sourceId]!;
 }
 
+type BankObservation = {
+  isLow: boolean;
+  loadedCourierNames: string[];
+  spawnAdjacentLoadedCourierNames: string[];
+  workerWithEnergyNames: string[];
+  sourceBacklog: number;
+  extraWorkerGate: ExtraWorkerGateState | null;
+};
+
 function normalizeLoopState(loop: TelemetryLoopState): void {
+  loop.pickupToBankLatencyTotal ??= 0;
+  loop.pickupToBankLatencySamples ??= 0;
+  loop.sourceDropToBankLatencyTotal ??= 0;
+  loop.sourceDropToBankLatencySamples ??= 0;
   loop.spawnObservedTicks ??= 0;
   loop.spawnIdleTicks ??= 0;
   loop.spawnSpawningTicks ??= 0;
   loop.spawnWaitingForSufficientEnergyTicks ??= 0;
+  loop.bankLowObservedTicks ??= 0;
+  loop.bankReserveBreachCount ??= 0;
+  loop.bankReserveRecoveryLatencyTotal ??= 0;
+  loop.bankReserveRecoveryLatencySamples ??= 0;
+  loop.spawnWaitingWithLoadedCourierTicks ??= 0;
+  loop.spawnWaitingWithSpawnAdjacentLoadedCourierTicks ??= 0;
+  loop.spawnWaitingWithWorkerEnergyTicks ??= 0;
+  loop.spawnWaitingWithSourceBacklogTicks ??= 0;
+  loop.loadedCourierIdleWhileBankLowTicks ??= 0;
+  loop.extraWorkerGateBlockedTicks ??= 0;
+  loop.extraWorkerGateOpenReasonCounts ??= {};
+  loop.bankLowDeliveredEnergyByTargetType ??= {};
   loop.sourceObservedTicks ??= 0;
   loop.sourceTotalTicks ??= 0;
   loop.sourceStaffedTicks ??= 0;
@@ -307,20 +380,86 @@ function normalizeLoopState(loop: TelemetryLoopState): void {
   loop.activeHarvestingSourceFullyStaffedTicks ??= 0;
 }
 
-function observeSpawnAndSourcePipeline(state: TelemetryMemoryState, primarySpawn: StructureSpawn | null): void {
+function normalizeBankState(bank: TelemetryBankRuntimeState): void {
+  bank.wasLow ??= false;
+  bank.lowTickStartedAt ??= null;
+  bank.loadedCourierNames ??= [];
+  bank.spawnAdjacentLoadedCourierNames ??= [];
+  bank.workerWithEnergyNames ??= [];
+  bank.sourceBacklog ??= 0;
+}
+
+function normalizeSpawnAdmissionsState(admissions: TelemetrySpawnAdmissionsState): void {
+  admissions.firstCourier3 ??= null;
+  admissions.firstWorker4 ??= null;
+}
+
+function observeSpawnAndSourcePipeline(
+  state: TelemetryMemoryState,
+  primarySpawn: StructureSpawn | null,
+  bankStateAtStart: TelemetryBankRuntimeState
+): void {
   const loop = state.loop!;
   const spawn = primarySpawn ?? findPrimarySpawn();
+  const bank = state.bank ?? createBankState();
+  const bankObservation = summarizeBankObservation(spawn?.room ?? null);
+
   if (spawn) {
+    const spawnPressure = inspectSpawnBankPressure(spawn.room);
     loop.spawnObservedTicks += 1;
 
     if (spawn.spawning) {
       loop.spawnSpawningTicks += 1;
-    } else if (summarizeSpawnDemand(spawn.room).totalUnmetDemand > 0) {
+    } else if (spawnPressure.totalUnmetDemand > 0) {
       loop.spawnWaitingForSufficientEnergyTicks += 1;
     } else {
       loop.spawnIdleTicks += 1;
     }
+
+    if (bankStateAtStart.wasLow) {
+      loop.bankLowObservedTicks += 1;
+
+      if (bankStateAtStart.loadedCourierNames.length > 0) {
+        loop.spawnWaitingWithLoadedCourierTicks += 1;
+      }
+      if (bankStateAtStart.spawnAdjacentLoadedCourierNames.length > 0) {
+        loop.spawnWaitingWithSpawnAdjacentLoadedCourierTicks += 1;
+      }
+      if (bankStateAtStart.workerWithEnergyNames.length > 0) {
+        loop.spawnWaitingWithWorkerEnergyTicks += 1;
+      }
+      if (bankStateAtStart.sourceBacklog > 0) {
+        loop.spawnWaitingWithSourceBacklogTicks += 1;
+      }
+    }
+
+    if (!bankStateAtStart.wasLow && bankObservation.isLow) {
+      loop.bankReserveBreachCount += 1;
+      bank.lowTickStartedAt = Game.time;
+    } else if (bankStateAtStart.wasLow && !bankObservation.isLow) {
+      if (bankStateAtStart.lowTickStartedAt !== null) {
+        loop.bankReserveRecoveryLatencyTotal += Game.time - bankStateAtStart.lowTickStartedAt;
+        loop.bankReserveRecoveryLatencySamples += 1;
+      }
+      bank.lowTickStartedAt = null;
+    } else if (bankObservation.isLow) {
+      bank.lowTickStartedAt = bankStateAtStart.lowTickStartedAt;
+    }
+
+    if (bankObservation.extraWorkerGate?.blocked) {
+      loop.extraWorkerGateBlockedTicks += 1;
+    }
+    for (const reason of bankObservation.extraWorkerGate?.openReasons ?? []) {
+      increment(loop.extraWorkerGateOpenReasonCounts, reason);
+    }
   }
+
+  bank.wasLow = bankObservation.isLow;
+  bank.loadedCourierNames = bankObservation.loadedCourierNames;
+  bank.spawnAdjacentLoadedCourierNames = bankObservation.spawnAdjacentLoadedCourierNames;
+  bank.workerWithEnergyNames = bankObservation.workerWithEnergyNames;
+  bank.sourceBacklog = bankObservation.sourceBacklog;
+  state.bank = bank;
 
   const coverage = summarizeCurrentSourceCoverage();
   if (coverage.total <= 0) {
@@ -430,10 +569,26 @@ function createLoopState(): TelemetryLoopState {
     sourceDropPickupLatencySamples: 0,
     pickupToSpendLatencyTotal: 0,
     pickupToSpendLatencySamples: 0,
+    pickupToBankLatencyTotal: 0,
+    pickupToBankLatencySamples: 0,
+    sourceDropToBankLatencyTotal: 0,
+    sourceDropToBankLatencySamples: 0,
     spawnObservedTicks: 0,
     spawnIdleTicks: 0,
     spawnSpawningTicks: 0,
     spawnWaitingForSufficientEnergyTicks: 0,
+    bankLowObservedTicks: 0,
+    bankReserveBreachCount: 0,
+    bankReserveRecoveryLatencyTotal: 0,
+    bankReserveRecoveryLatencySamples: 0,
+    spawnWaitingWithLoadedCourierTicks: 0,
+    spawnWaitingWithSpawnAdjacentLoadedCourierTicks: 0,
+    spawnWaitingWithWorkerEnergyTicks: 0,
+    spawnWaitingWithSourceBacklogTicks: 0,
+    loadedCourierIdleWhileBankLowTicks: 0,
+    extraWorkerGateBlockedTicks: 0,
+    extraWorkerGateOpenReasonCounts: {},
+    bankLowDeliveredEnergyByTargetType: {},
     sourceObservedTicks: 0,
     sourceTotalTicks: 0,
     sourceStaffedTicks: 0,
@@ -443,6 +598,115 @@ function createLoopState(): TelemetryLoopState {
     activeHarvestingSourceStaffedTicks: 0,
     activeHarvestingSourceFullyStaffedTicks: 0
   };
+}
+
+function createBankState(): TelemetryBankRuntimeState {
+  return {
+    wasLow: false,
+    lowTickStartedAt: null,
+    loadedCourierNames: [],
+    spawnAdjacentLoadedCourierNames: [],
+    workerWithEnergyNames: [],
+    sourceBacklog: 0
+  };
+}
+
+function createSpawnAdmissionsState(): TelemetrySpawnAdmissionsState {
+  return {
+    firstCourier3: null,
+    firstWorker4: null
+  };
+}
+
+function cloneBankState(bank: TelemetryBankRuntimeState): TelemetryBankRuntimeState {
+  return {
+    wasLow: bank.wasLow,
+    lowTickStartedAt: bank.lowTickStartedAt,
+    loadedCourierNames: [...bank.loadedCourierNames],
+    spawnAdjacentLoadedCourierNames: [...bank.spawnAdjacentLoadedCourierNames],
+    workerWithEnergyNames: [...bank.workerWithEnergyNames],
+    sourceBacklog: bank.sourceBacklog
+  };
+}
+
+function summarizeBankObservation(room: Room | null): BankObservation {
+  if (!room) {
+    return {
+      isLow: false,
+      loadedCourierNames: [],
+      spawnAdjacentLoadedCourierNames: [],
+      workerWithEnergyNames: [],
+      sourceBacklog: 0,
+      extraWorkerGate: null
+    };
+  }
+
+  const pressure = inspectSpawnBankPressure(room);
+  const refillTargets = room.find(FIND_MY_STRUCTURES, {
+    filter: (structure): structure is StructureSpawn | StructureExtension => {
+      if (structure.structureType !== STRUCTURE_SPAWN && structure.structureType !== STRUCTURE_EXTENSION) {
+        return false;
+      }
+
+      return structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
+    }
+  });
+  const loadedCourierNames: string[] = [];
+  const spawnAdjacentLoadedCourierNames: string[] = [];
+  const workerWithEnergyNames: string[] = [];
+
+  for (const [creepName, creep] of Object.entries(Game.creeps)) {
+    if (creep.memory.homeRoom !== room.name) {
+      continue;
+    }
+
+    if (creep.memory.role === "courier" && creep.memory.working && getCreepEnergy(creep) > 0) {
+      loadedCourierNames.push(creepName);
+      if (refillTargets.some((target) => positionsAreNear(creep.pos, target.pos))) {
+        spawnAdjacentLoadedCourierNames.push(creepName);
+      }
+    }
+
+    if (creep.memory.role === "worker" && getCreepEnergy(creep) > 0) {
+      workerWithEnergyNames.push(creepName);
+    }
+  }
+
+  return {
+    isLow: pressure.waitingForEnergy,
+    loadedCourierNames,
+    spawnAdjacentLoadedCourierNames,
+    workerWithEnergyNames,
+    sourceBacklog: countSourceBacklog(room),
+    extraWorkerGate: inspectPreRcl3ExtraWorkerGate(room)
+  };
+}
+
+function countSourceBacklog(room: Room): number {
+  const sources = room.find(FIND_SOURCES);
+  let total = 0;
+
+  for (const drop of room.find(FIND_DROPPED_RESOURCES, {
+    filter: (resource) => resource.resourceType === RESOURCE_ENERGY && resource.amount > 0
+  })) {
+    if (sources.some((source) => positionsAreNear(drop.pos, source.pos))) {
+      total += drop.amount;
+    }
+  }
+
+  return total;
+}
+
+function isBankTargetType(targetType: string | undefined): boolean {
+  return targetType === STRUCTURE_SPAWN || targetType === STRUCTURE_EXTENSION;
+}
+
+function isBankDirectedAction(action: TelemetryCreepActionState | undefined): boolean {
+  return Boolean(
+    action
+    && (action.action === "move" || action.action === "transfer")
+    && isBankTargetType(action.targetType)
+  );
 }
 
 function updateTargetSelection(

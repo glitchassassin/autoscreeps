@@ -28,10 +28,26 @@ declare global {
     sourceDropPickupLatencySamples: number;
     pickupToSpendLatencyTotal: number;
     pickupToSpendLatencySamples: number;
+    pickupToBankLatencyTotal: number;
+    pickupToBankLatencySamples: number;
+    sourceDropToBankLatencyTotal: number;
+    sourceDropToBankLatencySamples: number;
     spawnObservedTicks: number;
     spawnIdleTicks: number;
     spawnSpawningTicks: number;
     spawnWaitingForSufficientEnergyTicks: number;
+    bankLowObservedTicks: number;
+    bankReserveBreachCount: number;
+    bankReserveRecoveryLatencyTotal: number;
+    bankReserveRecoveryLatencySamples: number;
+    spawnWaitingWithLoadedCourierTicks: number;
+    spawnWaitingWithSpawnAdjacentLoadedCourierTicks: number;
+    spawnWaitingWithWorkerEnergyTicks: number;
+    spawnWaitingWithSourceBacklogTicks: number;
+    loadedCourierIdleWhileBankLowTicks: number;
+    extraWorkerGateBlockedTicks: number;
+    extraWorkerGateOpenReasonCounts: Record<string, number>;
+    bankLowDeliveredEnergyByTargetType: Record<string, number>;
     sourceObservedTicks: number;
     sourceTotalTicks: number;
     sourceStaffedTicks: number;
@@ -66,6 +82,9 @@ declare global {
     lastTarget: string | null;
     targetSwitches: number;
     lastPickupTick: number | null;
+    lastBankPickupTick: number | null;
+    lastSourcePickupTick: number | null;
+    lastSourceDropFirstSeenTick: number | null;
     currentAction?: TelemetryCreepActionState;
   }
 
@@ -87,9 +106,33 @@ declare global {
     rcl3Tick: number | null;
     debugError?: string | null;
     loop?: TelemetryLoopState;
+    bank?: TelemetryBankRuntimeState;
+    spawnAdmissions?: TelemetrySpawnAdmissionsState;
     creeps?: Record<string, TelemetryCreepRuntimeState>;
     drops?: Record<string, TelemetryDropRuntimeState>;
     sources?: Record<string, TelemetrySourceRuntimeState>;
+  }
+
+  interface TelemetryBankRuntimeState {
+    wasLow: boolean;
+    lowTickStartedAt: number | null;
+    loadedCourierNames: string[];
+    spawnAdjacentLoadedCourierNames: string[];
+    workerWithEnergyNames: string[];
+    sourceBacklog: number;
+  }
+
+  interface TelemetrySpawnAdmissionState {
+    gameTime: number;
+    sourceBacklog: number;
+    loadedCouriers: number;
+    roleCounts: Record<WorkerRole, number>;
+    openReasons: string[];
+  }
+
+  interface TelemetrySpawnAdmissionsState {
+    firstCourier3: TelemetrySpawnAdmissionState | null;
+    firstWorker4: TelemetrySpawnAdmissionState | null;
   }
 
   interface CreepMemory {

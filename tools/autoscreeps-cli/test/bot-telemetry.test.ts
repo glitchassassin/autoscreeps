@@ -4,7 +4,7 @@ import { buildTelemetryByRole, inspectBotTelemetry, inspectTelemetryByRole, pars
 describe("bot telemetry", () => {
   it("parses a valid telemetry payload", () => {
     const raw = JSON.stringify({
-      schemaVersion: 6,
+      schemaVersion: 8,
       gameTime: 250,
       colonyMode: "normal",
       totalCreeps: 4,
@@ -14,6 +14,22 @@ describe("bot telemetry", () => {
         isSpawning: false,
         nextRole: "harvester",
         unmetDemand: { harvester: 1, upgrader: 0 }
+      },
+      admissions: {
+        firstCourier3: {
+          gameTime: 700,
+          sourceBacklog: 601,
+          loadedCouriers: 1,
+          roleCounts: { harvester: 2, courier: 2, worker: 3 },
+          openReasons: ["source_backlog"]
+        },
+        firstWorker4: {
+          gameTime: 775,
+          sourceBacklog: 560,
+          loadedCouriers: 1,
+          roleCounts: { harvester: 2, courier: 3, worker: 3 },
+          openReasons: ["source_backlog", "courier_parity"]
+        }
       },
       sources: {
         total: 2,
@@ -56,10 +72,26 @@ describe("bot telemetry", () => {
         sourceDropPickupLatencySamples: 1,
         pickupToSpendLatencyTotal: 8,
         pickupToSpendLatencySamples: 1,
+        pickupToBankLatencyTotal: 6,
+        pickupToBankLatencySamples: 1,
+        sourceDropToBankLatencyTotal: 9,
+        sourceDropToBankLatencySamples: 1,
         spawnObservedTicks: 25,
         spawnIdleTicks: 5,
         spawnSpawningTicks: 10,
         spawnWaitingForSufficientEnergyTicks: 10,
+        bankLowObservedTicks: 7,
+        bankReserveBreachCount: 2,
+        bankReserveRecoveryLatencyTotal: 11,
+        bankReserveRecoveryLatencySamples: 2,
+        spawnWaitingWithLoadedCourierTicks: 4,
+        spawnWaitingWithSpawnAdjacentLoadedCourierTicks: 3,
+        spawnWaitingWithWorkerEnergyTicks: 5,
+        spawnWaitingWithSourceBacklogTicks: 6,
+        loadedCourierIdleWhileBankLowTicks: 2,
+        extraWorkerGateBlockedTicks: 1,
+        extraWorkerGateOpenReasonCounts: { source_backlog: 2 },
+        bankLowDeliveredEnergyByTargetType: { worker_handoff: 10 },
         sourceObservedTicks: 25,
         sourceTotalTicks: 50,
         sourceStaffedTicks: 30,
@@ -86,7 +118,7 @@ describe("bot telemetry", () => {
     const inspection = inspectBotTelemetry(raw);
 
     expect(parsed).toEqual({
-      schemaVersion: 6,
+      schemaVersion: 8,
       gameTime: 250,
       colonyMode: "normal",
       totalCreeps: 4,
@@ -96,6 +128,22 @@ describe("bot telemetry", () => {
         isSpawning: false,
         nextRole: "harvester",
         unmetDemand: { harvester: 1, upgrader: 0 }
+      },
+      admissions: {
+        firstCourier3: {
+          gameTime: 700,
+          sourceBacklog: 601,
+          loadedCouriers: 1,
+          roleCounts: { harvester: 2, courier: 2, worker: 3 },
+          openReasons: ["source_backlog"]
+        },
+        firstWorker4: {
+          gameTime: 775,
+          sourceBacklog: 560,
+          loadedCouriers: 1,
+          roleCounts: { harvester: 2, courier: 3, worker: 3 },
+          openReasons: ["source_backlog", "courier_parity"]
+        }
       },
       sources: {
         total: 2,
@@ -138,10 +186,26 @@ describe("bot telemetry", () => {
         sourceDropPickupLatencySamples: 1,
         pickupToSpendLatencyTotal: 8,
         pickupToSpendLatencySamples: 1,
+        pickupToBankLatencyTotal: 6,
+        pickupToBankLatencySamples: 1,
+        sourceDropToBankLatencyTotal: 9,
+        sourceDropToBankLatencySamples: 1,
         spawnObservedTicks: 25,
         spawnIdleTicks: 5,
         spawnSpawningTicks: 10,
         spawnWaitingForSufficientEnergyTicks: 10,
+        bankLowObservedTicks: 7,
+        bankReserveBreachCount: 2,
+        bankReserveRecoveryLatencyTotal: 11,
+        bankReserveRecoveryLatencySamples: 2,
+        spawnWaitingWithLoadedCourierTicks: 4,
+        spawnWaitingWithSpawnAdjacentLoadedCourierTicks: 3,
+        spawnWaitingWithWorkerEnergyTicks: 5,
+        spawnWaitingWithSourceBacklogTicks: 6,
+        loadedCourierIdleWhileBankLowTicks: 2,
+        extraWorkerGateBlockedTicks: 1,
+        extraWorkerGateOpenReasonCounts: { source_backlog: 2 },
+        bankLowDeliveredEnergyByTargetType: { worker_handoff: 10 },
         sourceObservedTicks: 25,
         sourceTotalTicks: 50,
         sourceStaffedTicks: 30,

@@ -2,6 +2,7 @@ type SpawnRequest = {
   body: BodyPartConstant[];
   memory: CreepMemory;
   name: string;
+  admission: TelemetrySpawnAdmissionState | null;
 };
 
 const preRcl3BodyCostCapByRole: Partial<Record<WorkerRole, number>> = {
@@ -10,10 +11,31 @@ const preRcl3BodyCostCapByRole: Partial<Record<WorkerRole, number>> = {
   worker: 300
 };
 
+const preRcl3BacklogCourierBeforeWorker4Threshold = 600;
+const preRcl3BacklogCourierTarget = 3;
+
 export type SpawnDemandSummary = {
   unmetDemand: Record<WorkerRole, number>;
   nextRole: WorkerRole | null;
   totalUnmetDemand: number;
+};
+
+export type SpawnBankPressure = {
+  nextRole: WorkerRole | null;
+  totalUnmetDemand: number;
+  queueHeadCost: number | null;
+  waitingForEnergy: boolean;
+};
+
+export type ExtraWorkerGateReason = "source_backlog" | "loaded_courier" | "courier_parity";
+
+export type ExtraWorkerGateState = {
+  applicable: boolean;
+  blocked: boolean;
+  openReasons: ExtraWorkerGateReason[];
+  baseWorkerTarget: number;
+  parityWorkerTarget: number;
+  gatedWorkerTarget: number;
 };
 
 const bodyPlans: Record<WorkerRole, Array<{ cost: number; body: BodyPartConstant[] }>> = {
@@ -69,6 +91,7 @@ export function createSpawnRequest(spawn: StructureSpawn): SpawnRequest | null {
   return {
     body,
     name: `${nextRole}-${Game.time}`,
+    admission: buildSpawnAdmissionSnapshot(spawn.room),
     memory: {
       role: nextRole,
       working: false,
@@ -86,6 +109,7 @@ export function runSpawnManager(spawn: StructureSpawn): ScreepsReturnCode | null
   const result = spawn.spawnCreep(request.body, request.name, { memory: request.memory });
 
   if (result === OK) {
+    recordSpawnAdmission(request.memory.role, request.admission);
     console.log(`[spawn] ${spawn.name} started ${request.memory.role} ${request.name}`);
   }
 
@@ -125,6 +149,85 @@ export function summarizeSpawnDemandForRoom(room: Room | null): SpawnDemandSumma
     nextRole,
     totalUnmetDemand
   };
+}
+
+export function inspectSpawnBankPressure(room: Room | null): SpawnBankPressure {
+  const demand = summarizeSpawnDemandForRoom(room);
+  const queueHeadCost = room && demand.nextRole ? determineQueueHeadFullAffordabilityCost(room, demand.nextRole) : null;
+
+  return {
+    nextRole: demand.nextRole,
+    totalUnmetDemand: demand.totalUnmetDemand,
+    queueHeadCost,
+    waitingForEnergy: Boolean(
+      room
+      && demand.totalUnmetDemand > 0
+      && queueHeadCost !== null
+      && room.energyAvailable < queueHeadCost
+    )
+  };
+}
+
+export function inspectPreRcl3ExtraWorkerGate(room: Room | null): ExtraWorkerGateState | null {
+  if (!room || !isPreRcl3OwnedRoom(room)) {
+    return null;
+  }
+
+  const context = createPreRcl3DemandContext(room);
+  const baseDesired = determinePreRcl3BaseDesiredCreeps(context);
+  const desiredCourierTarget = determinePreRcl3BacklogCourierTargetCount(context, baseDesired.courier);
+  return resolvePreRcl3ExtraWorkerGate(context, baseDesired.worker, desiredCourierTarget);
+}
+
+function buildSpawnAdmissionSnapshot(room: Room): TelemetrySpawnAdmissionState | null {
+  if (!isPreRcl3OwnedRoom(room)) {
+    return null;
+  }
+
+  const extraWorkerGate = inspectPreRcl3ExtraWorkerGate(room);
+
+  return {
+    gameTime: Game.time,
+    sourceBacklog: countSourceBacklog(room),
+    loadedCouriers: countLoadedCouriers(room.name),
+    roleCounts: {
+      harvester: countRole("harvester", room.name),
+      courier: countRole("courier", room.name),
+      worker: countRole("worker", room.name)
+    },
+    openReasons: [...(extraWorkerGate?.openReasons ?? [])]
+  };
+}
+
+function recordSpawnAdmission(role: WorkerRole, admission: TelemetrySpawnAdmissionState | null): void {
+  if (!admission) {
+    return;
+  }
+
+  const admissions = ensureTelemetrySpawnAdmissions();
+
+  if (role === "courier" && admissions.firstCourier3 === null && admission.roleCounts.courier >= 2) {
+    admissions.firstCourier3 = admission;
+  }
+
+  if (role === "worker" && admissions.firstWorker4 === null && admission.roleCounts.worker >= 3) {
+    admissions.firstWorker4 = admission;
+  }
+}
+
+function ensureTelemetrySpawnAdmissions(): TelemetrySpawnAdmissionsState {
+  Memory.telemetry ??= {
+    creepDeaths: 0,
+    firstOwnedSpawnTick: null,
+    rcl2Tick: null,
+    rcl3Tick: null
+  };
+  Memory.telemetry.spawnAdmissions ??= {
+    firstCourier3: null,
+    firstWorker4: null
+  };
+
+  return Memory.telemetry.spawnAdmissions;
 }
 
 function determineDesiredCreeps(room: Room | null): Record<WorkerRole, number> {
@@ -188,51 +291,137 @@ function summarizePreRcl3Demand(room: Room): SpawnDemandSummary {
 }
 
 function determinePreRcl3DesiredCreeps(room: Room): Record<WorkerRole, number> {
+  const context = createPreRcl3DemandContext(room);
+  const desired = determinePreRcl3BaseDesiredCreeps(context);
+  desired.courier = determinePreRcl3BacklogCourierTargetCount(context, desired.courier);
+
+  const extraWorkerGate = resolvePreRcl3ExtraWorkerGate(context, desired.worker, desired.courier);
+
+  if (extraWorkerGate.openReasons.length > 0) {
+    desired.worker = Math.max(desired.worker, extraWorkerGate.gatedWorkerTarget);
+  }
+
+  return desired;
+}
+
+type PreRcl3DemandContext = {
+  room: Room;
+  sourceCount: number;
+  activeHarvestingSourceCount: number;
+  sourceBacklog: number;
+  controllerLevel: number;
+  harvesters: number;
+  couriers: number;
+  workers: number;
+  fullSourceSitterCount: number;
+  spawnRefillCovered: boolean;
+  loadedCouriers: number;
+  workerSpendParityTarget: number;
+};
+
+function createPreRcl3DemandContext(room: Room): PreRcl3DemandContext {
   const sourceCount = Math.max(countSources(room), 1);
-  const activeHarvestingSourceCount = countActiveHarvestingSources(room);
-  const sourceBacklog = countSourceBacklog(room);
-  const controllerLevel = room.controller?.level ?? 1;
-  const harvesters = countRole("harvester", room.name);
-  const couriers = countRole("courier", room.name);
-  const workers = countRole("worker", room.name);
-  const fullSourceSitterCount = Math.min(sourceCount, 2);
-  const spawnRefillCovered = room.energyAvailable >= room.energyCapacityAvailable;
-  const loadedCouriers = countLoadedCouriers(room.name);
-  const workerSpendParityTarget = Math.max(2, Math.min(countRoleWorkParts("harvester", room.name), 4));
+
+  return {
+    room,
+    sourceCount,
+    activeHarvestingSourceCount: countActiveHarvestingSources(room),
+    sourceBacklog: countSourceBacklog(room),
+    controllerLevel: room.controller?.level ?? 1,
+    harvesters: countRole("harvester", room.name),
+    couriers: countRole("courier", room.name),
+    workers: countRole("worker", room.name),
+    fullSourceSitterCount: Math.min(sourceCount, 2),
+    spawnRefillCovered: room.energyAvailable >= room.energyCapacityAvailable,
+    loadedCouriers: countLoadedCouriers(room.name),
+    workerSpendParityTarget: Math.max(2, Math.min(countRoleWorkParts("harvester", room.name), 4))
+  };
+}
+
+function determinePreRcl3BaseDesiredCreeps(context: PreRcl3DemandContext): Record<WorkerRole, number> {
   const desired: Record<WorkerRole, number> = {
     harvester: 1,
     courier: 0,
     worker: 0
   };
 
-  if (harvesters > 0) {
+  if (context.harvesters > 0) {
     desired.courier = 1;
   }
-  if (couriers > 0) {
-    desired.harvester = fullSourceSitterCount;
+  if (context.couriers > 0) {
+    desired.harvester = context.fullSourceSitterCount;
   }
-  if (couriers > 0 && activeHarvestingSourceCount >= fullSourceSitterCount) {
+  if (context.couriers > 0 && context.activeHarvestingSourceCount >= context.fullSourceSitterCount) {
     desired.worker = 1;
   }
-  if (workers > 0 && (sourceBacklog >= 150 || controllerLevel >= 2)) {
-    desired.courier = Math.max(desired.courier, fullSourceSitterCount);
+  if (context.workers > 0 && (context.sourceBacklog >= 150 || context.controllerLevel >= 2)) {
+    desired.courier = Math.max(desired.courier, context.fullSourceSitterCount);
   }
-  if (workers > 0 && (sourceBacklog >= 300 || controllerLevel >= 2)) {
+  if (context.workers > 0 && (context.sourceBacklog >= 300 || context.controllerLevel >= 2)) {
     desired.worker = 2;
-  }
-  if (
-    workers > 0
-    && spawnRefillCovered
-    && (
-      sourceBacklog >= 300
-      || loadedCouriers > 0
-      || (couriers >= fullSourceSitterCount && workers < workerSpendParityTarget)
-    )
-  ) {
-    desired.worker = Math.max(desired.worker, workerSpendParityTarget);
   }
 
   return desired;
+}
+
+function determinePreRcl3BacklogCourierTargetCount(
+  context: PreRcl3DemandContext,
+  baseCourierTarget: number
+): number {
+  if (
+    context.workers >= 3
+    && context.couriers >= context.fullSourceSitterCount
+    && context.sourceBacklog >= preRcl3BacklogCourierBeforeWorker4Threshold
+  ) {
+    return Math.max(baseCourierTarget, preRcl3BacklogCourierTarget);
+  }
+
+  return baseCourierTarget;
+}
+
+function resolvePreRcl3ExtraWorkerGate(
+  context: PreRcl3DemandContext,
+  baseWorkerTarget: number,
+  desiredCourierTarget: number
+): ExtraWorkerGateState {
+  const openReasons: ExtraWorkerGateReason[] = [];
+
+  if (context.sourceBacklog >= 300) {
+    openReasons.push("source_backlog");
+  }
+  if (context.loadedCouriers > 0) {
+    openReasons.push("loaded_courier");
+  }
+
+  const applicable = baseWorkerTarget >= 2 && context.workerSpendParityTarget > baseWorkerTarget;
+  const gateOpen = context.workers > 0 && context.spawnRefillCovered && openReasons.length > 0;
+  let gatedWorkerTarget = baseWorkerTarget;
+
+  if (gateOpen) {
+    gatedWorkerTarget = Math.max(gatedWorkerTarget, Math.min(baseWorkerTarget + 1, context.workerSpendParityTarget));
+
+    const needsBacklogCourierBeforeWorker4 = (
+      desiredCourierTarget > context.fullSourceSitterCount
+      && context.sourceBacklog >= preRcl3BacklogCourierBeforeWorker4Threshold
+      && context.couriers < desiredCourierTarget
+    );
+
+    if (!needsBacklogCourierBeforeWorker4) {
+      if (desiredCourierTarget > context.fullSourceSitterCount && context.couriers >= desiredCourierTarget) {
+        openReasons.push("courier_parity");
+      }
+      gatedWorkerTarget = context.workerSpendParityTarget;
+    }
+  }
+
+  return {
+    applicable,
+    blocked: applicable && gatedWorkerTarget < context.workerSpendParityTarget,
+    openReasons: gateOpen ? openReasons : [],
+    baseWorkerTarget,
+    parityWorkerTarget: context.workerSpendParityTarget,
+    gatedWorkerTarget
+  };
 }
 
 function countRole(role: WorkerRole, roomName?: string): number {

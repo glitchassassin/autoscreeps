@@ -82,7 +82,7 @@ describe("telemetry", () => {
     const snapshot = createTelemetrySnapshot(spawn, Memory.telemetry!);
 
     expect(snapshot).toEqual({
-      schemaVersion: 6,
+      schemaVersion: 8,
       gameTime: 25,
       debugError: null,
       colonyMode: "normal",
@@ -101,6 +101,10 @@ describe("telemetry", () => {
           courier: 1,
           worker: 1
         }
+      },
+      admissions: {
+        firstCourier3: null,
+        firstWorker4: null
       },
       sources: {
         total: 2,
@@ -163,10 +167,26 @@ describe("telemetry", () => {
         sourceDropPickupLatencySamples: 0,
         pickupToSpendLatencyTotal: 0,
         pickupToSpendLatencySamples: 0,
+        pickupToBankLatencyTotal: 0,
+        pickupToBankLatencySamples: 0,
+        sourceDropToBankLatencyTotal: 0,
+        sourceDropToBankLatencySamples: 0,
         spawnObservedTicks: 0,
         spawnIdleTicks: 0,
         spawnSpawningTicks: 0,
         spawnWaitingForSufficientEnergyTicks: 0,
+        bankLowObservedTicks: 0,
+        bankReserveBreachCount: 0,
+        bankReserveRecoveryLatencyTotal: 0,
+        bankReserveRecoveryLatencySamples: 0,
+        spawnWaitingWithLoadedCourierTicks: 0,
+        spawnWaitingWithSpawnAdjacentLoadedCourierTicks: 0,
+        spawnWaitingWithWorkerEnergyTicks: 0,
+        spawnWaitingWithSourceBacklogTicks: 0,
+        loadedCourierIdleWhileBankLowTicks: 0,
+        extraWorkerGateBlockedTicks: 0,
+        extraWorkerGateOpenReasonCounts: {},
+        bankLowDeliveredEnergyByTargetType: {},
         sourceObservedTicks: 0,
         sourceTotalTicks: 0,
         sourceStaffedTicks: 0,
@@ -198,7 +218,7 @@ describe("telemetry", () => {
     const rawSegment = testGlobal.RawMemory.segments[telemetrySegmentId];
     expect(typeof rawSegment).toBe("string");
     expect(JSON.parse(rawSegment as string)).toMatchObject({
-      schemaVersion: 6,
+      schemaVersion: 8,
       gameTime: 25,
       roleCounts: {
         harvester: 2,
@@ -239,6 +259,14 @@ describe("telemetry", () => {
         withEnergyNoSpendTicks: {
           worker: 1
         },
+        bankLowObservedTicks: 0,
+        bankReserveBreachCount: 0,
+        spawnWaitingWithLoadedCourierTicks: 0,
+        spawnWaitingWithSpawnAdjacentLoadedCourierTicks: 0,
+        spawnWaitingWithWorkerEnergyTicks: 0,
+        spawnWaitingWithSourceBacklogTicks: 0,
+        loadedCourierIdleWhileBankLowTicks: 0,
+        extraWorkerGateBlockedTicks: 1,
         spawnObservedTicks: 1,
         spawnIdleTicks: 0,
         spawnSpawningTicks: 0,

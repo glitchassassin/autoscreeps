@@ -151,6 +151,22 @@ export type BotTelemetrySnapshot = {
     nextRole: string | null;
     unmetDemand: Record<string, number>;
   };
+  admissions?: {
+    firstCourier3?: {
+      gameTime: number;
+      sourceBacklog: number;
+      loadedCouriers: number;
+      roleCounts: Record<string, number>;
+      openReasons: string[];
+    } | null;
+    firstWorker4?: {
+      gameTime: number;
+      sourceBacklog: number;
+      loadedCouriers: number;
+      roleCounts: Record<string, number>;
+      openReasons: string[];
+    } | null;
+  };
   sources?: {
     total: number;
     staffed: number;
@@ -192,10 +208,26 @@ export type BotTelemetrySnapshot = {
     sourceDropPickupLatencySamples?: number;
     pickupToSpendLatencyTotal?: number;
     pickupToSpendLatencySamples?: number;
+    pickupToBankLatencyTotal?: number;
+    pickupToBankLatencySamples?: number;
+    sourceDropToBankLatencyTotal?: number;
+    sourceDropToBankLatencySamples?: number;
     spawnObservedTicks?: number;
     spawnIdleTicks?: number;
     spawnSpawningTicks?: number;
     spawnWaitingForSufficientEnergyTicks?: number;
+    bankLowObservedTicks?: number;
+    bankReserveBreachCount?: number;
+    bankReserveRecoveryLatencyTotal?: number;
+    bankReserveRecoveryLatencySamples?: number;
+    spawnWaitingWithLoadedCourierTicks?: number;
+    spawnWaitingWithSpawnAdjacentLoadedCourierTicks?: number;
+    spawnWaitingWithWorkerEnergyTicks?: number;
+    spawnWaitingWithSourceBacklogTicks?: number;
+    loadedCourierIdleWhileBankLowTicks?: number;
+    extraWorkerGateBlockedTicks?: number;
+    extraWorkerGateOpenReasonCounts?: Record<string, number>;
+    bankLowDeliveredEnergyByTargetType?: Record<string, number>;
     sourceObservedTicks?: number;
     sourceTotalTicks?: number;
     sourceStaffedTicks?: number;

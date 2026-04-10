@@ -83,6 +83,12 @@ export function inspectBotTelemetry(value: string | null): BotTelemetryInspectio
       unmetDemand: parsed.spawn.unmetDemand
     };
   }
+  if (isRecord(parsed.admissions)) {
+    snapshot.admissions = {
+      firstCourier3: parseSpawnAdmission(parsed.admissions.firstCourier3),
+      firstWorker4: parseSpawnAdmission(parsed.admissions.firstWorker4)
+    };
+  }
   if (isRecord(parsed.sources) && isNumberRecord(parsed.sources.assignments)) {
     snapshot.sources = {
       total: typeof parsed.sources.total === "number" ? parsed.sources.total : 0,
@@ -129,11 +135,47 @@ export function inspectBotTelemetry(value: string | null): BotTelemetryInspectio
       sourceDropPickupLatencySamples: typeof parsed.loop.sourceDropPickupLatencySamples === "number" ? parsed.loop.sourceDropPickupLatencySamples : undefined,
       pickupToSpendLatencyTotal: typeof parsed.loop.pickupToSpendLatencyTotal === "number" ? parsed.loop.pickupToSpendLatencyTotal : undefined,
       pickupToSpendLatencySamples: typeof parsed.loop.pickupToSpendLatencySamples === "number" ? parsed.loop.pickupToSpendLatencySamples : undefined,
+      pickupToBankLatencyTotal: typeof parsed.loop.pickupToBankLatencyTotal === "number" ? parsed.loop.pickupToBankLatencyTotal : undefined,
+      pickupToBankLatencySamples: typeof parsed.loop.pickupToBankLatencySamples === "number" ? parsed.loop.pickupToBankLatencySamples : undefined,
+      sourceDropToBankLatencyTotal: typeof parsed.loop.sourceDropToBankLatencyTotal === "number" ? parsed.loop.sourceDropToBankLatencyTotal : undefined,
+      sourceDropToBankLatencySamples: typeof parsed.loop.sourceDropToBankLatencySamples === "number" ? parsed.loop.sourceDropToBankLatencySamples : undefined,
       spawnObservedTicks: typeof parsed.loop.spawnObservedTicks === "number" ? parsed.loop.spawnObservedTicks : undefined,
       spawnIdleTicks: typeof parsed.loop.spawnIdleTicks === "number" ? parsed.loop.spawnIdleTicks : undefined,
       spawnSpawningTicks: typeof parsed.loop.spawnSpawningTicks === "number" ? parsed.loop.spawnSpawningTicks : undefined,
       spawnWaitingForSufficientEnergyTicks: typeof parsed.loop.spawnWaitingForSufficientEnergyTicks === "number"
         ? parsed.loop.spawnWaitingForSufficientEnergyTicks
+        : undefined,
+      bankLowObservedTicks: typeof parsed.loop.bankLowObservedTicks === "number" ? parsed.loop.bankLowObservedTicks : undefined,
+      bankReserveBreachCount: typeof parsed.loop.bankReserveBreachCount === "number" ? parsed.loop.bankReserveBreachCount : undefined,
+      bankReserveRecoveryLatencyTotal: typeof parsed.loop.bankReserveRecoveryLatencyTotal === "number"
+        ? parsed.loop.bankReserveRecoveryLatencyTotal
+        : undefined,
+      bankReserveRecoveryLatencySamples: typeof parsed.loop.bankReserveRecoveryLatencySamples === "number"
+        ? parsed.loop.bankReserveRecoveryLatencySamples
+        : undefined,
+      spawnWaitingWithLoadedCourierTicks: typeof parsed.loop.spawnWaitingWithLoadedCourierTicks === "number"
+        ? parsed.loop.spawnWaitingWithLoadedCourierTicks
+        : undefined,
+      spawnWaitingWithSpawnAdjacentLoadedCourierTicks: typeof parsed.loop.spawnWaitingWithSpawnAdjacentLoadedCourierTicks === "number"
+        ? parsed.loop.spawnWaitingWithSpawnAdjacentLoadedCourierTicks
+        : undefined,
+      spawnWaitingWithWorkerEnergyTicks: typeof parsed.loop.spawnWaitingWithWorkerEnergyTicks === "number"
+        ? parsed.loop.spawnWaitingWithWorkerEnergyTicks
+        : undefined,
+      spawnWaitingWithSourceBacklogTicks: typeof parsed.loop.spawnWaitingWithSourceBacklogTicks === "number"
+        ? parsed.loop.spawnWaitingWithSourceBacklogTicks
+        : undefined,
+      loadedCourierIdleWhileBankLowTicks: typeof parsed.loop.loadedCourierIdleWhileBankLowTicks === "number"
+        ? parsed.loop.loadedCourierIdleWhileBankLowTicks
+        : undefined,
+      extraWorkerGateBlockedTicks: typeof parsed.loop.extraWorkerGateBlockedTicks === "number"
+        ? parsed.loop.extraWorkerGateBlockedTicks
+        : undefined,
+      extraWorkerGateOpenReasonCounts: isNumberRecord(parsed.loop.extraWorkerGateOpenReasonCounts)
+        ? parsed.loop.extraWorkerGateOpenReasonCounts
+        : undefined,
+      bankLowDeliveredEnergyByTargetType: isNumberRecord(parsed.loop.bankLowDeliveredEnergyByTargetType)
+        ? parsed.loop.bankLowDeliveredEnergyByTargetType
         : undefined,
       sourceObservedTicks: typeof parsed.loop.sourceObservedTicks === "number" ? parsed.loop.sourceObservedTicks : undefined,
       sourceTotalTicks: typeof parsed.loop.sourceTotalTicks === "number" ? parsed.loop.sourceTotalTicks : undefined,
@@ -218,4 +260,28 @@ function isNumberRecord(value: unknown): value is Record<string, number> {
 
 function isNullableNumberRecord(value: unknown): value is Record<string, number | null> {
   return isRecord(value) && Object.values(value).every((entry) => entry === null || typeof entry === "number");
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function parseSpawnAdmission(
+  value: unknown
+): { gameTime: number; sourceBacklog: number; loadedCouriers: number; roleCounts: Record<string, number>; openReasons: string[] } | null | undefined {
+  if (value === null) {
+    return null;
+  }
+
+  if (!isRecord(value) || !isNumberRecord(value.roleCounts)) {
+    return undefined;
+  }
+
+  return {
+    gameTime: typeof value.gameTime === "number" ? value.gameTime : 0,
+    sourceBacklog: typeof value.sourceBacklog === "number" ? value.sourceBacklog : 0,
+    loadedCouriers: typeof value.loadedCouriers === "number" ? value.loadedCouriers : 0,
+    roleCounts: value.roleCounts,
+    openReasons: isStringArray(value.openReasons) ? value.openReasons : []
+  };
 }

@@ -3,7 +3,7 @@ import { ensureTelemetryState, observeTelemetryTick } from "./telemetry-state";
 
 export const telemetrySegmentId = 42;
 export const telemetrySampleEveryTicks = 25;
-export const telemetrySchemaVersion = 6;
+export const telemetrySchemaVersion = 8;
 
 export type BotTelemetrySnapshot = {
   schemaVersion: number;
@@ -18,6 +18,7 @@ export type BotTelemetrySnapshot = {
     nextRole: WorkerRole | null;
     unmetDemand: Record<WorkerRole, number>;
   };
+  admissions: TelemetrySpawnAdmissionsState;
   sources: {
     total: number;
     staffed: number;
@@ -109,6 +110,7 @@ export function createTelemetrySnapshot(
       nextRole: demand.nextRole,
       unmetDemand: demand.unmetDemand
     },
+    admissions: telemetryState.spawnAdmissions ?? emptySpawnAdmissionsState(),
     sources: summarizeSourceStaffing(telemetryState),
     loop: telemetryState.loop ?? emptyLoopState(),
     creeps: summarizeCreepDiagnostics(telemetryState),
@@ -290,10 +292,26 @@ function emptyLoopState(): TelemetryLoopState {
     sourceDropPickupLatencySamples: 0,
     pickupToSpendLatencyTotal: 0,
     pickupToSpendLatencySamples: 0,
+    pickupToBankLatencyTotal: 0,
+    pickupToBankLatencySamples: 0,
+    sourceDropToBankLatencyTotal: 0,
+    sourceDropToBankLatencySamples: 0,
     spawnObservedTicks: 0,
     spawnIdleTicks: 0,
     spawnSpawningTicks: 0,
     spawnWaitingForSufficientEnergyTicks: 0,
+    bankLowObservedTicks: 0,
+    bankReserveBreachCount: 0,
+    bankReserveRecoveryLatencyTotal: 0,
+    bankReserveRecoveryLatencySamples: 0,
+    spawnWaitingWithLoadedCourierTicks: 0,
+    spawnWaitingWithSpawnAdjacentLoadedCourierTicks: 0,
+    spawnWaitingWithWorkerEnergyTicks: 0,
+    spawnWaitingWithSourceBacklogTicks: 0,
+    loadedCourierIdleWhileBankLowTicks: 0,
+    extraWorkerGateBlockedTicks: 0,
+    extraWorkerGateOpenReasonCounts: {},
+    bankLowDeliveredEnergyByTargetType: {},
     sourceObservedTicks: 0,
     sourceTotalTicks: 0,
     sourceStaffedTicks: 0,
@@ -302,6 +320,13 @@ function emptyLoopState(): TelemetryLoopState {
     harvestingSourceFullyStaffedTicks: 0,
     activeHarvestingSourceStaffedTicks: 0,
     activeHarvestingSourceFullyStaffedTicks: 0
+  };
+}
+
+function emptySpawnAdmissionsState(): TelemetrySpawnAdmissionsState {
+  return {
+    firstCourier3: null,
+    firstWorker4: null
   };
 }
 

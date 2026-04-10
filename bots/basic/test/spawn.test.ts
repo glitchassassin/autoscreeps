@@ -143,7 +143,38 @@ describe("spawn manager", () => {
     });
   });
 
-  it("expands pre-RCL3 worker demand once source sitters, runners, and bank coverage are in place", () => {
+  it("expands pre-RCL3 worker demand once source sitters, runners, bank coverage, and reserve are in place", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+
+    testGlobal.Game.creeps = {
+      harvesterA: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-a",
+        pos: { x: 10, y: 11, roomName: "W0N0" }
+      }),
+      harvesterB: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-b",
+        pos: { x: 20, y: 21, roomName: "W0N0" }
+      }),
+      courierA: makeCreep("courier", 0, { storedEnergy: 50 }),
+      courierB: makeCreep("courier", 0),
+      workerA: makeCreep("worker", 1),
+      workerB: makeCreep("worker", 1)
+    };
+
+    expect(summarizeSpawnDemand(makeSpawn().room)).toEqual({
+      unmetDemand: {
+        harvester: 0,
+        courier: 0,
+        worker: 2
+      },
+      nextRole: "worker",
+      totalUnmetDemand: 2
+    });
+  });
+
+  it("prefers courier three before worker four when source backlog stays high", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game };
 
     testGlobal.Game.creeps = {
@@ -160,17 +191,148 @@ describe("spawn manager", () => {
       courierA: makeCreep("courier", 0),
       courierB: makeCreep("courier", 0),
       workerA: makeCreep("worker", 1),
-      workerB: makeCreep("worker", 1)
+      workerB: makeCreep("worker", 1),
+      workerC: makeCreep("worker", 1)
     };
 
-    expect(summarizeSpawnDemand(makeSpawn().room)).toEqual({
+    const spawn = makeSpawn({
+      droppedResources: [
+        makeDroppedEnergy(320, { x: 9, y: 10, roomName: "W0N0" }),
+        makeDroppedEnergy(300, { x: 19, y: 20, roomName: "W0N0" })
+      ]
+    });
+
+    expect(summarizeSpawnDemand(spawn.room)).toEqual({
+      unmetDemand: {
+        harvester: 0,
+        courier: 1,
+        worker: 0
+      },
+      nextRole: "courier",
+      totalUnmetDemand: 1
+    });
+  });
+
+  it("allows worker four once courier three exists under high backlog", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+
+    testGlobal.Game.creeps = {
+      harvesterA: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-a",
+        pos: { x: 10, y: 11, roomName: "W0N0" }
+      }),
+      harvesterB: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-b",
+        pos: { x: 20, y: 21, roomName: "W0N0" }
+      }),
+      courierA: makeCreep("courier", 0),
+      courierB: makeCreep("courier", 0),
+      courierC: makeCreep("courier", 0),
+      workerA: makeCreep("worker", 1),
+      workerB: makeCreep("worker", 1),
+      workerC: makeCreep("worker", 1)
+    };
+
+    const spawn = makeSpawn({
+      droppedResources: [
+        makeDroppedEnergy(320, { x: 9, y: 10, roomName: "W0N0" }),
+        makeDroppedEnergy(300, { x: 19, y: 20, roomName: "W0N0" })
+      ]
+    });
+
+    expect(summarizeSpawnDemand(spawn.room)).toEqual({
       unmetDemand: {
         harvester: 0,
         courier: 0,
-        worker: 2
+        worker: 1
       },
       nextRole: "worker",
-      totalUnmetDemand: 2
+      totalUnmetDemand: 1
+    });
+  });
+
+  it("records the first courier three admission context on spawn start", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game; Memory: Memory };
+
+    testGlobal.Game.creeps = {
+      harvesterA: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-a",
+        pos: { x: 10, y: 11, roomName: "W0N0" }
+      }),
+      harvesterB: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-b",
+        pos: { x: 20, y: 21, roomName: "W0N0" }
+      }),
+      courierA: makeCreep("courier", 0),
+      courierB: makeCreep("courier", 0),
+      workerA: makeCreep("worker", 1),
+      workerB: makeCreep("worker", 1),
+      workerC: makeCreep("worker", 1)
+    };
+
+    runSpawnManager(makeSpawn({
+      droppedResources: [
+        makeDroppedEnergy(320, { x: 9, y: 10, roomName: "W0N0" }),
+        makeDroppedEnergy(300, { x: 19, y: 20, roomName: "W0N0" })
+      ]
+    }));
+
+    expect(testGlobal.Memory.telemetry?.spawnAdmissions?.firstCourier3).toEqual({
+      gameTime: 123,
+      sourceBacklog: 620,
+      loadedCouriers: 0,
+      roleCounts: {
+        harvester: 2,
+        courier: 2,
+        worker: 3
+      },
+      openReasons: ["source_backlog"]
+    });
+  });
+
+  it("records the first worker four admission context on spawn start", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game; Memory: Memory };
+
+    testGlobal.Game.creeps = {
+      harvesterA: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-a",
+        pos: { x: 10, y: 11, roomName: "W0N0" }
+      }),
+      harvesterB: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-b",
+        pos: { x: 20, y: 21, roomName: "W0N0" }
+      }),
+      courierA: makeCreep("courier", 0),
+      courierB: makeCreep("courier", 0),
+      courierC: makeCreep("courier", 0),
+      workerA: makeCreep("worker", 1),
+      workerB: makeCreep("worker", 1),
+      workerC: makeCreep("worker", 1)
+    };
+
+    runSpawnManager(makeSpawn({
+      droppedResources: [
+        makeDroppedEnergy(320, { x: 9, y: 10, roomName: "W0N0" }),
+        makeDroppedEnergy(300, { x: 19, y: 20, roomName: "W0N0" })
+      ]
+    }));
+
+    expect(testGlobal.Memory.telemetry?.spawnAdmissions?.firstWorker4).toEqual({
+      gameTime: 123,
+      sourceBacklog: 620,
+      loadedCouriers: 0,
+      roleCounts: {
+        harvester: 2,
+        courier: 3,
+        worker: 3
+      },
+      openReasons: ["source_backlog", "courier_parity"]
     });
   });
 
@@ -195,6 +357,37 @@ describe("spawn manager", () => {
     };
 
     expect(summarizeSpawnDemand(makeSpawn({ energyAvailable: 250 }).room)).toEqual({
+      unmetDemand: {
+        harvester: 0,
+        courier: 0,
+        worker: 0
+      },
+      nextRole: null,
+      totalUnmetDemand: 0
+    });
+  });
+
+  it("keeps the extra pre-RCL3 worker demand gated behind actual reserve, not just bank coverage", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+
+    testGlobal.Game.creeps = {
+      harvesterA: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-a",
+        pos: { x: 10, y: 11, roomName: "W0N0" }
+      }),
+      harvesterB: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-b",
+        pos: { x: 20, y: 21, roomName: "W0N0" }
+      }),
+      courierA: makeCreep("courier", 0),
+      courierB: makeCreep("courier", 0),
+      workerA: makeCreep("worker", 1),
+      workerB: makeCreep("worker", 1)
+    };
+
+    expect(summarizeSpawnDemand(makeSpawn().room)).toEqual({
       unmetDemand: {
         harvester: 0,
         courier: 0,
@@ -335,6 +528,7 @@ function makeCreep(
     working?: boolean;
     sourceId?: string;
     pos?: { x: number; y: number; roomName: string };
+    storedEnergy?: number;
   } = {}
 ): Creep {
   return {
@@ -345,6 +539,9 @@ function makeCreep(
       sourceId: input.sourceId
     },
     body: Array.from({ length: workParts }, () => ({ type: WORK, hits: 100 })),
+    store: {
+      [RESOURCE_ENERGY]: input.storedEnergy ?? 0
+    },
     pos: input.pos ?? { x: 15, y: 15, roomName: "W0N0" }
   } as unknown as Creep;
 }
