@@ -2987,7 +2987,7 @@ node src/cli.ts experiment run suite \
 
 ## Entry `exp-2026-04-09-opener-source-sitter-runner-spender-demand`
 
-- Status: `planned`
+- Status: `completed`
 - Owner: `OpenCode`
 - Date: `2026-04-09`
 
@@ -3002,11 +3002,11 @@ node src/cli.ts experiment run suite \
 - Variant or branch: `git:HEAD` vs `workspace`
 - Bot package: `bots/basic`
 - Suite: `experiments/suites/milestone-1-opener.yaml`
-- Planned change:
+- Change tested:
   - keep the standard `duel-basic` scenario with no free extensions or other room mutations on either side
   - keep the source-sitter plus runner/bootstrap split from the previous experiment
   - keep courier routing and handoff behavior unchanged so the run isolates spend-demand sizing rather than transport contracts
-  - revise pre-`RCL3` demand so once spawn refill is covered, persistent source backlog, courier idle-with-energy pressure, or obvious underpopulation can demand additional `worker` bodies instead of treating `2 harvester / 2 courier / 2 worker` as sufficient
+  - revise pre-`RCL3` demand so once spawn refill is covered and spend-side pressure is present, worker demand can grow past `2` up to harvester work-part parity instead of treating `2 harvester / 2 courier / 2 worker` as sufficient
   - keep post-`RCL3` logic unchanged so the run isolates pre-`RCL3` spend-side demand on top of the new source-resident pipeline
 - Key evaluation focus:
   - `controllerProgressToRCL3Pct`
@@ -3016,3 +3016,123 @@ node src/cli.ts experiment run suite \
   - `activeHarvestingSourceUptimePct`
   - `backlogEnergy`
   - whether representative `5k` runs grow past the current `2 harvester / 2 courier / 2 worker` plateau while keeping source backlog controlled
+
+### Command
+
+- `node src/cli.ts experiment run suite --manifest ../../experiments/suites/milestone-1-opener.yaml --baseline-source git:HEAD --baseline-package bots/basic --candidate-source workspace --candidate-package bots/basic`
+- Suite ID: `2026-04-10T01-39-10-403Z-3c8946ba`
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-10T01-39-10-404Z-25f31b9f`
+  - `train-b-2k`: `2026-04-10T01-41-02-314Z-17a2a572`
+  - `train-c-5k`: `2026-04-10T01-42-51-436Z-a0de24ac`
+  - `train-d-5k`: `2026-04-10T01-46-22-732Z-6eb8dab4`
+  - `holdout-a-2k`: `2026-04-10T01-49-52-118Z-aa43e775`
+  - `holdout-b-5k`: `2026-04-10T01-51-41-075Z-d5878523`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: improved from `11.72` to `20.02`
+  - `spawnWaitingForSufficientEnergyPct`: regressed from `26.03%` to `26.50%`
+  - upstream and spawn metrics:
+    - `spawnIdlePct`: `67.95% -> 65.93%`
+    - `sourceHarvestEnergyPerTick`: `6.19 -> 6.15`
+    - `sourceHarvestUtilizationPct`: `27.89 -> 27.79`
+    - `activeHarvestingSourceCoveragePct`: `78.83 -> 78.54`
+    - `activeHarvestingSourceUptimePct`: `62.73 -> 62.67`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: improved from `12.44` to `19.09`
+  - `spawnWaitingForSufficientEnergyPct`: improved from `18.20%` to `17.13%`
+  - upstream and spawn metrics:
+    - `spawnIdlePct`: `75.81% -> 75.34%`
+    - `sourceHarvestEnergyPerTick`: `6.22 -> 6.21`
+    - `sourceHarvestUtilizationPct`: `31.13 -> 31.09`
+    - `activeHarvestingSourceCoveragePct`: `88.01 -> 87.88`
+    - `activeHarvestingSourceUptimePct`: `77.54 -> 77.28`
+- Gate result:
+  - training failed because only `1/3` primary metrics improved
+  - holdout improved on `2/3` primary metrics and did not trigger the regression ceiling
+  - overall suite result: gates failed on the training cohort
+- Notable behavior:
+  - the candidate removed the previous `2 harvester / 2 courier / 2 worker` plateau in representative long runs:
+    - `train-c-5k`: baseline ended at `2 harvester / 2 courier / 2 worker`; candidate ended at `2 harvester / 2 courier / 4 worker`
+    - `train-d-5k`: baseline ended at `2 harvester / 2 courier / 2 worker`; candidate ended at `2 harvester / 2 courier / 4 worker`
+    - `holdout-b-5k`: baseline ended at `2 harvester / 2 courier / 2 worker`; candidate ended at `2 harvester / 2 courier / 4 worker`
+  - representative `5k` runs converted the extra intake into much more upgrade work while keeping queue demand at `0` by the end:
+    - `train-c-5k`: `worker.upgrade 8657 -> 16030`; `controllerProgress 8488 -> 15437`
+    - `train-d-5k`: `worker.upgrade 8436 -> 14833`; `controllerProgress 8097 -> 13098`
+    - `holdout-b-5k`: `worker.upgrade 8531 -> 14223`; `controllerProgress 8330 -> 13600`
+  - the candidate reduced some long-run backlog and pushed more energy into the spawn bank, but it did not clear distribution pressure completely:
+    - `train-c-5k`: `backlogEnergy 134 -> 84`; delivered energy `spawn 4674 -> 5930`; `worker_handoff 23326 -> 21528`
+    - `train-d-5k`: `backlogEnergy 1295 -> 936`; delivered energy `spawn 4404 -> 5903`; `worker_handoff 15796 -> 13897`
+    - `holdout-b-5k`: `backlogEnergy 1880 -> 1719`; delivered energy `spawn 4483 -> 5835`; `worker_handoff 16317 -> 14965`
+  - idle-with-energy pressure remained visible even after the extra workers arrived:
+    - `train-c-5k`: `withEnergyNoSpendTicks.courier 3750 -> 3529`; `withEnergyNoSpendTicks.worker 0 -> 422`
+    - `train-d-5k`: `withEnergyNoSpendTicks.courier 5540 -> 5527`; `withEnergyNoSpendTicks.worker 173 -> 1577`
+    - `holdout-b-5k`: `withEnergyNoSpendTicks.courier 1391 -> 1695`; `withEnergyNoSpendTicks.worker 19 -> 459`
+  - the main short-run miss came from the training cohort's first `2k` case:
+    - `train-a-2k`: `controllerProgressToRCL3Pct 2.93 -> 4.04`, but `spawnWaitingForSufficientEnergyPct 59.09% -> 62.61%`
+
+### Interpretation
+
+- This experiment strongly supported the spend-demand direction, but it still failed the suite gate.
+- The added workers monetized the existing sitter-plus-runner intake much better without materially giving back the source-side gains from the previous experiment:
+  - controller progress improved by about `+70.8%` on train and `+53.5%` on holdout
+  - the representative `5k` runs consistently reached `2 harvester / 2 courier / 4 worker`
+  - source harvest throughput, utilization, and active-harvest uptime all stayed essentially flat against the source-sitter baseline
+- Against Screeps first principles, that means the room is no longer primarily blocked on source labor or spend-capable body count in this comparison:
+  - pre-`RCL3`, the capped sitter pair still only yields about `8 e/t` of gross harvest capacity, and the previous `2` one-`WORK` workers were clearly undersized against that stream
+  - the candidate proved that asking for more spenders was directionally correct because it turned roughly the same intake into far more controller progress
+- The remaining bottleneck is now spawn-side liquidity and delivery timing:
+  - training still missed because `spawnWaitingForSufficientEnergyPct` got slightly worse overall, even though long-run progress improved a lot
+  - representative runs still finished with residual backlog, high courier idle-with-energy counts, and some worker idle-with-energy growth while `queueDepth` sat at `0`
+  - that combination points to energy arriving in the colony, but not always being in the spawn bank at the right time or in the right packets during refill-sensitive windows
+- The short-run `train-a-2k` regression should therefore be treated as an early-window control problem, not evidence that the larger spender-demand change was wrong.
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: if worker `#3` and `#4` are gated behind a stricter spawn-reserve rule instead of a looser refill-covered signal, the opener should keep most of the controller-progress gains while recovering `spawnWaitingForSufficientEnergyPct` on train.
+- Hypothesis B: if spawn starvation episodes still happen while couriers or workers are already carrying energy, the next dominant issue is delivery-priority timing rather than energy income or body-count demand.
+- Hypothesis C: if stricter worker gating still leaves large backlog and idle-with-energy tails, the next single-rule test should let loaded couriers spend directly once refill reserve is safely covered.
+
+### Decision
+
+- `continue`
+- Keep the expanded pre-`RCL3` worker-demand direction and next isolate a stricter spawn-reserve gate for admitting worker `#3` and `#4` so the opener can protect early spawn liquidity without falling back to the old `2/2/2` plateau.
+
+## Entry `exp-2026-04-09-opener-source-sitter-runner-spawn-reserve-gating`
+
+- Status: `planned`
+- Owner: `OpenCode`
+- Date: `2026-04-09`
+
+### Hypothesis
+
+- The completed spender-demand expansion proved that the opener needed more spend-capable bodies: long runs consistently escaped the `2 harvester / 2 courier / 2 worker` plateau and controller progress improved sharply without materially hurting source metrics.
+- But the same run also showed that worker `#3` and `#4` can be admitted too aggressively for short refill-sensitive windows, leaving `spawnWaitingForSufficientEnergyPct` slightly worse on the training cohort even while long-run performance improves.
+- If the next candidate keeps the sitter-plus-runner pipeline and the ability to grow to `4` workers, but requires a stricter spawn-reserve signal before admitting those extra workers, it should preserve most of the new controller-progress gains while improving spawn waiting on train.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Planned change:
+  - keep the standard `duel-basic` scenario with no free extensions or other room mutations on either side
+  - keep the source-sitter plus runner/bootstrap split and the broader pre-`RCL3` spender-demand shape from the completed experiment
+  - keep courier routing and handoff behavior unchanged so the run isolates the worker-admission gate rather than transport contracts
+  - revise the pre-`RCL3` rule for worker `#3` and worker `#4` so they require a stricter spawn-reserve or refill-stability signal than simple momentary bank coverage
+  - keep post-`RCL3` logic unchanged so the run isolates pre-`RCL3` spawn-liquidity control on top of the now-proven spend-demand expansion
+- Key evaluation focus:
+  - `spawnWaitingForSufficientEnergyPct`
+  - `controllerProgressToRCL3Pct`
+  - `spawnIdlePct`
+  - `backlogEnergy`
+  - `withEnergyNoSpendTicks`
+  - whether representative `5k` runs still reach `2 harvester / 2 courier / 4 worker` or a nearby shape without reopening the old `2/2/2` plateau

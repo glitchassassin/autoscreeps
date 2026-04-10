@@ -143,6 +143,68 @@ describe("spawn manager", () => {
     });
   });
 
+  it("expands pre-RCL3 worker demand once source sitters, runners, and bank coverage are in place", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+
+    testGlobal.Game.creeps = {
+      harvesterA: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-a",
+        pos: { x: 10, y: 11, roomName: "W0N0" }
+      }),
+      harvesterB: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-b",
+        pos: { x: 20, y: 21, roomName: "W0N0" }
+      }),
+      courierA: makeCreep("courier", 0),
+      courierB: makeCreep("courier", 0),
+      workerA: makeCreep("worker", 1),
+      workerB: makeCreep("worker", 1)
+    };
+
+    expect(summarizeSpawnDemand(makeSpawn().room)).toEqual({
+      unmetDemand: {
+        harvester: 0,
+        courier: 0,
+        worker: 2
+      },
+      nextRole: "worker",
+      totalUnmetDemand: 2
+    });
+  });
+
+  it("keeps the extra pre-RCL3 worker demand gated behind spawn-bank coverage", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+
+    testGlobal.Game.creeps = {
+      harvesterA: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-a",
+        pos: { x: 10, y: 11, roomName: "W0N0" }
+      }),
+      harvesterB: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-b",
+        pos: { x: 20, y: 21, roomName: "W0N0" }
+      }),
+      courierA: makeCreep("courier", 0),
+      courierB: makeCreep("courier", 0),
+      workerA: makeCreep("worker", 1),
+      workerB: makeCreep("worker", 1)
+    };
+
+    expect(summarizeSpawnDemand(makeSpawn({ energyAvailable: 250 }).room)).toEqual({
+      unmetDemand: {
+        harvester: 0,
+        courier: 0,
+        worker: 0
+      },
+      nextRole: null,
+      totalUnmetDemand: 0
+    });
+  });
+
   it("does not spawn a worker before both source sitters are active", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game };
 

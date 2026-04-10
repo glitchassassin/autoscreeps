@@ -196,6 +196,9 @@ function determinePreRcl3DesiredCreeps(room: Room): Record<WorkerRole, number> {
   const couriers = countRole("courier", room.name);
   const workers = countRole("worker", room.name);
   const fullSourceSitterCount = Math.min(sourceCount, 2);
+  const spawnRefillCovered = room.energyAvailable >= room.energyCapacityAvailable;
+  const loadedCouriers = countLoadedCouriers(room.name);
+  const workerSpendParityTarget = Math.max(2, Math.min(countRoleWorkParts("harvester", room.name), 4));
   const desired: Record<WorkerRole, number> = {
     harvester: 1,
     courier: 0,
@@ -216,6 +219,17 @@ function determinePreRcl3DesiredCreeps(room: Room): Record<WorkerRole, number> {
   }
   if (workers > 0 && (sourceBacklog >= 300 || controllerLevel >= 2)) {
     desired.worker = 2;
+  }
+  if (
+    workers > 0
+    && spawnRefillCovered
+    && (
+      sourceBacklog >= 300
+      || loadedCouriers > 0
+      || (couriers >= fullSourceSitterCount && workers < workerSpendParityTarget)
+    )
+  ) {
+    desired.worker = Math.max(desired.worker, workerSpendParityTarget);
   }
 
   return desired;
@@ -349,6 +363,41 @@ function countActiveHarvestingSources(room: Room): number {
   }
 
   return activeSources.size;
+}
+
+function countLoadedCouriers(roomName: string): number {
+  let total = 0;
+
+  for (const creep of Object.values(Game.creeps)) {
+    if (
+      creep.memory.homeRoom === roomName
+      && creep.memory.role === "courier"
+      && creep.memory.working
+      && getStoredEnergy(creep) > 0
+    ) {
+      total += 1;
+    }
+  }
+
+  return total;
+}
+
+function countRoleWorkParts(role: WorkerRole, roomName?: string): number {
+  let total = 0;
+
+  for (const creep of Object.values(Game.creeps)) {
+    if (creep.memory.role !== role || (roomName && creep.memory.homeRoom !== roomName)) {
+      continue;
+    }
+
+    total += creep.body.filter((part) => part.type === WORK && part.hits > 0).length;
+  }
+
+  return total;
+}
+
+function getStoredEnergy(creep: Creep): number {
+  return typeof creep.store?.[RESOURCE_ENERGY] === "number" ? creep.store[RESOURCE_ENERGY] : 0;
 }
 
 function isPreRcl3OwnedRoom(room: Room | null): boolean {
