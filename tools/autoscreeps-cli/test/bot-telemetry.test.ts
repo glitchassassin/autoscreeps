@@ -4,7 +4,7 @@ import { buildTelemetryByRole, inspectBotTelemetry, inspectTelemetryByRole, pars
 describe("bot telemetry", () => {
   it("parses a valid telemetry payload", () => {
     const raw = JSON.stringify({
-      schemaVersion: 8,
+      schemaVersion: 9,
       gameTime: 250,
       colonyMode: "normal",
       totalCreeps: 4,
@@ -21,14 +21,22 @@ describe("bot telemetry", () => {
           sourceBacklog: 601,
           loadedCouriers: 1,
           roleCounts: { harvester: 2, courier: 2, worker: 3 },
-          openReasons: ["source_backlog"]
+          openReasons: ["source_backlog"],
+          spawnWaitingWithSourceBacklogTicks: 518,
+          sourceDropToBankLatencyAvg: 221.67,
+          withinCourier3Window: true,
+          courier3PriorityActive: true
         },
         firstWorker4: {
           gameTime: 775,
           sourceBacklog: 560,
           loadedCouriers: 1,
           roleCounts: { harvester: 2, courier: 3, worker: 3 },
-          openReasons: ["source_backlog", "courier_parity"]
+          openReasons: ["source_backlog", "courier_parity"],
+          spawnWaitingWithSourceBacklogTicks: 518,
+          sourceDropToBankLatencyAvg: 229.73,
+          withinCourier3Window: true,
+          courier3PriorityActive: true
         }
       },
       sources: {
@@ -118,7 +126,7 @@ describe("bot telemetry", () => {
     const inspection = inspectBotTelemetry(raw);
 
     expect(parsed).toEqual({
-      schemaVersion: 8,
+      schemaVersion: 9,
       gameTime: 250,
       colonyMode: "normal",
       totalCreeps: 4,
@@ -135,14 +143,22 @@ describe("bot telemetry", () => {
           sourceBacklog: 601,
           loadedCouriers: 1,
           roleCounts: { harvester: 2, courier: 2, worker: 3 },
-          openReasons: ["source_backlog"]
+          openReasons: ["source_backlog"],
+          spawnWaitingWithSourceBacklogTicks: 518,
+          sourceDropToBankLatencyAvg: 221.67,
+          withinCourier3Window: true,
+          courier3PriorityActive: true
         },
         firstWorker4: {
           gameTime: 775,
           sourceBacklog: 560,
           loadedCouriers: 1,
           roleCounts: { harvester: 2, courier: 3, worker: 3 },
-          openReasons: ["source_backlog", "courier_parity"]
+          openReasons: ["source_backlog", "courier_parity"],
+          spawnWaitingWithSourceBacklogTicks: 518,
+          sourceDropToBankLatencyAvg: 229.73,
+          withinCourier3Window: true,
+          courier3PriorityActive: true
         }
       },
       sources: {

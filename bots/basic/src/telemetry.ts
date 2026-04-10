@@ -3,7 +3,7 @@ import { ensureTelemetryState, observeTelemetryTick } from "./telemetry-state";
 
 export const telemetrySegmentId = 42;
 export const telemetrySampleEveryTicks = 25;
-export const telemetrySchemaVersion = 8;
+export const telemetrySchemaVersion = 9;
 
 export type BotTelemetrySnapshot = {
   schemaVersion: number;

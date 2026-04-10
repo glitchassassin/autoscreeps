@@ -3414,7 +3414,7 @@ node src/cli.ts experiment run suite \
 
 ## Entry `exp-2026-04-10-opener-source-sitter-runner-courier3-bank-low-latency-gate`
 
-- Status: `planned`
+- Status: `completed`
 - Owner: `OpenCode`
 - Date: `2026-04-10`
 
@@ -3431,7 +3431,7 @@ node src/cli.ts experiment run suite \
 - Variant or branch: `git:HEAD` vs `workspace`
 - Bot package: `bots/basic`
 - Suite: `experiments/suites/milestone-1-opener.yaml`
-- Planned change:
+- Change tested:
   - keep the source-sitter plus runner/bootstrap split and the exact admission telemetry added in the completed experiment
   - keep courier routing unchanged so the next test still isolates pre-`RCL3` body-demand selection rather than delivery policy
   - keep worker `#3` admission unchanged so the opener still escapes the old `2/2/2` plateau
@@ -3446,3 +3446,127 @@ node src/cli.ts experiment run suite \
   - `sourceDropToBankLatencyTotal / sourceDropToBankLatencySamples`
   - `spawnWaitingWithSourceBacklogTicks`
   - whether courier `#3` now appears mainly on the heavy-haul maps instead of globally
+
+### Command
+
+- `node src/cli.ts experiment run suite --manifest ../../experiments/suites/milestone-1-opener.yaml --baseline-source git:HEAD --baseline-package bots/basic --candidate-source workspace --candidate-package bots/basic`
+- Suite ID: `2026-04-10T14-58-44-866Z-a041e76b`
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-10T14-58-44-868Z-dcf312d0`
+  - `train-b-2k`: `2026-04-10T15-00-40-271Z-ed06da24`
+  - `train-c-5k`: `2026-04-10T15-02-30-931Z-9941cae6`
+  - `train-d-5k`: `2026-04-10T15-06-20-978Z-69096c38`
+  - `holdout-a-2k`: `2026-04-10T15-10-06-154Z-72781952`
+  - `holdout-b-5k`: `2026-04-10T15-12-11-280Z-c3d52e71`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `20.70` to `20.27` (`-2.08%`)
+  - `spawnWaitingForSufficientEnergyPct`: improved from `28.30%` to `27.02%` (`-1.28 pts`, about `-4.53%`)
+  - upstream and spawn metrics:
+    - `sourceHarvestEnergyPerTick`: `6.15 -> 6.15`
+    - `sourceHarvestUtilizationPct`: `27.65 -> 27.78`
+    - `activeHarvestingSourceUptimePct`: `61.05 -> 62.67`
+    - `spawnIdlePct`: `63.75% -> 65.42%`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `19.88` to `18.94` (`-4.75%`)
+  - `spawnWaitingForSufficientEnergyPct`: improved from `20.40%` to `17.00%` (`-3.40 pts`, about `-16.65%`)
+  - upstream and spawn metrics:
+    - `sourceHarvestEnergyPerTick`: `6.25 -> 6.25`
+    - `sourceHarvestUtilizationPct`: `31.26 -> 31.24`
+    - `activeHarvestingSourceUptimePct`: `78.28 -> 78.08`
+    - `spawnIdlePct`: `71.16% -> 75.33%`
+- Gate result:
+  - training failed because only `1/3` primary metrics improved
+  - holdout passed because the only comparable regression stayed under the `5%` ceiling while `spawnWaitingForSufficientEnergyPct` improved strongly
+  - overall suite result: `candidate-failed-gates`
+- Notable behavior:
+  - the selective gate did its immediate job: `courier #3` only admitted on the heavy `5k` maps, not on the short maps or on `train-c-5k`
+    - candidate `firstCourier3`: `train-d-5k` at `779`, `holdout-b-5k` at `707`
+    - candidate had no `firstCourier3` admission on `train-a-2k`, `train-b-2k`, `train-c-5k`, or `holdout-a-2k`
+  - short-map spawn waiting improved exactly where the previous backlog-only rule had been most clearly too broad:
+    - `train-a-2k`: `spawnWaitingForSufficientEnergyPct 66.82% -> 62.64%`; `controllerProgressToRCL3Pct 3.44 -> 4.00`
+    - `holdout-a-2k`: `spawnWaitingForSufficientEnergyPct 28.61% -> 23.69%`; `controllerProgressToRCL3Pct 7.37 -> 7.64`
+  - but the heavy maps still lost controller progress even though spawn waiting improved:
+    - `train-d-5k`: `controllerProgressToRCL3Pct 32.64 -> 30.37`; `spawnWaitingForSufficientEnergyPct 14.83% -> 13.87%`
+    - `holdout-b-5k`: `controllerProgressToRCL3Pct 32.39 -> 30.23`; `spawnWaitingForSufficientEnergyPct 12.18% -> 10.31%`
+  - the long-map regression came from falling back to less transport capacity later in the run:
+    - `train-d-5k`: baseline finished `2/3/4`; candidate finished `2/2/4`
+    - `holdout-b-5k`: baseline finished `2/3/4`; candidate finished `2/2/4`
+  - that late fallback left more energy stranded in transport on the heavy maps:
+    - `train-d-5k`: `backlogEnergy 0 -> 1093`; delivered energy `spawn 6691 -> 6053`; `worker_handoff 19309 -> 15947`; `sourceDropToBankLatency 462.73 -> 528.51`
+    - `holdout-b-5k`: `backlogEnergy 215 -> 2023`; delivered energy `spawn 6925 -> 5899`; `worker_handoff 20675 -> 15501`; `sourceDropToBankLatency 422.35 -> 449.61`
+  - `train-c-5k` stayed on the worker-first path and was almost exactly flat, which is consistent with the new gate no longer buying `courier #3` on medium-pressure maps:
+    - `firstCourier3`: baseline `null`; candidate `null`
+    - `controllerProgressToRCL3Pct 34.68 -> 34.67`; `spawnWaitingForSufficientEnergyPct 10.42% -> 10.43`
+
+### Interpretation
+
+- This experiment only partially supported the hypothesis.
+- It succeeded at the narrow selection goal:
+  - late/global `courier #3` admissions disappeared on the short cases
+  - `spawnWaitingForSufficientEnergyPct` improved on both cohorts
+- But it still failed the milestone objective because the selective rule cut too much transport capacity back out of the heavy-haul maps after the initial admission window.
+- The new telemetry was sufficient to answer the failure mode directly without another diagnostic rerun:
+  - the candidate only admitted `courier #3` on the heavy maps, so the short-map broad-trigger problem really was reduced
+  - but both heavy `5k` maps still ended at `2/2/4` instead of baseline `2/3/4`
+  - those same maps finished with much larger backlog, lower delivered energy, and worse `sourceDropToBankLatency`
+- Against Screeps world constraints, the strongest read is now:
+  - harvest did not materially change, so source extraction was not the limiting factor here
+  - the candidate improved spawn-bank liquidity mostly by not paying to sustain the third courier as often
+  - on long-haul maps, that cheaper spawn path left more energy stranded between the source drop and the useful spend sinks, so controller progress fell even while spawn waiting improved
+- After consulting the Screeps world-model expert with only the experiment goal, setup, observed behavior, metrics, and results, the strongest external read matched the run data:
+  - this was a transport-capacity false-negative or under-sustain failure, not a source-harvest failure
+  - the next highest-information test is to keep the short-map worker-first path, but make the heavy-map courier path easier to admit and easier to sustain once high haul latency is proven
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: the next experiment should drop bank-low as a required signal and admit `courier #3` whenever early high source backlog coincides with clearly high source-drop-to-bank latency, because bank-low pressure did not distinguish the heavy maps cleanly enough on its own.
+- Hypothesis B: if `courier #3` is admitted on those heavy maps, the room should stay on a `3 courier` pre-`RCL3` track while the haul pressure persists; otherwise the transport win disappears before it can repay itself.
+- Hypothesis C: if sustained heavy-map `courier #3` still fails, the next dominant lever is likely spawn-bank or spend policy rather than marginal courier admission itself.
+
+### Decision
+
+- `continue`
+- Do not promote this variant as the new baseline. Keep the telemetry schema `9` admission context and the recorded failed result.
+- Next planned experiment: `exp-2026-04-10-opener-source-sitter-runner-courier3-latency-sustain-no-bank-low`.
+
+## Entry `exp-2026-04-10-opener-source-sitter-runner-courier3-latency-sustain-no-bank-low`
+
+- Status: `planned`
+- Owner: `OpenCode`
+- Date: `2026-04-10`
+
+### Hypothesis
+
+- The completed bank-low-plus-latency gate proved that broad late `courier #3` admission was a real short-map problem, but it also showed that the heavy maps still need more sustained transport than `2/2/4` can provide.
+- On `train-d-5k` and `holdout-b-5k`, the candidate admitted `courier #3` at the intended early heavy-haul window, yet both cases still finished at `2/2/4` with much larger backlog and worse source-drop-to-bank latency than baseline `2/3/4`.
+- If the next candidate drops bank-low as a required signal, uses early backlog plus clearly high source-drop-to-bank latency as the heavy-map admission test, and then keeps the room on a `3 courier` pre-`RCL3` track while that haul pressure persists, it should keep the short-map spawn-wait recovery while restoring controller progress on the heavy maps.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Planned change:
+  - keep the source-sitter plus runner/bootstrap split and the admission telemetry added in the completed experiment
+  - keep the short-map worker-first path unless the room shows both early high source backlog and clearly high source-drop-to-bank latency
+  - drop bank-low-with-source-backlog as a required marginal-courier admission signal
+  - when the heavy-haul latency gate does fire, admit `courier #3` before `worker #4` and keep pre-`RCL3` courier demand at `3` while the haul pressure persists, even after `worker #4` exists
+  - keep post-`RCL3` logic unchanged so the run isolates heavy-map courier admission plus sustainment rather than a broader architecture rewrite
+- Key evaluation focus:
+  - `controllerProgressToRCL3Pct`
+  - `spawnWaitingForSufficientEnergyPct`
+  - exact first `courier #3` and `worker #4` admission ticks plus their recorded admission context
+  - whether heavy `5k` cases retain `2/3/4` materially longer instead of falling back to `2/2/4`
+  - `sourceDropToBankLatencyTotal / sourceDropToBankLatencySamples`
+  - `spawnWaitingWithSourceBacklogTicks`
+  - `backlogEnergy`
+  - delivered energy to `spawn` and `worker_handoff`

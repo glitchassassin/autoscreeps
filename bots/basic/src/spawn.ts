@@ -11,7 +11,10 @@ const preRcl3BodyCostCapByRole: Partial<Record<WorkerRole, number>> = {
   worker: 300
 };
 
-const preRcl3BacklogCourierBeforeWorker4Threshold = 600;
+const preRcl3Courier3SourceBacklogThreshold = 700;
+const preRcl3Courier3BankLowBacklogPressureThreshold = 500;
+const preRcl3Courier3LatencyThreshold = 200;
+const preRcl3Courier3PostRcl2GraceTicks = 50;
 const preRcl3BacklogCourierTarget = 3;
 
 export type SpawnDemandSummary = {
@@ -184,7 +187,10 @@ function buildSpawnAdmissionSnapshot(room: Room): TelemetrySpawnAdmissionState |
     return null;
   }
 
-  const extraWorkerGate = inspectPreRcl3ExtraWorkerGate(room);
+  const context = createPreRcl3DemandContext(room);
+  const baseDesired = determinePreRcl3BaseDesiredCreeps(context);
+  const desiredCourierTarget = determinePreRcl3BacklogCourierTargetCount(context, baseDesired.courier);
+  const extraWorkerGate = resolvePreRcl3ExtraWorkerGate(context, baseDesired.worker, desiredCourierTarget);
 
   return {
     gameTime: Game.time,
@@ -195,7 +201,11 @@ function buildSpawnAdmissionSnapshot(room: Room): TelemetrySpawnAdmissionState |
       courier: countRole("courier", room.name),
       worker: countRole("worker", room.name)
     },
-    openReasons: [...(extraWorkerGate?.openReasons ?? [])]
+    openReasons: [...extraWorkerGate.openReasons],
+    spawnWaitingWithSourceBacklogTicks: context.spawnWaitingWithSourceBacklogTicks,
+    sourceDropToBankLatencyAvg: context.sourceDropToBankLatencyAvg,
+    withinCourier3Window: context.withinCourier3Window,
+    courier3PriorityActive: isPreRcl3Courier3PriorityActive(context)
   };
 }
 
@@ -305,6 +315,7 @@ function determinePreRcl3DesiredCreeps(room: Room): Record<WorkerRole, number> {
 }
 
 type PreRcl3DemandContext = {
+  gameTime: number;
   room: Room;
   sourceCount: number;
   activeHarvestingSourceCount: number;
@@ -317,12 +328,20 @@ type PreRcl3DemandContext = {
   spawnRefillCovered: boolean;
   loadedCouriers: number;
   workerSpendParityTarget: number;
+  spawnWaitingWithSourceBacklogTicks: number;
+  sourceDropToBankLatencyAvg: number | null;
+  rcl2Tick: number | null;
+  withinCourier3Window: boolean;
+  worker4Started: boolean;
 };
 
 function createPreRcl3DemandContext(room: Room): PreRcl3DemandContext {
   const sourceCount = Math.max(countSources(room), 1);
+  const telemetryLoop = Memory.telemetry?.loop;
+  const rcl2Tick = Memory.telemetry?.rcl2Tick ?? null;
 
   return {
+    gameTime: Game.time,
     room,
     sourceCount,
     activeHarvestingSourceCount: countActiveHarvestingSources(room),
@@ -334,7 +353,15 @@ function createPreRcl3DemandContext(room: Room): PreRcl3DemandContext {
     fullSourceSitterCount: Math.min(sourceCount, 2),
     spawnRefillCovered: room.energyAvailable >= room.energyCapacityAvailable,
     loadedCouriers: countLoadedCouriers(room.name),
-    workerSpendParityTarget: Math.max(2, Math.min(countRoleWorkParts("harvester", room.name), 4))
+    workerSpendParityTarget: Math.max(2, Math.min(countRoleWorkParts("harvester", room.name), 4)),
+    spawnWaitingWithSourceBacklogTicks: telemetryLoop?.spawnWaitingWithSourceBacklogTicks ?? 0,
+    sourceDropToBankLatencyAvg: averageLatency(
+      telemetryLoop?.sourceDropToBankLatencyTotal,
+      telemetryLoop?.sourceDropToBankLatencySamples
+    ),
+    rcl2Tick,
+    withinCourier3Window: rcl2Tick === null || Game.time <= rcl2Tick + preRcl3Courier3PostRcl2GraceTicks,
+    worker4Started: Memory.telemetry?.spawnAdmissions?.firstWorker4 != null
   };
 }
 
@@ -368,15 +395,27 @@ function determinePreRcl3BacklogCourierTargetCount(
   context: PreRcl3DemandContext,
   baseCourierTarget: number
 ): number {
-  if (
-    context.workers >= 3
-    && context.couriers >= context.fullSourceSitterCount
-    && context.sourceBacklog >= preRcl3BacklogCourierBeforeWorker4Threshold
-  ) {
+  if (isPreRcl3Courier3PriorityActive(context)) {
     return Math.max(baseCourierTarget, preRcl3BacklogCourierTarget);
   }
 
   return baseCourierTarget;
+}
+
+function isPreRcl3Courier3PriorityActive(context: PreRcl3DemandContext): boolean {
+  const bankLowBacklogPressure = context.spawnWaitingWithSourceBacklogTicks >= preRcl3Courier3BankLowBacklogPressureThreshold;
+  const latencyPressure = context.sourceDropToBankLatencyAvg !== null
+    && context.sourceDropToBankLatencyAvg >= preRcl3Courier3LatencyThreshold;
+
+  return (
+    context.workers >= 3
+    && context.couriers >= context.fullSourceSitterCount
+    && !context.worker4Started
+    && context.withinCourier3Window
+    && context.sourceBacklog >= preRcl3Courier3SourceBacklogThreshold
+    && context.loadedCouriers > 0
+    && (bankLowBacklogPressure || latencyPressure)
+  );
 }
 
 function resolvePreRcl3ExtraWorkerGate(
@@ -402,7 +441,7 @@ function resolvePreRcl3ExtraWorkerGate(
 
     const needsBacklogCourierBeforeWorker4 = (
       desiredCourierTarget > context.fullSourceSitterCount
-      && context.sourceBacklog >= preRcl3BacklogCourierBeforeWorker4Threshold
+      && context.sourceBacklog >= preRcl3Courier3SourceBacklogThreshold
       && context.couriers < desiredCourierTarget
     );
 
@@ -587,6 +626,14 @@ function countRoleWorkParts(role: WorkerRole, roomName?: string): number {
 
 function getStoredEnergy(creep: Creep): number {
   return typeof creep.store?.[RESOURCE_ENERGY] === "number" ? creep.store[RESOURCE_ENERGY] : 0;
+}
+
+function averageLatency(total: number | undefined, samples: number | undefined): number | null {
+  if (typeof total !== "number" || typeof samples !== "number" || samples <= 0) {
+    return null;
+  }
+
+  return total / samples;
 }
 
 function isPreRcl3OwnedRoom(room: Room | null): boolean {

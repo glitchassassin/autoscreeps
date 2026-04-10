@@ -82,7 +82,7 @@ describe("telemetry", () => {
     const snapshot = createTelemetrySnapshot(spawn, Memory.telemetry!);
 
     expect(snapshot).toEqual({
-      schemaVersion: 8,
+      schemaVersion: 9,
       gameTime: 25,
       debugError: null,
       colonyMode: "normal",
@@ -218,7 +218,7 @@ describe("telemetry", () => {
     const rawSegment = testGlobal.RawMemory.segments[telemetrySegmentId];
     expect(typeof rawSegment).toBe("string");
     expect(JSON.parse(rawSegment as string)).toMatchObject({
-      schemaVersion: 8,
+      schemaVersion: 9,
       gameTime: 25,
       roleCounts: {
         harvester: 2,

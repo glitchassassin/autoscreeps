@@ -268,7 +268,17 @@ function isStringArray(value: unknown): value is string[] {
 
 function parseSpawnAdmission(
   value: unknown
-): { gameTime: number; sourceBacklog: number; loadedCouriers: number; roleCounts: Record<string, number>; openReasons: string[] } | null | undefined {
+): {
+  gameTime: number;
+  sourceBacklog: number;
+  loadedCouriers: number;
+  roleCounts: Record<string, number>;
+  openReasons: string[];
+  spawnWaitingWithSourceBacklogTicks: number;
+  sourceDropToBankLatencyAvg: number | null;
+  withinCourier3Window: boolean;
+  courier3PriorityActive: boolean;
+} | null | undefined {
   if (value === null) {
     return null;
   }
@@ -282,6 +292,16 @@ function parseSpawnAdmission(
     sourceBacklog: typeof value.sourceBacklog === "number" ? value.sourceBacklog : 0,
     loadedCouriers: typeof value.loadedCouriers === "number" ? value.loadedCouriers : 0,
     roleCounts: value.roleCounts,
-    openReasons: isStringArray(value.openReasons) ? value.openReasons : []
+    openReasons: isStringArray(value.openReasons) ? value.openReasons : [],
+    spawnWaitingWithSourceBacklogTicks: typeof value.spawnWaitingWithSourceBacklogTicks === "number"
+      ? value.spawnWaitingWithSourceBacklogTicks
+      : 0,
+    sourceDropToBankLatencyAvg: typeof value.sourceDropToBankLatencyAvg === "number"
+      ? value.sourceDropToBankLatencyAvg
+      : value.sourceDropToBankLatencyAvg === null
+        ? null
+        : null,
+    withinCourier3Window: typeof value.withinCourier3Window === "boolean" ? value.withinCourier3Window : false,
+    courier3PriorityActive: typeof value.courier3PriorityActive === "boolean" ? value.courier3PriorityActive : false
   };
 }

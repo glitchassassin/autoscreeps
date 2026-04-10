@@ -128,6 +128,10 @@ declare global {
     loadedCouriers: number;
     roleCounts: Record<WorkerRole, number>;
     openReasons: string[];
+    spawnWaitingWithSourceBacklogTicks: number;
+    sourceDropToBankLatencyAvg: number | null;
+    withinCourier3Window: boolean;
+    courier3PriorityActive: boolean;
   }
 
   interface TelemetrySpawnAdmissionsState {

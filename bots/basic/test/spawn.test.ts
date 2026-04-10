@@ -176,6 +176,22 @@ describe("spawn manager", () => {
 
   it("prefers courier three before worker four when source backlog stays high", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game };
+    (globalThis as typeof globalThis & { Memory: Memory }).Memory.telemetry = {
+      creepDeaths: 0,
+      firstOwnedSpawnTick: null,
+      rcl2Tick: 660,
+      rcl3Tick: null,
+      loop: {
+        spawnWaitingWithSourceBacklogTicks: 520,
+        sourceDropToBankLatencyTotal: 600,
+        sourceDropToBankLatencySamples: 2
+      } as TelemetryLoopState,
+      spawnAdmissions: {
+        firstCourier3: null,
+        firstWorker4: null
+      }
+    } as TelemetryMemoryState;
+    testGlobal.Game.time = 700;
 
     testGlobal.Game.creeps = {
       harvesterA: makeCreep("harvester", 2, {
@@ -188,7 +204,7 @@ describe("spawn manager", () => {
         sourceId: "source-b",
         pos: { x: 20, y: 21, roomName: "W0N0" }
       }),
-      courierA: makeCreep("courier", 0),
+      courierA: makeCreep("courier", 0, { storedEnergy: 50, working: true }),
       courierB: makeCreep("courier", 0),
       workerA: makeCreep("worker", 1),
       workerB: makeCreep("worker", 1),
@@ -197,8 +213,8 @@ describe("spawn manager", () => {
 
     const spawn = makeSpawn({
       droppedResources: [
-        makeDroppedEnergy(320, { x: 9, y: 10, roomName: "W0N0" }),
-        makeDroppedEnergy(300, { x: 19, y: 20, roomName: "W0N0" })
+        makeDroppedEnergy(360, { x: 9, y: 10, roomName: "W0N0" }),
+        makeDroppedEnergy(350, { x: 19, y: 20, roomName: "W0N0" })
       ]
     });
 
@@ -209,6 +225,126 @@ describe("spawn manager", () => {
         worker: 0
       },
       nextRole: "courier",
+      totalUnmetDemand: 1
+    });
+  });
+
+  it("does not add courier three after the worker-four path is already committed", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game; Memory: Memory };
+    testGlobal.Memory.telemetry = {
+      creepDeaths: 0,
+      firstOwnedSpawnTick: null,
+      rcl2Tick: 760,
+      rcl3Tick: null,
+      loop: {
+        spawnWaitingWithSourceBacklogTicks: 620,
+        sourceDropToBankLatencyTotal: 900,
+        sourceDropToBankLatencySamples: 2
+      } as TelemetryLoopState,
+      spawnAdmissions: {
+        firstCourier3: null,
+        firstWorker4: {
+          gameTime: 780,
+          sourceBacklog: 880,
+          loadedCouriers: 1,
+          roleCounts: {
+            harvester: 2,
+            courier: 2,
+            worker: 3
+          },
+          openReasons: ["source_backlog", "loaded_courier"],
+          spawnWaitingWithSourceBacklogTicks: 540,
+          sourceDropToBankLatencyAvg: 380,
+          withinCourier3Window: true,
+          courier3PriorityActive: false
+        }
+      }
+    } as TelemetryMemoryState;
+    testGlobal.Game.time = 800;
+
+    testGlobal.Game.creeps = {
+      harvesterA: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-a",
+        pos: { x: 10, y: 11, roomName: "W0N0" }
+      }),
+      harvesterB: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-b",
+        pos: { x: 20, y: 21, roomName: "W0N0" }
+      }),
+      courierA: makeCreep("courier", 0, { storedEnergy: 50, working: true }),
+      courierB: makeCreep("courier", 0),
+      workerA: makeCreep("worker", 1),
+      workerB: makeCreep("worker", 1),
+      workerC: makeCreep("worker", 1)
+    };
+
+    expect(summarizeSpawnDemand(makeSpawn({
+      droppedResources: [
+        makeDroppedEnergy(480, { x: 9, y: 10, roomName: "W0N0" }),
+        makeDroppedEnergy(470, { x: 19, y: 20, roomName: "W0N0" })
+      ]
+    }).room)).toEqual({
+      unmetDemand: {
+        harvester: 0,
+        courier: 0,
+        worker: 1
+      },
+      nextRole: "worker",
+      totalUnmetDemand: 1
+    });
+  });
+
+  it("does not add courier three after the early post-RCL2 window closes", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game; Memory: Memory };
+    testGlobal.Memory.telemetry = {
+      creepDeaths: 0,
+      firstOwnedSpawnTick: null,
+      rcl2Tick: 742,
+      rcl3Tick: null,
+      loop: {
+        spawnWaitingWithSourceBacklogTicks: 620,
+        sourceDropToBankLatencyTotal: 900,
+        sourceDropToBankLatencySamples: 2
+      } as TelemetryLoopState,
+      spawnAdmissions: {
+        firstCourier3: null,
+        firstWorker4: null
+      }
+    } as TelemetryMemoryState;
+    testGlobal.Game.time = 805;
+
+    testGlobal.Game.creeps = {
+      harvesterA: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-a",
+        pos: { x: 10, y: 11, roomName: "W0N0" }
+      }),
+      harvesterB: makeCreep("harvester", 2, {
+        working: false,
+        sourceId: "source-b",
+        pos: { x: 20, y: 21, roomName: "W0N0" }
+      }),
+      courierA: makeCreep("courier", 0, { storedEnergy: 50, working: true }),
+      courierB: makeCreep("courier", 0),
+      workerA: makeCreep("worker", 1),
+      workerB: makeCreep("worker", 1),
+      workerC: makeCreep("worker", 1)
+    };
+
+    expect(summarizeSpawnDemand(makeSpawn({
+      droppedResources: [
+        makeDroppedEnergy(480, { x: 9, y: 10, roomName: "W0N0" }),
+        makeDroppedEnergy(470, { x: 19, y: 20, roomName: "W0N0" })
+      ]
+    }).room)).toEqual({
+      unmetDemand: {
+        harvester: 0,
+        courier: 0,
+        worker: 1
+      },
+      nextRole: "worker",
       totalUnmetDemand: 1
     });
   });
@@ -255,6 +391,22 @@ describe("spawn manager", () => {
 
   it("records the first courier three admission context on spawn start", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game; Memory: Memory };
+    testGlobal.Memory.telemetry = {
+      creepDeaths: 0,
+      firstOwnedSpawnTick: null,
+      rcl2Tick: 660,
+      rcl3Tick: null,
+      loop: {
+        spawnWaitingWithSourceBacklogTicks: 520,
+        sourceDropToBankLatencyTotal: 600,
+        sourceDropToBankLatencySamples: 2
+      } as TelemetryLoopState,
+      spawnAdmissions: {
+        firstCourier3: null,
+        firstWorker4: null
+      }
+    } as TelemetryMemoryState;
+    testGlobal.Game.time = 700;
 
     testGlobal.Game.creeps = {
       harvesterA: makeCreep("harvester", 2, {
@@ -267,7 +419,7 @@ describe("spawn manager", () => {
         sourceId: "source-b",
         pos: { x: 20, y: 21, roomName: "W0N0" }
       }),
-      courierA: makeCreep("courier", 0),
+      courierA: makeCreep("courier", 0, { storedEnergy: 50, working: true }),
       courierB: makeCreep("courier", 0),
       workerA: makeCreep("worker", 1),
       workerB: makeCreep("worker", 1),
@@ -276,26 +428,46 @@ describe("spawn manager", () => {
 
     runSpawnManager(makeSpawn({
       droppedResources: [
-        makeDroppedEnergy(320, { x: 9, y: 10, roomName: "W0N0" }),
-        makeDroppedEnergy(300, { x: 19, y: 20, roomName: "W0N0" })
+        makeDroppedEnergy(360, { x: 9, y: 10, roomName: "W0N0" }),
+        makeDroppedEnergy(350, { x: 19, y: 20, roomName: "W0N0" })
       ]
     }));
 
     expect(testGlobal.Memory.telemetry?.spawnAdmissions?.firstCourier3).toEqual({
-      gameTime: 123,
-      sourceBacklog: 620,
-      loadedCouriers: 0,
+      gameTime: 700,
+      sourceBacklog: 710,
+      loadedCouriers: 1,
       roleCounts: {
         harvester: 2,
         courier: 2,
         worker: 3
       },
-      openReasons: ["source_backlog"]
+      openReasons: ["source_backlog", "loaded_courier"],
+      spawnWaitingWithSourceBacklogTicks: 520,
+      sourceDropToBankLatencyAvg: 300,
+      withinCourier3Window: true,
+      courier3PriorityActive: true
     });
   });
 
   it("records the first worker four admission context on spawn start", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game; Memory: Memory };
+    testGlobal.Memory.telemetry = {
+      creepDeaths: 0,
+      firstOwnedSpawnTick: null,
+      rcl2Tick: 660,
+      rcl3Tick: null,
+      loop: {
+        spawnWaitingWithSourceBacklogTicks: 520,
+        sourceDropToBankLatencyTotal: 600,
+        sourceDropToBankLatencySamples: 2
+      } as TelemetryLoopState,
+      spawnAdmissions: {
+        firstCourier3: null,
+        firstWorker4: null
+      }
+    } as TelemetryMemoryState;
+    testGlobal.Game.time = 700;
 
     testGlobal.Game.creeps = {
       harvesterA: makeCreep("harvester", 2, {
@@ -308,7 +480,7 @@ describe("spawn manager", () => {
         sourceId: "source-b",
         pos: { x: 20, y: 21, roomName: "W0N0" }
       }),
-      courierA: makeCreep("courier", 0),
+      courierA: makeCreep("courier", 0, { storedEnergy: 50, working: true }),
       courierB: makeCreep("courier", 0),
       courierC: makeCreep("courier", 0),
       workerA: makeCreep("worker", 1),
@@ -318,21 +490,25 @@ describe("spawn manager", () => {
 
     runSpawnManager(makeSpawn({
       droppedResources: [
-        makeDroppedEnergy(320, { x: 9, y: 10, roomName: "W0N0" }),
-        makeDroppedEnergy(300, { x: 19, y: 20, roomName: "W0N0" })
+        makeDroppedEnergy(360, { x: 9, y: 10, roomName: "W0N0" }),
+        makeDroppedEnergy(350, { x: 19, y: 20, roomName: "W0N0" })
       ]
     }));
 
     expect(testGlobal.Memory.telemetry?.spawnAdmissions?.firstWorker4).toEqual({
-      gameTime: 123,
-      sourceBacklog: 620,
-      loadedCouriers: 0,
+      gameTime: 700,
+      sourceBacklog: 710,
+      loadedCouriers: 1,
       roleCounts: {
         harvester: 2,
         courier: 3,
         worker: 3
       },
-      openReasons: ["source_backlog", "courier_parity"]
+      openReasons: ["source_backlog", "loaded_courier", "courier_parity"],
+      spawnWaitingWithSourceBacklogTicks: 520,
+      sourceDropToBankLatencyAvg: 300,
+      withinCourier3Window: true,
+      courier3PriorityActive: true
     });
   });
 

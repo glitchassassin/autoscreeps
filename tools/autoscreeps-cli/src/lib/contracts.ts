@@ -158,6 +158,10 @@ export type BotTelemetrySnapshot = {
       loadedCouriers: number;
       roleCounts: Record<string, number>;
       openReasons: string[];
+      spawnWaitingWithSourceBacklogTicks?: number;
+      sourceDropToBankLatencyAvg?: number | null;
+      withinCourier3Window?: boolean;
+      courier3PriorityActive?: boolean;
     } | null;
     firstWorker4?: {
       gameTime: number;
@@ -165,6 +169,10 @@ export type BotTelemetrySnapshot = {
       loadedCouriers: number;
       roleCounts: Record<string, number>;
       openReasons: string[];
+      spawnWaitingWithSourceBacklogTicks?: number;
+      sourceDropToBankLatencyAvg?: number | null;
+      withinCourier3Window?: boolean;
+      courier3PriorityActive?: boolean;
     } | null;
   };
   sources?: {
