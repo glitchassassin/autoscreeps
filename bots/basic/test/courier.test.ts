@@ -103,6 +103,24 @@ describe("courier queue-head reserve floor", () => {
     expect(creep.transfer).not.toHaveBeenCalled();
   });
 
+  it("stages a loaded courier even before immediate affordability when reserve can still close the next spawn", () => {
+    const spawn = makeSpawn({ energyAvailable: 200 });
+    const creep = makeCourier("courierA", spawn.room, makePosition(10, 10), 150);
+    const worker = makeWorker("workerA", spawn.room, makePosition(20, 20));
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+
+    testGlobal.Game.creeps = {
+      courierA: creep,
+      workerA: worker
+    };
+
+    runCourier(creep);
+
+    expect(mocks.moveToTarget).toHaveBeenCalledWith(creep, spawn);
+    expect(creep.drop).not.toHaveBeenCalled();
+    expect(creep.transfer).not.toHaveBeenCalled();
+  });
+
   it("stages additional loaded couriers until adjacent reserve can cover a full queue-head cost", () => {
     const spawn = makeSpawn();
     const stagedCourier = makeCourier("courierA", spawn.room, makePosition(15, 14), 200);
@@ -144,7 +162,7 @@ describe("courier queue-head reserve floor", () => {
   });
 });
 
-function makeSpawn(): StructureSpawn {
+function makeSpawn(overrides: { energyAvailable?: number; energyCapacityAvailable?: number } = {}): StructureSpawn {
   const spawn = {
     id: "spawn-1",
     name: "Spawn1",
@@ -157,8 +175,8 @@ function makeSpawn(): StructureSpawn {
 
   const room = {
     name: "W0N0",
-    energyAvailable: 300,
-    energyCapacityAvailable: 300,
+    energyAvailable: overrides.energyAvailable ?? 300,
+    energyCapacityAvailable: overrides.energyCapacityAvailable ?? 300,
     controller: {
       my: true,
       level: 2

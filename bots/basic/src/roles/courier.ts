@@ -100,7 +100,6 @@ function shouldHoldCourierForQueueHeadReserve(creep: Creep, spawn: StructureSpaw
   const pressure = inspectSpawnBankPressure(creep.room);
   return pressure.totalUnmetDemand > 0
     && pressure.queueHeadCost !== null
-    && creep.room.energyAvailable >= pressure.queueHeadCost
     && countOtherSpawnAdjacentLoadedCourierEnergy(creep, spawn) < pressure.queueHeadCost;
 }
 

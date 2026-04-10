@@ -4138,3 +4138,140 @@ node src/cli.ts experiment run suite \
 - `continue`
 - Keep this result as an under-realized near-null diagnostic. Do not describe it as a meaningful success, and do not chain another small reserve tweak from it.
 - Next planned experiment: `exp-2026-04-10-opener-source-sitter-runner-courier3-worker3-hard-reserve-vs-worker4-discriminator`.
+
+## Entry `exp-2026-04-10-opener-source-sitter-runner-courier3-worker3-hard-reserve-vs-worker4-discriminator`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-10`
+- Type: `diagnostic/ablation`
+- Dominant bottleneck: `forced heavy-haul 2/3/3 still lost too much banked spawn energy and upgrade spend versus sustained 2/3/4, and the attempted hard reserve again failed to bind enough to substitute for worker4`
+- Relevant theoretical headroom:
+  - owned two-source gross harvest ceiling remains `20 e/t`, while realized harvest on these heavy-map branches still stayed around `6.4-6.6 e/t`
+  - pre-`RCL7` rooms still have one serial spawn, and the full creep cost must be present up front in banked `spawn + extensions` energy before a new spawn can start
+  - dropped source energy still decays while stranded, and upgrade spend still converts `1 energy -> 1 controller progress`
+
+### Hypothesis
+
+- The completed worker4-dependency ablation showed that sustained `courier #3` alone was not enough: forced `2/3/3` lost sharply against the sustained `2/3/4` heavy-haul baseline even though harvest stayed flat.
+- The completed reserve rescues still left one branch open only because they barely bound: the latest queue-head reserve held only `4` reserve-courier ticks per heavy map.
+- If a much harder reserve inside forced `2/3/3` can really substitute for `worker #4`, then the positive controls should recover a substantial fraction of the lost gap toward the sustained `2/3/4` control while the negative control stays flat.
+
+### Experiment
+
+- Variant or branch: `git:5ba4d3b` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/exp-2026-04-10-opener-source-sitter-runner-courier3-worker3-hard-reserve-vs-worker4-discriminator.yaml`
+- Positive and negative controls:
+  - use `train-d-5k` and `holdout-b-5k` as positive controls because sustained heavy-haul `2/3/4` only won on those maps in the earlier focused runs
+  - use `train-c-5k` as the negative control because it stayed worker-first and flat even when the heavy-haul `courier #3` selector existed
+- Rationale from prior evidence:
+  - the known-good sustained `2/3/4` control materially outperformed forced `2/3/3` on the heavy maps while harvest stayed flat:
+    - `train-d-5k`: `controllerProgressToRCL3Pct 32.54 -> 26.24`; delivered energy `spawn 6597 -> 5820`; `energySpentOnUpgrade 14646 -> 11813`
+    - `holdout-b-5k`: `controllerProgressToRCL3Pct 32.93 -> 25.89`; delivered energy `spawn 6708 -> 5991`; `energySpentOnUpgrade 14826 -> 11645`
+  - the previous reserve diagnostic was under-realized rather than decisive:
+    - `train-d-5k`: `queueHeadReserveCourierTicks 4`; `queueHeadReserveHeldEnergyTotal 711`
+    - `holdout-b-5k`: `queueHeadReserveCourierTicks 4`; `queueHeadReserveHeldEnergyTotal 660`
+  - Screeps hard constraints still make spawn-bank timing a plausible first-order substitute branch worth one harder test:
+    - only banked room energy can start the next spawn
+    - nearby courier carry does not count until transferred
+    - the room is still far below the source-income ceiling, so extraction saturation is not the limiting factor here
+- Change tested:
+  - keep the focused-map structure and the heavy-haul `courier #3` sustain path that proved useful on the positive controls
+  - keep the candidate forced to `2/3/3` by blocking pre-`RCL3` `worker #4`
+  - compare that candidate directly against the known-good sustained `2/3/4` control commit instead of against another reserve variant
+  - strengthen the candidate reserve attempt so loaded couriers can stage for queue-head affordability even before immediate room-bank affordability is already reached, rather than only after the room has already crossed the queue-head cost
+  - keep post-`RCL3` logic unchanged so the run isolates reserve substitution versus the known-good worker4 regime
+- Key evaluation focus:
+  - `controllerProgressToRCL3Pct`
+  - `spawnWaitingForSufficientEnergyPct`
+  - `queueHeadReserveCourierTicks`
+  - `queueHeadReserveHeldEnergyTotal`
+  - `spawnBlockedDespiteAdjacentCourierClosingDeficitTicks`
+  - delivered energy to `spawn` and `worker_handoff`
+  - `sourceDropToBankLatencyTotal / sourceDropToBankLatencySamples`
+  - exact first `courier #3` and `worker #4` admissions plus final role counts so the run can separate reserve policy from composition drift
+- Command:
+  - `node src/cli.ts experiment run suite --manifest ../../experiments/suites/exp-2026-04-10-opener-source-sitter-runner-courier3-worker3-hard-reserve-vs-worker4-discriminator.yaml --baseline-source git:5ba4d3b --baseline-package bots/basic --candidate-source workspace --candidate-package bots/basic`
+- Suite ID: `2026-04-10T20-29-55-737Z-3c1b2a4a`
+- Cases and run IDs:
+  - `train-c-5k`: `2026-04-10T20-29-55-739Z-1e74e22b`
+  - `train-d-5k`: `2026-04-10T20-33-46-860Z-a28d6253`
+  - `holdout-b-5k`: `2026-04-10T20-37-36-934Z-c392d02a`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm run typecheck` passed
+- All `3/3` focused-suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `33.62` to `30.53` (`-3.09`, about `-9.19%`)
+  - `spawnWaitingForSufficientEnergyPct`: regressed from `12.44%` to `14.43%` (`+1.99 pts`, about `+16.00%`)
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `32.92` to `26.52` (`-6.40`, about `-19.44%`)
+  - `spawnWaitingForSufficientEnergyPct`: regressed from `10.04%` to `12.99%` (`+2.95 pts`, about `+29.38%`)
+- Gate result:
+  - training failed because `0/3` primary metrics improved
+  - holdout failed because both comparable primary metrics regressed beyond the `5%` ceiling
+  - overall focused-suite result: `candidate-failed-gates`
+- Notable behavior:
+  - the negative control stayed flat exactly as intended:
+    - `train-c-5k`: `controllerProgressToRCL3Pct 34.66 -> 34.67`; `spawnWaitingForSufficientEnergyPct 10.43% -> 10.42%`
+    - `train-c-5k`: final role counts `2/2/4 -> 2/2/4`; `firstCourier3 null -> null`; `queueHeadReserveCourierTicks 0`
+    - `train-c-5k`: delivered energy `spawn 5904 -> 5904`; `worker_handoff 21896 -> 21896`; `sourceDropToBankLatency 280.80 -> 280.80`
+  - the positive controls again realized the forced-`2/3/3` structure cleanly rather than drifting back into the worker4 regime:
+    - `train-d-5k`: final role counts `2/3/4 -> 2/3/3`; `firstCourier3 779 -> 779`; `firstWorker4 853 -> null`
+    - `holdout-b-5k`: final role counts `2/3/4 -> 2/3/3`; `firstCourier3 706 -> 707`; `firstWorker4 760 -> null`
+  - but the attempted hard reserve still barely bound and stayed in the same weak regime as the prior reserve run:
+    - `train-d-5k`: `queueHeadReserveCourierTicks 4`; `queueHeadReserveHeldEnergyTotal 711`; `spawnBlockedDespiteAdjacentCourierClosingDeficitTicks 6`
+    - `holdout-b-5k`: `queueHeadReserveCourierTicks 4`; `queueHeadReserveHeldEnergyTotal 660`; `spawnBlockedDespiteAdjacentCourierClosingDeficitTicks 9`
+  - both positive controls again lost the same downstream performance that worker4 had previously restored:
+    - `train-d-5k`: `controllerProgressToRCL3Pct 32.58 -> 26.38`; delivered energy `spawn 6597 -> 5797`; `worker_handoff 19403 -> 21003`; `sourceDropToBankLatency 446.17 -> 474.34`; `energySpentOnUpgrade 14646 -> 11867`
+    - `holdout-b-5k`: `controllerProgressToRCL3Pct 32.92 -> 26.52`; delivered energy `spawn 6708 -> 5866`; `worker_handoff 20092 -> 20934`; `sourceDropToBankLatency 310.49 -> 679.22`; `energySpentOnUpgrade 14826 -> 11937`
+
+### Interpretation
+
+- This experiment did not rescue forced heavy-haul `2/3/3`.
+- The correct label is explicit: this was another same-regime, under-realized reserve failure, not a meaningful success and not a clean proof that every conceivable reserve branch is impossible.
+- The negative control makes the branch-specific read clean:
+  - `train-c-5k` stayed flat
+  - no `courier #3` appeared there on either side
+  - reserve exposure stayed at `0`
+- The positive controls also realized the intended composition contrast cleanly:
+  - baseline stayed in the known-good `2/3/4` heavy-haul regime
+  - candidate stayed in forced `2/3/3`
+  - first `courier #3` timing stayed aligned while `worker #4` remained blocked on the candidate
+- But the reserve mechanism itself again failed to become first-order:
+  - each heavy map only logged `4` reserve-courier ticks across `5k` ticks
+  - held reserve energy totals of only `660-711` were tiny relative to the observed losses in delivered spawn energy and upgrade spend
+  - the candidate remained much closer to the old forced-`2/3/3` failure band than to the sustained `2/3/4` control
+- Against Screeps hard constraints, the strongest read is:
+  - harvest stayed far below the `20 e/t` ceiling, so extraction saturation was not the limit
+  - the room still needs full queue-head affordability from banked energy before a spawn can start
+  - this reserve variant still did not keep enough banked or immediately bankable energy ready often enough to replace what `worker #4` and the coupled `2/3/4` regime were doing downstream
+- Existing metrics were sufficient to explain the failure mode without another rerun:
+  - `queueHeadReserveCourierTicks` and `queueHeadReserveHeldEnergyTotal` already showed that the attempted harder reserve barely changed the treatment exposure at all
+  - `spawnBlockedDespiteAdjacentCourierClosingDeficitTicks` confirmed a few real deficit-closing moments, but far too few to explain the multi-thousand-point spend gap
+  - delivered-energy, latency, and upgrade-spend metrics all moved back toward the old forced-`2/3/3` failure pattern on the positive controls
+- After consulting the Screeps world-model expert with only the goal, setup, observed behavior, metrics, and results, the strongest external read matched the run data:
+  - this should be recorded as another under-realized reserve failure rather than as a broad theoretical disproof of all reserve ideas
+  - the data are already strong evidence against `modest reserve substitution` and in favor of treating `worker #4` or the broader `2/3/4` regime as the real heavy-map complement
+- Result ruled out:
+  - the specific harder `queue-head reserve before immediate affordability` variant did not substitute for `worker #4`
+  - this run also ruled out describing the result as a meaningful reserve rescue, because the reserve again stayed in the same tiny-exposure regime as the prior failed diagnostic
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: the next experiment should stop chasing reserve-only substitution inside forced `2/3/3` and instead optimize the known-good sustained `2/3/4` branch for promotion, because the reserve branch has now stayed in the same under-realized regime multiple times.
+- Hypothesis B: if the heavy-map worker4 gain is real but the full-suite miss is only the slight training spawn-wait regression, then a cheaper marginal `worker #4` packet should keep most of the controller-progress gain while reducing serialized spawn cost enough to recover that training metric.
+- Hypothesis C: if a cheaper worker4 packet gives up too much controller progress, then the remaining issue in the promotable `2/3/4` branch is not just worker spawn cost and later work should target handoff efficiency or heavier architecture changes instead.
+
+### Decision
+
+- `continue`
+- Keep this result as a same-regime, under-realized diagnostic failure. Do not describe it as a meaningful success, and do not chain another reserve-only substitution tweak from it.
+- Treat sustained heavy-haul `2/3/4` as the experimental direction that still has the strongest causal support.
+- Next planned experiment: `exp-2026-04-10-opener-source-sitter-runner-courier3-worker4-cheaper-packet-promotion` on the full milestone suite.
