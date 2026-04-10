@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   moveToTarget: vi.fn(),
   pickupEnergyDrop: vi.fn(),
+  recordQueueHeadReserveHold: vi.fn(),
   recordTelemetryAction: vi.fn(),
   recordTelemetryTargetFailure: vi.fn(),
   inspectSpawnBankPressure: vi.fn()
@@ -24,6 +25,7 @@ vi.mock("../src/creep-utils", () => ({
 }));
 
 vi.mock("../src/telemetry-state", () => ({
+  recordQueueHeadReserveHold: mocks.recordQueueHeadReserveHold,
   recordTelemetryAction: mocks.recordTelemetryAction,
   recordTelemetryTargetFailure: mocks.recordTelemetryTargetFailure
 }));
@@ -35,7 +37,7 @@ vi.mock("../src/spawn", () => ({
 import { runCourier } from "../src/roles/courier";
 import { installScreepsGlobals } from "./helpers/install-globals";
 
-describe("courier spawn-feed floor", () => {
+describe("courier queue-head reserve floor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     installScreepsGlobals();
@@ -101,16 +103,37 @@ describe("courier spawn-feed floor", () => {
     expect(creep.transfer).not.toHaveBeenCalled();
   });
 
-  it("does not reserve every loaded courier once one courier is already staged at the spawn", () => {
+  it("stages additional loaded couriers until adjacent reserve can cover a full queue-head cost", () => {
     const spawn = makeSpawn();
-    const stagedCourier = makeCourier("courierA", spawn.room, makePosition(15, 14));
-    const activeCourier = makeCourier("courierB", spawn.room, makePosition(10, 10));
+    const stagedCourier = makeCourier("courierA", spawn.room, makePosition(15, 14), 200);
+    const activeCourier = makeCourier("courierB", spawn.room, makePosition(10, 10), 50);
     const worker = makeWorker("workerA", spawn.room, makePosition(11, 10));
     const testGlobal = globalThis as typeof globalThis & { Game: Game };
 
     testGlobal.Game.creeps = {
       courierA: stagedCourier,
       courierB: activeCourier,
+      workerA: worker
+    };
+
+    runCourier(activeCourier);
+
+    expect(mocks.moveToTarget).toHaveBeenCalledWith(activeCourier, spawn);
+    expect(activeCourier.drop).not.toHaveBeenCalled();
+  });
+
+  it("releases extra loaded couriers once adjacent reserve already covers the queue-head cost", () => {
+    const spawn = makeSpawn();
+    const stagedCourierA = makeCourier("courierA", spawn.room, makePosition(15, 14), 200);
+    const stagedCourierB = makeCourier("courierB", spawn.room, makePosition(14, 15), 150);
+    const activeCourier = makeCourier("courierC", spawn.room, makePosition(10, 10), 50);
+    const worker = makeWorker("workerA", spawn.room, makePosition(11, 10));
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+
+    testGlobal.Game.creeps = {
+      courierA: stagedCourierA,
+      courierB: stagedCourierB,
+      courierC: activeCourier,
       workerA: worker
     };
 
@@ -156,7 +179,7 @@ function makeSpawn(): StructureSpawn {
   return spawn;
 }
 
-function makeCourier(name: string, room: Room, pos: RoomPosition): Creep {
+function makeCourier(name: string, room: Room, pos: RoomPosition, storedEnergy = 50): Creep {
   return {
     name,
     memory: {
@@ -167,7 +190,7 @@ function makeCourier(name: string, room: Room, pos: RoomPosition): Creep {
     pos,
     room,
     store: {
-      [RESOURCE_ENERGY]: 50,
+      [RESOURCE_ENERGY]: storedEnergy,
       getFreeCapacity: vi.fn(() => 0)
     },
     transfer: vi.fn(() => OK),

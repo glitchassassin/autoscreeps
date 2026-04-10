@@ -4,7 +4,7 @@ import { buildTelemetryByRole, inspectBotTelemetry, inspectTelemetryByRole, pars
 describe("bot telemetry", () => {
   it("parses a valid telemetry payload", () => {
     const raw = JSON.stringify({
-      schemaVersion: 9,
+      schemaVersion: 11,
       gameTime: 250,
       colonyMode: "normal",
       totalCreeps: 4,
@@ -94,6 +94,9 @@ describe("bot telemetry", () => {
         bankReserveRecoveryLatencySamples: 2,
         spawnWaitingWithLoadedCourierTicks: 4,
         spawnWaitingWithSpawnAdjacentLoadedCourierTicks: 3,
+        spawnBlockedDespiteAdjacentCourierClosingDeficitTicks: 1,
+        queueHeadReserveCourierTicks: 12,
+        queueHeadReserveHeldEnergyTotal: 1800,
         spawnWaitingWithWorkerEnergyTicks: 5,
         spawnWaitingWithSourceBacklogTicks: 6,
         loadedCourierIdleWhileBankLowTicks: 2,
@@ -126,7 +129,7 @@ describe("bot telemetry", () => {
     const inspection = inspectBotTelemetry(raw);
 
     expect(parsed).toEqual({
-      schemaVersion: 9,
+      schemaVersion: 11,
       gameTime: 250,
       colonyMode: "normal",
       totalCreeps: 4,
@@ -216,6 +219,9 @@ describe("bot telemetry", () => {
         bankReserveRecoveryLatencySamples: 2,
         spawnWaitingWithLoadedCourierTicks: 4,
         spawnWaitingWithSpawnAdjacentLoadedCourierTicks: 3,
+        spawnBlockedDespiteAdjacentCourierClosingDeficitTicks: 1,
+        queueHeadReserveCourierTicks: 12,
+        queueHeadReserveHeldEnergyTotal: 1800,
         spawnWaitingWithWorkerEnergyTicks: 5,
         spawnWaitingWithSourceBacklogTicks: 6,
         loadedCourierIdleWhileBankLowTicks: 2,

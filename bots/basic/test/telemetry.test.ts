@@ -82,7 +82,7 @@ describe("telemetry", () => {
     const snapshot = createTelemetrySnapshot(spawn, Memory.telemetry!);
 
     expect(snapshot).toEqual({
-      schemaVersion: 9,
+      schemaVersion: 11,
       gameTime: 25,
       debugError: null,
       colonyMode: "normal",
@@ -181,6 +181,9 @@ describe("telemetry", () => {
         bankReserveRecoveryLatencySamples: 0,
         spawnWaitingWithLoadedCourierTicks: 0,
         spawnWaitingWithSpawnAdjacentLoadedCourierTicks: 0,
+        spawnBlockedDespiteAdjacentCourierClosingDeficitTicks: 0,
+        queueHeadReserveCourierTicks: 0,
+        queueHeadReserveHeldEnergyTotal: 0,
         spawnWaitingWithWorkerEnergyTicks: 0,
         spawnWaitingWithSourceBacklogTicks: 0,
         loadedCourierIdleWhileBankLowTicks: 0,
@@ -218,7 +221,7 @@ describe("telemetry", () => {
     const rawSegment = testGlobal.RawMemory.segments[telemetrySegmentId];
     expect(typeof rawSegment).toBe("string");
     expect(JSON.parse(rawSegment as string)).toMatchObject({
-      schemaVersion: 9,
+      schemaVersion: 11,
       gameTime: 25,
       roleCounts: {
         harvester: 2,
@@ -263,6 +266,9 @@ describe("telemetry", () => {
         bankReserveBreachCount: 0,
         spawnWaitingWithLoadedCourierTicks: 0,
         spawnWaitingWithSpawnAdjacentLoadedCourierTicks: 0,
+        spawnBlockedDespiteAdjacentCourierClosingDeficitTicks: 0,
+        queueHeadReserveCourierTicks: 0,
+        queueHeadReserveHeldEnergyTotal: 0,
         spawnWaitingWithWorkerEnergyTicks: 0,
         spawnWaitingWithSourceBacklogTicks: 0,
         loadedCourierIdleWhileBankLowTicks: 0,

@@ -155,6 +155,12 @@ export function recordTelemetryTaskSelection(role: string, task: string): void {
   increment(state.loop!.workerTaskSelections, `${role}.${task}`);
 }
 
+export function recordQueueHeadReserveHold(creep: Creep): void {
+  const state = ensureTelemetryState();
+  state.loop!.queueHeadReserveCourierTicks += 1;
+  state.loop!.queueHeadReserveHeldEnergyTotal += getCreepEnergy(creep);
+}
+
 export function observeTelemetryTick(primarySpawn: StructureSpawn | null = null): void {
   const state = ensureTelemetryState();
   syncDropRuntimeState(state);
@@ -344,8 +350,12 @@ type BankObservation = {
   isLow: boolean;
   loadedCourierNames: string[];
   spawnAdjacentLoadedCourierNames: string[];
+  spawnAdjacentLoadedCourierEnergy: number;
+  spawnAdjacentCourierCanCloseDeficit: boolean;
   workerWithEnergyNames: string[];
   sourceBacklog: number;
+  roomEnergyAvailable: number;
+  queueHeadCost: number | null;
   extraWorkerGate: ExtraWorkerGateState | null;
 };
 
@@ -364,6 +374,9 @@ function normalizeLoopState(loop: TelemetryLoopState): void {
   loop.bankReserveRecoveryLatencySamples ??= 0;
   loop.spawnWaitingWithLoadedCourierTicks ??= 0;
   loop.spawnWaitingWithSpawnAdjacentLoadedCourierTicks ??= 0;
+  loop.spawnBlockedDespiteAdjacentCourierClosingDeficitTicks ??= 0;
+  loop.queueHeadReserveCourierTicks ??= 0;
+  loop.queueHeadReserveHeldEnergyTotal ??= 0;
   loop.spawnWaitingWithWorkerEnergyTicks ??= 0;
   loop.spawnWaitingWithSourceBacklogTicks ??= 0;
   loop.loadedCourierIdleWhileBankLowTicks ??= 0;
@@ -385,8 +398,12 @@ function normalizeBankState(bank: TelemetryBankRuntimeState): void {
   bank.lowTickStartedAt ??= null;
   bank.loadedCourierNames ??= [];
   bank.spawnAdjacentLoadedCourierNames ??= [];
+  bank.spawnAdjacentLoadedCourierEnergy ??= 0;
+  bank.spawnAdjacentCourierCanCloseDeficit ??= false;
   bank.workerWithEnergyNames ??= [];
   bank.sourceBacklog ??= 0;
+  bank.roomEnergyAvailable ??= 0;
+  bank.queueHeadCost ??= null;
 }
 
 function normalizeSpawnAdmissionsState(admissions: TelemetrySpawnAdmissionsState): void {
@@ -425,6 +442,9 @@ function observeSpawnAndSourcePipeline(
       if (bankStateAtStart.spawnAdjacentLoadedCourierNames.length > 0) {
         loop.spawnWaitingWithSpawnAdjacentLoadedCourierTicks += 1;
       }
+      if (bankStateAtStart.spawnAdjacentCourierCanCloseDeficit) {
+        loop.spawnBlockedDespiteAdjacentCourierClosingDeficitTicks += 1;
+      }
       if (bankStateAtStart.workerWithEnergyNames.length > 0) {
         loop.spawnWaitingWithWorkerEnergyTicks += 1;
       }
@@ -457,8 +477,12 @@ function observeSpawnAndSourcePipeline(
   bank.wasLow = bankObservation.isLow;
   bank.loadedCourierNames = bankObservation.loadedCourierNames;
   bank.spawnAdjacentLoadedCourierNames = bankObservation.spawnAdjacentLoadedCourierNames;
+  bank.spawnAdjacentLoadedCourierEnergy = bankObservation.spawnAdjacentLoadedCourierEnergy;
+  bank.spawnAdjacentCourierCanCloseDeficit = bankObservation.spawnAdjacentCourierCanCloseDeficit;
   bank.workerWithEnergyNames = bankObservation.workerWithEnergyNames;
   bank.sourceBacklog = bankObservation.sourceBacklog;
+  bank.roomEnergyAvailable = bankObservation.roomEnergyAvailable;
+  bank.queueHeadCost = bankObservation.queueHeadCost;
   state.bank = bank;
 
   const coverage = summarizeCurrentSourceCoverage();
@@ -583,6 +607,9 @@ function createLoopState(): TelemetryLoopState {
     bankReserveRecoveryLatencySamples: 0,
     spawnWaitingWithLoadedCourierTicks: 0,
     spawnWaitingWithSpawnAdjacentLoadedCourierTicks: 0,
+    spawnBlockedDespiteAdjacentCourierClosingDeficitTicks: 0,
+    queueHeadReserveCourierTicks: 0,
+    queueHeadReserveHeldEnergyTotal: 0,
     spawnWaitingWithWorkerEnergyTicks: 0,
     spawnWaitingWithSourceBacklogTicks: 0,
     loadedCourierIdleWhileBankLowTicks: 0,
@@ -606,8 +633,12 @@ function createBankState(): TelemetryBankRuntimeState {
     lowTickStartedAt: null,
     loadedCourierNames: [],
     spawnAdjacentLoadedCourierNames: [],
+    spawnAdjacentLoadedCourierEnergy: 0,
+    spawnAdjacentCourierCanCloseDeficit: false,
     workerWithEnergyNames: [],
-    sourceBacklog: 0
+    sourceBacklog: 0,
+    roomEnergyAvailable: 0,
+    queueHeadCost: null
   };
 }
 
@@ -624,8 +655,12 @@ function cloneBankState(bank: TelemetryBankRuntimeState): TelemetryBankRuntimeSt
     lowTickStartedAt: bank.lowTickStartedAt,
     loadedCourierNames: [...bank.loadedCourierNames],
     spawnAdjacentLoadedCourierNames: [...bank.spawnAdjacentLoadedCourierNames],
+    spawnAdjacentLoadedCourierEnergy: bank.spawnAdjacentLoadedCourierEnergy,
+    spawnAdjacentCourierCanCloseDeficit: bank.spawnAdjacentCourierCanCloseDeficit,
     workerWithEnergyNames: [...bank.workerWithEnergyNames],
-    sourceBacklog: bank.sourceBacklog
+    sourceBacklog: bank.sourceBacklog,
+    roomEnergyAvailable: bank.roomEnergyAvailable,
+    queueHeadCost: bank.queueHeadCost
   };
 }
 
@@ -635,8 +670,12 @@ function summarizeBankObservation(room: Room | null): BankObservation {
       isLow: false,
       loadedCourierNames: [],
       spawnAdjacentLoadedCourierNames: [],
+      spawnAdjacentLoadedCourierEnergy: 0,
+      spawnAdjacentCourierCanCloseDeficit: false,
       workerWithEnergyNames: [],
       sourceBacklog: 0,
+      roomEnergyAvailable: 0,
+      queueHeadCost: null,
       extraWorkerGate: null
     };
   }
@@ -653,6 +692,7 @@ function summarizeBankObservation(room: Room | null): BankObservation {
   });
   const loadedCourierNames: string[] = [];
   const spawnAdjacentLoadedCourierNames: string[] = [];
+  let spawnAdjacentLoadedCourierEnergy = 0;
   const workerWithEnergyNames: string[] = [];
 
   for (const [creepName, creep] of Object.entries(Game.creeps)) {
@@ -664,6 +704,7 @@ function summarizeBankObservation(room: Room | null): BankObservation {
       loadedCourierNames.push(creepName);
       if (refillTargets.some((target) => positionsAreNear(creep.pos, target.pos))) {
         spawnAdjacentLoadedCourierNames.push(creepName);
+        spawnAdjacentLoadedCourierEnergy += getCreepEnergy(creep);
       }
     }
 
@@ -672,12 +713,19 @@ function summarizeBankObservation(room: Room | null): BankObservation {
     }
   }
 
+  const queueHeadCost = pressure.queueHeadCost;
+  const energyDeficit = queueHeadCost === null ? 0 : Math.max(queueHeadCost - room.energyAvailable, 0);
+
   return {
     isLow: pressure.waitingForEnergy,
     loadedCourierNames,
     spawnAdjacentLoadedCourierNames,
+    spawnAdjacentLoadedCourierEnergy,
+    spawnAdjacentCourierCanCloseDeficit: energyDeficit > 0 && spawnAdjacentLoadedCourierEnergy >= energyDeficit,
     workerWithEnergyNames,
     sourceBacklog: countSourceBacklog(room),
+    roomEnergyAvailable: room.energyAvailable,
+    queueHeadCost,
     extraWorkerGate: inspectPreRcl3ExtraWorkerGate(room)
   };
 }

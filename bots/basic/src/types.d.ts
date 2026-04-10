@@ -42,6 +42,9 @@ declare global {
     bankReserveRecoveryLatencySamples: number;
     spawnWaitingWithLoadedCourierTicks: number;
     spawnWaitingWithSpawnAdjacentLoadedCourierTicks: number;
+    spawnBlockedDespiteAdjacentCourierClosingDeficitTicks: number;
+    queueHeadReserveCourierTicks: number;
+    queueHeadReserveHeldEnergyTotal: number;
     spawnWaitingWithWorkerEnergyTicks: number;
     spawnWaitingWithSourceBacklogTicks: number;
     loadedCourierIdleWhileBankLowTicks: number;
@@ -118,8 +121,12 @@ declare global {
     lowTickStartedAt: number | null;
     loadedCourierNames: string[];
     spawnAdjacentLoadedCourierNames: string[];
+    spawnAdjacentLoadedCourierEnergy: number;
+    spawnAdjacentCourierCanCloseDeficit: boolean;
     workerWithEnergyNames: string[];
     sourceBacklog: number;
+    roomEnergyAvailable: number;
+    queueHeadCost: number | null;
   }
 
   interface TelemetrySpawnAdmissionState {

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ensureTelemetryState, observeTelemetryTick, recordTelemetryAction } from "../src/telemetry-state";
+import { ensureTelemetryState, observeTelemetryTick, recordQueueHeadReserveHold, recordTelemetryAction } from "../src/telemetry-state";
 import { installScreepsGlobals } from "./helpers/install-globals";
 
 describe("telemetry spend attribution", () => {
@@ -133,8 +133,12 @@ describe("telemetry spend attribution", () => {
       lowTickStartedAt: 1,
       loadedCourierNames: ["courierA"],
       spawnAdjacentLoadedCourierNames: ["courierA"],
+      spawnAdjacentLoadedCourierEnergy: 50,
+      spawnAdjacentCourierCanCloseDeficit: false,
       workerWithEnergyNames: [],
-      sourceBacklog: 300
+      sourceBacklog: 300,
+      roomEnergyAvailable: 250,
+      queueHeadCost: 300
     };
 
     setEnergy(creep, 0);
@@ -215,8 +219,12 @@ describe("telemetry spend attribution", () => {
       lowTickStartedAt: 5,
       loadedCourierNames: ["courierA"],
       spawnAdjacentLoadedCourierNames: ["courierA"],
+      spawnAdjacentLoadedCourierEnergy: 200,
+      spawnAdjacentCourierCanCloseDeficit: true,
       workerWithEnergyNames: ["workerA"],
-      sourceBacklog: 380
+      sourceBacklog: 380,
+      roomEnergyAvailable: 100,
+      queueHeadCost: 300
     };
 
     observeTelemetryTick(spawn);
@@ -225,6 +233,7 @@ describe("telemetry spend attribution", () => {
       bankLowObservedTicks: 1,
       spawnWaitingWithLoadedCourierTicks: 1,
       spawnWaitingWithSpawnAdjacentLoadedCourierTicks: 1,
+      spawnBlockedDespiteAdjacentCourierClosingDeficitTicks: 1,
       spawnWaitingWithWorkerEnergyTicks: 1,
       spawnWaitingWithSourceBacklogTicks: 1,
       loadedCourierIdleWhileBankLowTicks: 1,
@@ -233,6 +242,17 @@ describe("telemetry spend attribution", () => {
         source_backlog: 1,
         loaded_courier: 1
       }
+    });
+  });
+
+  it("tracks queue-head reserve hold energy when couriers are staged for reserve", () => {
+    const courier = installCreep("courierA", "courier", 150, true);
+
+    recordQueueHeadReserveHold(courier);
+
+    expect(ensureTelemetryState().loop).toMatchObject({
+      queueHeadReserveCourierTicks: 1,
+      queueHeadReserveHeldEnergyTotal: 150
     });
   });
 });

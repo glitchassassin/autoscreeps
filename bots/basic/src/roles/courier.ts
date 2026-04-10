@@ -1,6 +1,6 @@
 import { findClosestConstructionSite, findClosestEnergyDrop, isSourceAdjacentPosition, moveToTarget, pickupEnergyDrop, positionsAreNear, updateWorkingState } from "../creep-utils";
 import { inspectSpawnBankPressure } from "../spawn";
-import { recordTelemetryAction, recordTelemetryTargetFailure } from "../telemetry-state";
+import { recordQueueHeadReserveHold, recordTelemetryAction, recordTelemetryTargetFailure } from "../telemetry-state";
 
 type RefillTarget = StructureSpawn | StructureExtension;
 type HandoffTarget = { pos: RoomPosition; targetKey: string };
@@ -34,6 +34,7 @@ export function runCourier(creep: Creep): void {
 
   const bankReserveTarget = findBankReserveTarget(creep);
   if (bankReserveTarget) {
+    recordQueueHeadReserveHold(creep);
     if (!positionsAreNear(creep.pos, bankReserveTarget.pos)) {
       moveToTarget(creep, bankReserveTarget);
     }
@@ -77,20 +78,16 @@ function findRefillTarget(creep: Creep): RefillTarget | null {
 }
 
 function findBankReserveTarget(creep: Creep): StructureSpawn | null {
-  if (!shouldHoldCourierForSpawnFeedFloor(creep)) {
-    return null;
-  }
-
   const spawns = creep.room.find(FIND_MY_SPAWNS);
   const spawn = creep.pos.findClosestByPath(spawns);
   if (!spawn) {
     return null;
   }
 
-  return hasOtherSpawnAdjacentLoadedCourier(creep, spawn) ? null : spawn;
+  return shouldHoldCourierForQueueHeadReserve(creep, spawn) ? spawn : null;
 }
 
-function shouldHoldCourierForSpawnFeedFloor(creep: Creep): boolean {
+function shouldHoldCourierForQueueHeadReserve(creep: Creep, spawn: StructureSpawn): boolean {
   if (!isPreRcl3OwnedRoom(creep.room)) {
     return false;
   }
@@ -103,18 +100,29 @@ function shouldHoldCourierForSpawnFeedFloor(creep: Creep): boolean {
   const pressure = inspectSpawnBankPressure(creep.room);
   return pressure.totalUnmetDemand > 0
     && pressure.queueHeadCost !== null
-    && creep.room.energyAvailable >= pressure.queueHeadCost;
+    && creep.room.energyAvailable >= pressure.queueHeadCost
+    && countOtherSpawnAdjacentLoadedCourierEnergy(creep, spawn) < pressure.queueHeadCost;
 }
 
-function hasOtherSpawnAdjacentLoadedCourier(creep: Creep, spawn: StructureSpawn): boolean {
-  return Object.values(Game.creeps).some((candidate) => (
-    candidate.name !== creep.name
-    && candidate.memory.homeRoom === creep.memory.homeRoom
-    && candidate.memory.role === "courier"
-    && candidate.memory.working
-    && getStoredEnergy(candidate) > 0
-    && positionsAreNear(candidate.pos, spawn.pos)
-  ));
+function countOtherSpawnAdjacentLoadedCourierEnergy(creep: Creep, spawn: StructureSpawn): number {
+  let total = 0;
+
+  for (const candidate of Object.values(Game.creeps)) {
+    if (
+      candidate.name === creep.name
+      || candidate.memory.homeRoom !== creep.memory.homeRoom
+      || candidate.memory.role !== "courier"
+      || !candidate.memory.working
+      || getStoredEnergy(candidate) <= 0
+      || !positionsAreNear(candidate.pos, spawn.pos)
+    ) {
+      continue;
+    }
+
+    total += getStoredEnergy(candidate);
+  }
+
+  return total;
 }
 
 function findHandoffTarget(creep: Creep): HandoffTarget | null {

@@ -3,7 +3,7 @@ import { ensureTelemetryState, observeTelemetryTick } from "./telemetry-state";
 
 export const telemetrySegmentId = 42;
 export const telemetrySampleEveryTicks = 25;
-export const telemetrySchemaVersion = 9;
+export const telemetrySchemaVersion = 11;
 
 export type BotTelemetrySnapshot = {
   schemaVersion: number;
@@ -306,6 +306,9 @@ function emptyLoopState(): TelemetryLoopState {
     bankReserveRecoveryLatencySamples: 0,
     spawnWaitingWithLoadedCourierTicks: 0,
     spawnWaitingWithSpawnAdjacentLoadedCourierTicks: 0,
+    spawnBlockedDespiteAdjacentCourierClosingDeficitTicks: 0,
+    queueHeadReserveCourierTicks: 0,
+    queueHeadReserveHeldEnergyTotal: 0,
     spawnWaitingWithWorkerEnergyTicks: 0,
     spawnWaitingWithSourceBacklogTicks: 0,
     loadedCourierIdleWhileBankLowTicks: 0,

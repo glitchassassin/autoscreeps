@@ -159,6 +159,15 @@ export function inspectBotTelemetry(value: string | null): BotTelemetryInspectio
       spawnWaitingWithSpawnAdjacentLoadedCourierTicks: typeof parsed.loop.spawnWaitingWithSpawnAdjacentLoadedCourierTicks === "number"
         ? parsed.loop.spawnWaitingWithSpawnAdjacentLoadedCourierTicks
         : undefined,
+      spawnBlockedDespiteAdjacentCourierClosingDeficitTicks: typeof parsed.loop.spawnBlockedDespiteAdjacentCourierClosingDeficitTicks === "number"
+        ? parsed.loop.spawnBlockedDespiteAdjacentCourierClosingDeficitTicks
+        : undefined,
+      queueHeadReserveCourierTicks: typeof parsed.loop.queueHeadReserveCourierTicks === "number"
+        ? parsed.loop.queueHeadReserveCourierTicks
+        : undefined,
+      queueHeadReserveHeldEnergyTotal: typeof parsed.loop.queueHeadReserveHeldEnergyTotal === "number"
+        ? parsed.loop.queueHeadReserveHeldEnergyTotal
+        : undefined,
       spawnWaitingWithWorkerEnergyTicks: typeof parsed.loop.spawnWaitingWithWorkerEnergyTicks === "number"
         ? parsed.loop.spawnWaitingWithWorkerEnergyTicks
         : undefined,

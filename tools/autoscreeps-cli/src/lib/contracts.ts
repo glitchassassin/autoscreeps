@@ -230,6 +230,9 @@ export type BotTelemetrySnapshot = {
     bankReserveRecoveryLatencySamples?: number;
     spawnWaitingWithLoadedCourierTicks?: number;
     spawnWaitingWithSpawnAdjacentLoadedCourierTicks?: number;
+    spawnBlockedDespiteAdjacentCourierClosingDeficitTicks?: number;
+    queueHeadReserveCourierTicks?: number;
+    queueHeadReserveHeldEnergyTotal?: number;
     spawnWaitingWithWorkerEnergyTicks?: number;
     spawnWaitingWithSourceBacklogTicks?: number;
     loadedCourierIdleWhileBankLowTicks?: number;
