@@ -331,6 +331,7 @@ type PreRcl3DemandContext = {
   sourceDropToBankLatencyAvg: number | null;
   rcl2Tick: number | null;
   withinCourier3Window: boolean;
+  courier3Started: boolean;
   worker4Started: boolean;
 };
 
@@ -360,6 +361,7 @@ function createPreRcl3DemandContext(room: Room): PreRcl3DemandContext {
     ),
     rcl2Tick,
     withinCourier3Window: rcl2Tick === null || Game.time <= rcl2Tick + preRcl3Courier3PostRcl2GraceTicks,
+    courier3Started: Memory.telemetry?.spawnAdmissions?.firstCourier3 != null,
     worker4Started: Memory.telemetry?.spawnAdmissions?.firstWorker4 != null
   };
 }
@@ -408,6 +410,10 @@ function isPreRcl3Courier3PriorityActive(context: PreRcl3DemandContext): boolean
     return false;
   }
 
+  if (context.courier3Started) {
+    return true;
+  }
+
   return (
     context.couriers >= context.fullSourceSitterCount
     && !context.worker4Started
@@ -448,7 +454,7 @@ function resolvePreRcl3ExtraWorkerGate(
       && context.couriers < desiredCourierTarget
     );
 
-    if (!needsBacklogCourierBeforeWorker4) {
+    if (!needsBacklogCourierBeforeWorker4 && !context.courier3Started) {
       if (desiredCourierTarget > context.fullSourceSitterCount && context.couriers >= desiredCourierTarget) {
         openReasons.push("courier_parity");
       }

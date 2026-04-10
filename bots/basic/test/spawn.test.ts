@@ -402,7 +402,7 @@ describe("spawn manager", () => {
     });
   });
 
-  it("does not keep courier three demand active after worker four starts", () => {
+  it("keeps courier three demand active after worker four starts while latency pressure persists", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game; Memory: Memory };
     testGlobal.Memory.telemetry = {
       creepDeaths: 0,
@@ -476,16 +476,46 @@ describe("spawn manager", () => {
     }).room)).toEqual({
       unmetDemand: {
         harvester: 0,
-        courier: 0,
+        courier: 1,
         worker: 0
       },
-      nextRole: null,
-      totalUnmetDemand: 0
+      nextRole: "courier",
+      totalUnmetDemand: 1
     });
   });
 
-  it("allows worker four once courier three exists under high backlog", () => {
-    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+  it("blocks worker four after the courier-three sustain path starts", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game; Memory: Memory };
+    testGlobal.Memory.telemetry = {
+      creepDeaths: 0,
+      firstOwnedSpawnTick: null,
+      rcl2Tick: 742,
+      rcl3Tick: null,
+      loop: {
+        spawnWaitingWithSourceBacklogTicks: 120,
+        sourceDropToBankLatencyTotal: 900,
+        sourceDropToBankLatencySamples: 3
+      } as TelemetryLoopState,
+      spawnAdmissions: {
+        firstCourier3: {
+          gameTime: 780,
+          sourceBacklog: 880,
+          loadedCouriers: 1,
+          roleCounts: {
+            harvester: 2,
+            courier: 2,
+            worker: 3
+          },
+          openReasons: ["source_backlog", "loaded_courier"],
+          spawnWaitingWithSourceBacklogTicks: 120,
+          sourceDropToBankLatencyAvg: 300,
+          withinCourier3Window: true,
+          courier3PriorityActive: true
+        },
+        firstWorker4: null
+      }
+    } as TelemetryMemoryState;
+    testGlobal.Game.time = 860;
 
     testGlobal.Game.creeps = {
       harvesterA: makeCreep("harvester", 2, {
@@ -517,10 +547,10 @@ describe("spawn manager", () => {
       unmetDemand: {
         harvester: 0,
         courier: 0,
-        worker: 1
+        worker: 0
       },
-      nextRole: "worker",
-      totalUnmetDemand: 1
+      nextRole: null,
+      totalUnmetDemand: 0
     });
   });
 

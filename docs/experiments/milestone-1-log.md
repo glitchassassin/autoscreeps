@@ -3767,3 +3767,128 @@ node src/cli.ts experiment run suite \
 - `continue`
 - Keep the sustained heavy-haul `courier #3` path as the experimental baseline direction, but do not promote it to the full milestone baseline yet because the remaining uncertainty is now about dependence on the coupled `2/3/4` regime.
 - Next planned experiment: `exp-2026-04-10-opener-source-sitter-runner-courier3-sustain-worker4-dependency-ablation`.
+
+## Entry `exp-2026-04-10-opener-source-sitter-runner-courier3-sustain-worker4-dependency-ablation`
+
+- Status: `completed`
+- Owner: `OpenCode`
+- Date: `2026-04-10`
+- Type: `diagnostic/ablation`
+- Dominant bottleneck: `heavy-map pre-RCL3 source-to-bank transport only helps when paired with enough downstream spend and spawn-bank support; courier3 sustain alone is not sufficient`
+- Relevant theoretical headroom:
+  - owned two-source gross harvest ceiling remains `20 e/t`, while realized harvest in this branch stayed around `6.42-6.62 e/t`
+  - pre-`RCL7` rooms still have one serial spawn, full creep cost is paid up front, and only banked spawn/extension energy can start the next spawn
+  - dropped source energy still decays while stranded, but controller progress is also bounded directly by upgrade spend at `1 energy -> 1 progress`
+
+### Hypothesis
+
+- The completed sustain causal ablation proved that the heavy-map gain requires sustained `courier #3` uptime rather than a one-time admission.
+- If `courier #3` itself is the direct heavy-map lever, then the room should keep most of the win even when `worker #4` is blocked and the positive controls remain in a forced `2/3/3` state.
+- If the gain instead depends on the coupled `2/3/4` operating regime, then holding the room at `2/3/3` should materially regress `controllerProgressToRCL3Pct`, `spawnWaitingForSufficientEnergyPct`, and upgrade spend even though `courier #3` remains sustained.
+
+### Experiment
+
+- Variant or branch: `git:5ba4d3b` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/exp-2026-04-10-opener-source-sitter-runner-courier3-sustain-worker4-dependency-ablation.yaml`
+- Positive and negative controls:
+  - use `train-d-5k` and `holdout-b-5k` as positive controls because the completed sustain run only improved those heavy-haul maps when `courier #3` stayed alive to the end
+  - use `train-c-5k` as the negative control because it stayed flat and never entered a `courier #3` regime in the prior focused run despite sharing the same `5k` horizon
+- Change tested:
+  - keep the same heavy-haul `courier #3` selector and sticky sustain path from the completed heavy-haul baseline
+  - block pre-`RCL3` `worker #4` after the `courier #3` path starts so treated maps stay in `2/3/3` rather than the prior `2/3/4` regime
+  - keep post-`RCL3` logic unchanged so the run isolates worker-four dependence rather than a broader architecture rewrite
+- Key evaluation focus:
+  - exact first `courier #3` and `worker #4` admission ticks
+  - sampled time at `2/3/3` versus `2/3/4`
+  - `controllerProgressToRCL3Pct`
+  - `spawnWaitingForSufficientEnergyPct`
+  - `backlogEnergy`
+  - `sourceDropToBankLatencyTotal / sourceDropToBankLatencySamples`
+  - delivered energy to `spawn` and `worker_handoff`
+  - `energySpentOnUpgrade`
+- Command:
+  - `node src/cli.ts experiment run suite --manifest ../../experiments/suites/exp-2026-04-10-opener-source-sitter-runner-courier3-sustain-worker4-dependency-ablation.yaml --baseline-source git:5ba4d3b --baseline-package bots/basic --candidate-source workspace --candidate-package bots/basic`
+- Suite ID: `2026-04-10T17-25-58-073Z-4e8baa4b`
+- Cases and run IDs:
+  - `train-c-5k`: `2026-04-10T17-25-58-075Z-cf6cd9b3`
+  - `train-d-5k`: `2026-04-10T17-29-35-027Z-6b790e85`
+  - `holdout-b-5k`: `2026-04-10T17-34-02-586Z-a4b5a0e1`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+- All `3/3` focused-suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `33.59` to `30.44` (`-3.15`, about `-9.38%`)
+  - `spawnWaitingForSufficientEnergyPct`: regressed from `12.43%` to `14.00%` (`+1.57 pts`, about `+12.59%`)
+  - upstream and spawn metrics:
+    - `sourceHarvestEnergyPerTick`: `6.48 -> 6.48`
+    - `sourceHarvestUtilizationPct`: `32.39 -> 32.40`
+    - `activeHarvestingSourceUptimePct`: `84.20 -> 84.25`
+    - `spawnIdlePct`: `79.72% -> 78.58%`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `32.93` to `25.89` (`-7.04`, about `-21.38%`)
+  - `spawnWaitingForSufficientEnergyPct`: regressed from `10.04%` to `18.15%` (`+8.11 pts`, about `+80.78%`)
+  - upstream and spawn metrics:
+    - `sourceHarvestEnergyPerTick`: `6.62 -> 6.62`
+    - `sourceHarvestUtilizationPct`: `33.11 -> 33.10`
+    - `activeHarvestingSourceUptimePct`: `87.68 -> 87.64`
+    - `spawnIdlePct`: `81.49% -> 74.22%`
+- Gate result:
+  - training failed because `0/3` primary metrics improved
+  - holdout failed because both comparable primary metrics regressed, including `controllerProgressToRCL3Pct` well beyond the `5%` ceiling
+  - overall focused-suite result: `candidate-failed-gates`
+- Notable behavior:
+  - the negative control stayed flat exactly as intended:
+    - `train-c-5k`: no `courier #3` on either side; final role counts `2/2/4 -> 2/2/4`
+    - `train-c-5k`: `controllerProgressToRCL3Pct 34.64 -> 34.64`; `spawnWaitingForSufficientEnergyPct 10.42% -> 10.43%`
+    - `train-c-5k`: final `backlogEnergy 70 -> 72`; final `sourceDropToBankLatency 280.80 -> 280.80`; delivered energy `spawn 5904 -> 5904`; `worker_handoff 21896 -> 21896`
+  - the positive controls realized the intended treatment cleanly rather than drifting into another regime:
+    - `train-d-5k`: first `courier #3` `779 -> 780`; first `worker #4` `853 -> null`; final role counts `2/3/4 -> 2/3/3`; sampled time at `2/3/3` `5 -> 109`; sampled time at `2/3/4` `98 -> 0`
+    - `holdout-b-5k`: first `courier #3` `706 -> 707`; first `worker #4` `760 -> null`; final role counts `2/3/4 -> 2/3/3`; sampled time at `2/3/3` `6 -> 125`; sampled time at `2/3/4` `112 -> 0`
+  - despite that exact treatment landing, both heavy maps lost controller progress and spawn-bank performance sharply:
+    - `train-d-5k`: `controllerProgressToRCL3Pct 32.54 -> 26.24`; `spawnWaitingForSufficientEnergyPct 14.45% -> 17.57%`; delivered energy `spawn 6597 -> 5820`; `energySpentOnUpgrade 14646 -> 11813`
+    - `holdout-b-5k`: `controllerProgressToRCL3Pct 32.93 -> 25.89`; `spawnWaitingForSufficientEnergyPct 10.04% -> 18.15%`; delivered energy `spawn 6708 -> 5991`; `energySpentOnUpgrade 14826 -> 11645`
+  - the failure did not come from reduced source extraction:
+    - `train-d-5k`: `sourceHarvestEnergyPerTick 6.42 -> 6.42`; `backlogEnergy 0 -> 0`; `sourceDropToBankLatency 446.17 -> 546.05`; delivered energy `worker_handoff 19403 -> 20580`; `spawnWaitingWithSourceBacklogTicks 716 -> 903`
+    - `holdout-b-5k`: `sourceHarvestEnergyPerTick 6.62 -> 6.62`; `backlogEnergy 537 -> 86`; `sourceDropToBankLatency 310.49 -> 472.03`; delivered energy `worker_handoff 20092 -> 19209`; `spawnWaitingWithSourceBacklogTicks 508 -> 976`
+
+### Interpretation
+
+- This experiment rejected the `courier #3 alone is sufficient` branch.
+- The result was not a near-null treatment or an unrealized intervention:
+  - the negative control stayed flat
+  - first `courier #3` timing stayed aligned with baseline on both positive controls
+  - `worker #4` was fully removed on the positive controls
+  - sampled role counts showed the candidate lived in the intended `2/3/3` regime through the end of the run
+- Against Screeps hard constraints, the causal read is now direct rather than inferential:
+  - realized harvest stayed far below the `20 e/t` two-source ceiling, so extraction was not limiting
+  - upgrade spend converts directly into controller progress, and `energySpentOnUpgrade` fell sharply on both positive controls
+  - the room still has one serial spawn that only starts from banked spawn/extension energy, and both positive controls delivered materially less energy to `spawn`
+- So the heavy-haul gain depends on the coupled `2/3/4` regime or an equivalent downstream allocation fix, not on `courier #3` sustainment by itself.
+- Existing metrics were sufficient to answer the causal question cleanly without another rerun:
+  - treatment realization was directly measured by admission ticks and `2/3/3` dwell
+  - the negative control falsified nominal map-length explanations again
+  - harvest, backlog, latency, delivered-energy, spawn-wait, and upgrade-spend metrics already separate upstream extraction from downstream bank/spend failure
+- After consulting the Screeps world-model expert with only the goal, setup, observed behavior, metrics, and results, the strongest external read matched the run data:
+  - this rules out `courier #3` as a standalone heavy-map lever
+  - the most plausible remaining ambiguity is whether forced `2/3/3` fails because it misallocates courier bandwidth away from the spawn bank, or because `worker #4` itself is the necessary downstream complement
+- Result ruled out:
+  - the heavy-map gain was not caused mainly by sustaining `courier #3` alone while holding the room at `2/3/3`
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: if forced `2/3/3` is rerun with a hard spawn-feed floor, and the heavy maps recover most of the spawn-wait and controller-progress loss, then the remaining problem is delivery allocation within `2/3/3` rather than an intrinsic need for `worker #4`.
+- Hypothesis B: if that spawn-feed-floor rescue still fails, then `worker #4` or the broader `2/3/4` coupled operating state is the necessary heavy-map complement.
+- Hypothesis C: if the rescue diagnostic still leaves ambiguity, the next telemetry addition should be stage-energy inventory over time (source drop, in-transit carry, banked spawn/extensions, worker-held energy) plus missed spawn demand while bank energy is non-zero.
+
+### Decision
+
+- `continue`
+- Keep this result as a clean causal failure that rules out the `courier #3 alone` branch. Do not describe it as a promotable improvement.
+- Next planned experiment: `exp-2026-04-10-opener-source-sitter-runner-courier3-worker3-hard-spawn-feed-floor`.
