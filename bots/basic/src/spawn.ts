@@ -331,7 +331,6 @@ type PreRcl3DemandContext = {
   sourceDropToBankLatencyAvg: number | null;
   rcl2Tick: number | null;
   withinCourier3Window: boolean;
-  courier3Started: boolean;
   worker4Started: boolean;
 };
 
@@ -361,7 +360,6 @@ function createPreRcl3DemandContext(room: Room): PreRcl3DemandContext {
     ),
     rcl2Tick,
     withinCourier3Window: rcl2Tick === null || Game.time <= rcl2Tick + preRcl3Courier3PostRcl2GraceTicks,
-    courier3Started: Memory.telemetry?.spawnAdmissions?.firstCourier3 != null,
     worker4Started: Memory.telemetry?.spawnAdmissions?.firstWorker4 != null
   };
 }
@@ -408,10 +406,6 @@ function isPreRcl3Courier3PriorityActive(context: PreRcl3DemandContext): boolean
 
   if (!latencyPressure || context.sourceBacklog < preRcl3Courier3SourceBacklogThreshold || context.workers < 3) {
     return false;
-  }
-
-  if (context.courier3Started) {
-    return true;
   }
 
   return (

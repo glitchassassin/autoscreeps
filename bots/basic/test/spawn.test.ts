@@ -402,7 +402,7 @@ describe("spawn manager", () => {
     });
   });
 
-  it("keeps courier three demand active after worker four starts while latency pressure persists", () => {
+  it("does not keep courier three demand active after worker four starts", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game; Memory: Memory };
     testGlobal.Memory.telemetry = {
       creepDeaths: 0,
@@ -476,11 +476,11 @@ describe("spawn manager", () => {
     }).room)).toEqual({
       unmetDemand: {
         harvester: 0,
-        courier: 1,
+        courier: 0,
         worker: 0
       },
-      nextRole: "courier",
-      totalUnmetDemand: 1
+      nextRole: null,
+      totalUnmetDemand: 0
     });
   });
 

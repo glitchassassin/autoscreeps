@@ -3657,9 +3657,15 @@ node src/cli.ts experiment run suite \
 
 ## Entry `exp-2026-04-10-opener-source-sitter-runner-courier3-sustain-causal-ablation`
 
-- Status: `planned`
+- Status: `completed`
 - Owner: `OpenCode`
 - Date: `2026-04-10`
+- Type: `diagnostic/ablation`
+- Dominant bottleneck: `heavy-map pre-RCL3 source-to-bank transport sustainment, not source extraction or courier admission timing by itself`
+- Relevant theoretical headroom:
+  - owned two-source gross harvest ceiling remains `20 e/t`, while recent realized harvest stayed around `6.25-6.27 e/t`
+  - pre-`RCL7` rooms still have only one spawn, full creep cost is paid up front, and only spawn/extension bank energy can start the next spawn
+  - dropped source energy decays while stranded, so sustained source-side backlog is a real irreversible loss channel
 
 ### Hypothesis
 
@@ -3670,11 +3676,13 @@ node src/cli.ts experiment run suite \
 
 - Variant or branch: `git:HEAD` vs `workspace`
 - Bot package: `bots/basic`
-- Suite: planned focused opener sub-suite covering `train-c-5k`, `train-d-5k`, and `holdout-b-5k`
-- Planned change:
+- Suite: `experiments/suites/exp-2026-04-10-opener-source-sitter-runner-courier3-sustain-causal-ablation.yaml`
+- Positive and negative controls:
+  - use `train-d-5k` and `holdout-b-5k` as positive controls because the completed sustain run only improved those heavy-haul maps when `courier #3` stayed alive to the end
+  - use `train-c-5k` as the negative control because it stayed on the worker-first path and was effectively flat in the completed sustain run despite sharing the same `5k` horizon
+- Change tested:
   - keep the current heavy-haul admission selector unchanged so the run does not reopen the already-solved short-map broad-trigger question
-  - remove or sharply time-box post-admission `courier #3` sustainment in the candidate while keeping the rest of the opener unchanged
-  - use `train-c-5k` as the negative control and `train-d-5k` plus `holdout-b-5k` as the positive heavy-haul cases
+  - remove the post-admission sticky sustain path for `courier #3` in the candidate so the third courier can still be admitted in the same early window, but the room naturally falls back off `2/3/4` once that initial courier ages out
   - keep post-`RCL3` logic unchanged so the run isolates whether heavy-map gains come from sustainment itself
 - Key evaluation focus:
   - time spent at `2/3/4`
@@ -3685,3 +3693,77 @@ node src/cli.ts experiment run suite \
   - `sourceDropToBankLatencyTotal / sourceDropToBankLatencySamples`
   - delivered energy to `spawn` and `worker_handoff`
   - exact first `courier #3` and `worker #4` admission ticks so the run can distinguish admission from sustainment
+- Command:
+  - `node src/cli.ts experiment run suite --manifest ../../experiments/suites/exp-2026-04-10-opener-source-sitter-runner-courier3-sustain-causal-ablation.yaml --baseline-source git:HEAD --baseline-package bots/basic --candidate-source workspace --candidate-package bots/basic`
+- Suite ID: `2026-04-10T16-55-19-349Z-476134e8`
+- Cases and run IDs:
+  - `train-c-5k`: `2026-04-10T16-55-19-350Z-ef2593f4`
+  - `train-d-5k`: `2026-04-10T16-58-52-187Z-ba41e734`
+  - `holdout-b-5k`: `2026-04-10T17-02-29-493Z-14f5f8c4`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm run typecheck` passed
+- All `3/3` focused-suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `33.58` to `32.48` (`-3.28%`)
+  - `spawnWaitingForSufficientEnergyPct`: improved from `12.44%` to `12.15%` (`-0.29 pts`, about `-2.29%`)
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: regressed from `32.89` to `30.23` (`-8.09%`)
+  - `spawnWaitingForSufficientEnergyPct`: regressed from `10.05%` to `10.30%` (`+0.25 pts`, about `+2.49%`)
+- Gate result:
+  - training failed because only `1/3` primary metrics improved
+  - holdout failed because `controllerProgressToRCL3Pct` regressed more than the `5%` ceiling
+  - overall focused-suite result: `candidate-failed-gates`
+- Notable behavior:
+  - the negative control stayed flat exactly as intended:
+    - `train-c-5k`: no `courier #3` on either side; `controllerProgressToRCL3Pct 34.62 -> 34.61`; `spawnWaitingForSufficientEnergyPct 10.42% -> 10.43%`
+    - `train-c-5k`: final role counts `2/2/4 -> 2/2/4`; sampled time at `2/3/4` stayed `0 -> 0`
+    - `train-c-5k`: final `backlogEnergy 70 -> 72`; final `sourceDropToBankLatency 280.80 -> 280.80`; delivered energy `spawn 5904 -> 5904`; `worker_handoff 21896 -> 21896`
+  - the positive controls kept the same admission timing but lost most of their sustained `2/3/4` residency:
+    - `train-d-5k`: first `courier #3` `780 -> 779`; first `worker #4` `854 -> 853`; sampled time at `2/3/4` `100 -> 32` samples (about `2500 -> 800` ticks)
+    - `holdout-b-5k`: first `courier #3` `707 -> 706`; first `worker #4` `761 -> 760`; sampled time at `2/3/4` `106 -> 35` samples (about `2650 -> 875` ticks)
+  - both heavy maps reverted toward the old non-sustain regime by the end of the run:
+    - `train-d-5k`: final role counts `2/3/4 -> 2/2/4`; `controllerProgressToRCL3Pct 32.54 -> 30.34`; final `backlogEnergy 0 -> 1093`; final `sourceDropToBankLatency 446.17 -> 528.51`; delivered energy `spawn 6597 -> 6053`; `worker_handoff 19403 -> 15947`
+    - `holdout-b-5k`: final role counts `2/3/4 -> 2/2/4`; `controllerProgressToRCL3Pct 32.89 -> 30.23`; final `backlogEnergy 538 -> 2020`; final `sourceDropToBankLatency 310.49 -> 449.61`; delivered energy `spawn 6708 -> 5899`; `worker_handoff 20092 -> 15501`
+
+### Interpretation
+
+- This experiment supported the causal hypothesis.
+- The result is cleaner than the full-suite sustain run because admission timing stayed effectively unchanged on the heavy maps:
+  - `courier #3` still admitted at the same early heavy-haul window
+  - `worker #4` still admitted at nearly the same tick
+  - the main changed state was loss of sustained `2/3/4` occupancy and the end-of-run fall back to `2/2/4`
+- Against Screeps hard constraints, that makes the causal read direct rather than inferential:
+  - the room still has one serial spawn and full upfront spawn cost, so only timely banked energy matters for new spawn starts
+  - source-side drops still decay while stranded
+  - realized harvest remained far below the `20 e/t` two-source ceiling, so the experiment was not source-saturated
+  - when sustained `courier #3` time was removed, the heavy maps accumulated backlog again, source-drop-to-bank latency rose, delivered energy fell, and controller progress reverted
+- The negative control matters here:
+  - `train-c-5k` stayed flat and never entered a `courier #3` regime on either side
+  - so nominal `5k` map length by itself is not the causal variable
+- Existing telemetry was sufficient to answer the failure mode without another rerun:
+  - the run already measured exact first `courier #3` and `worker #4` admission ticks
+  - sampled role counts directly quantified loss of `2/3/4` residency
+  - backlog, latency, and delivered-energy metrics all moved in the expected world-model direction on the heavy maps
+- After consulting the Screeps world-model expert with only the goal, setup, observed behavior, metrics, and results, the external read matched the run data:
+  - the heavy-map lever is sustained `courier #3` uptime, not merely crossing the admission threshold once
+  - the next remaining ambiguity is whether `courier #3` is the direct lever or whether it mainly matters because it preserves the full `2/3/4` operating regime
+- Result ruled out:
+  - the heavy-map gains were not caused mainly by nominal map length, by the selector existing on paper, or by admitting `courier #3` once without sustaining it
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: if the opener sustains `courier #3` on the same heavy maps but blocks `worker #4`, most of the backlog and latency gains should remain if `courier #3` is the direct lever.
+- Hypothesis B: if blocking `worker #4` collapses those gains back toward the non-sustain regime, the real lever is the coupled `2/3/4` operating state rather than courier sustainment alone.
+- Hypothesis C: if the courier-vs-worker dependency split still leaves ambiguity, the next instrumentation addition should be explicit dwell metrics for `2/2/4`, `2/3/3`, and `2/3/4`, plus direct dropped-energy decay loss, but this sustain ablation itself already answered the admission-vs-sustain question.
+
+### Decision
+
+- `continue`
+- Keep the sustained heavy-haul `courier #3` path as the experimental baseline direction, but do not promote it to the full milestone baseline yet because the remaining uncertainty is now about dependence on the coupled `2/3/4` regime.
+- Next planned experiment: `exp-2026-04-10-opener-source-sitter-runner-courier3-sustain-worker4-dependency-ablation`.

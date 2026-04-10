@@ -1,0 +1,48 @@
+version: 1
+name: exp-2026-04-10-opener-source-sitter-runner-courier3-sustain-causal-ablation
+description: Focused opener sub-suite for courier #3 sustain causal ablation with heavy-haul positive controls and a medium-map negative control.
+run:
+  tickDuration: 25
+gates:
+  primaryMetrics:
+    - T_RCL3
+    - controllerProgressToRCL3Pct
+    - spawnWaitingForSufficientEnergyPct
+  training:
+    minImprovedPrimaryMetrics: 2
+  holdout:
+    maxRegressionPct: 5
+cases:
+  - id: train-c-5k
+    cohort: train
+    scenario: ../scenarios/duel-basic.yaml
+    overrides:
+      mapGenerator:
+        sourceMapId: 446a0e3a
+      run:
+        maxTicks: 5000
+        pollIntervalMs: 250
+        maxWallClockMs: 1800000
+        maxStalledPolls: 240
+  - id: train-d-5k
+    cohort: train
+    scenario: ../scenarios/duel-basic.yaml
+    overrides:
+      mapGenerator:
+        sourceMapId: 3454fc1f
+      run:
+        maxTicks: 5000
+        pollIntervalMs: 250
+        maxWallClockMs: 1800000
+        maxStalledPolls: 240
+  - id: holdout-b-5k
+    cohort: holdout
+    scenario: ../scenarios/duel-basic.yaml
+    overrides:
+      mapGenerator:
+        sourceMapId: f857e984
+      run:
+        maxTicks: 5000
+        pollIntervalMs: 250
+        maxWallClockMs: 1800000
+        maxStalledPolls: 240
