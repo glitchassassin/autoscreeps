@@ -3540,7 +3540,7 @@ node src/cli.ts experiment run suite \
 
 ## Entry `exp-2026-04-10-opener-source-sitter-runner-courier3-latency-sustain-no-bank-low`
 
-- Status: `planned`
+- Status: `completed`
 - Owner: `OpenCode`
 - Date: `2026-04-10`
 
@@ -3555,7 +3555,7 @@ node src/cli.ts experiment run suite \
 - Variant or branch: `git:HEAD` vs `workspace`
 - Bot package: `bots/basic`
 - Suite: `experiments/suites/milestone-1-opener.yaml`
-- Planned change:
+- Change tested:
   - keep the source-sitter plus runner/bootstrap split and the admission telemetry added in the completed experiment
   - keep the short-map worker-first path unless the room shows both early high source backlog and clearly high source-drop-to-bank latency
   - drop bank-low-with-source-backlog as a required marginal-courier admission signal
@@ -3570,3 +3570,118 @@ node src/cli.ts experiment run suite \
   - `spawnWaitingWithSourceBacklogTicks`
   - `backlogEnergy`
   - delivered energy to `spawn` and `worker_handoff`
+
+### Command
+
+- `node src/cli.ts experiment run suite --manifest ../../experiments/suites/milestone-1-opener.yaml --baseline-source git:HEAD --baseline-package bots/basic --candidate-source workspace --candidate-package bots/basic`
+- Suite ID: `2026-04-10T15-33-29-437Z-f13c1ee7`
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-10T15-33-29-440Z-9361fa62`
+  - `train-b-2k`: `2026-04-10T15-35-27-787Z-c9ce7e96`
+  - `train-c-5k`: `2026-04-10T15-37-23-459Z-b40b18c6`
+  - `train-d-5k`: `2026-04-10T15-41-10-355Z-2995833e`
+  - `holdout-a-2k`: `2026-04-10T15-44-52-733Z-ccc59bf9`
+  - `holdout-b-5k`: `2026-04-10T15-46-51-515Z-9d7cef15`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: improved from `21.18` to `22.27` (`+1.09`, about `+5.15%`)
+  - `spawnWaitingForSufficientEnergyPct`: regressed from `17.50%` to `17.79%` (`+0.29 pts`, about `+1.66%`)
+  - upstream and spawn metrics:
+    - `sourceHarvestEnergyPerTick`: `6.27 -> 6.27`
+    - `sourceHarvestUtilizationPct`: `31.32 -> 31.35`
+    - `activeHarvestingSourceUptimePct`: `78.78 -> 78.91`
+    - `spawnIdlePct`: `74.63% -> 73.99%`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: improved from `18.94` to `20.30` (`+1.36`, about `+7.18%`)
+  - `spawnWaitingForSufficientEnergyPct`: improved from `17.00%` to `16.86%` (`-0.14 pts`, about `-0.82%`)
+  - upstream and spawn metrics:
+    - `sourceHarvestEnergyPerTick`: `6.25 -> 6.25`
+    - `sourceHarvestUtilizationPct`: `31.24 -> 31.24`
+    - `activeHarvestingSourceUptimePct`: `78.08 -> 78.12`
+    - `spawnIdlePct`: `75.33% -> 75.13%`
+- Gate result:
+  - training failed because only `1/3` primary metrics improved
+  - holdout passed because there were no primary-metric regressions above the `5%` ceiling
+  - overall suite result: `candidate-failed-gates`
+- Notable behavior:
+  - the selector stayed clean: `courier #3` only admitted on the two proven heavy-haul maps
+    - candidate `firstCourier3`: `train-d-5k` at `780`, `holdout-b-5k` at `706`
+    - candidate had no `firstCourier3` admission on `train-a-2k`, `train-b-2k`, `train-c-5k`, or `holdout-a-2k`
+  - the sustainment change did the specific job the previous experiment could not: both heavy maps kept `2/3/4` through the end instead of collapsing back to `2/2/4`
+    - `train-d-5k`: baseline last sampled `2/3/4` at `1819`; candidate last sampled `2/3/4` at `5006`
+    - `holdout-b-5k`: baseline last sampled `2/3/4` at `1807`; candidate last sampled `2/3/4` at `5019`
+    - candidate final role counts: `train-d-5k` `2/3/4`, `holdout-b-5k` `2/3/4`
+  - that sustained transport materially improved the heavy-haul pipeline:
+    - `train-d-5k`: `controllerProgressToRCL3Pct 30.28 -> 32.46`; `backlogEnergy 1093 -> 0`; `sourceDropToBankLatency 528.51 -> 446.17`; delivered energy `spawn 6053 -> 6597`; `worker_handoff 15947 -> 19403`
+    - `holdout-b-5k`: `controllerProgressToRCL3Pct 30.24 -> 32.95`; `backlogEnergy 2023 -> 537`; `sourceDropToBankLatency 449.61 -> 310.49`; delivered energy `spawn 5899 -> 6708`; `worker_handoff 15501 -> 20092`
+  - the negative-control and short cases stayed on the worker-first path and were effectively flat:
+    - `train-c-5k`: no `courier #3` on either side; `controllerProgressToRCL3Pct 34.66 -> 34.66`; `spawnWaitingForSufficientEnergyPct 10.43% -> 10.42%`
+    - `train-a-2k`: no `courier #3` on either side; `controllerProgressToRCL3Pct 3.98 -> 3.97`; `spawnWaitingForSufficientEnergyPct 62.61% -> 62.64%`
+    - `train-b-2k`: no `courier #3` on either side; `controllerProgressToRCL3Pct 12.08 -> 12.07`; `spawnWaitingForSufficientEnergyPct 21.12% -> 21.13%`
+    - `holdout-a-2k`: no `courier #3` on either side; `controllerProgressToRCL3Pct 7.64 -> 7.64`; `spawnWaitingForSufficientEnergyPct 23.69% -> 23.67%`
+
+### Interpretation
+
+- This experiment supported the causal part of the hypothesis more strongly than the suite verdict alone suggests.
+- The transport read is now direct rather than inferential:
+  - source harvest stayed flat, so extraction was not the limiting factor
+  - on the two heavy-haul maps, keeping `courier #3` alive all the way to the end collapsed source backlog, reduced source-drop-to-bank latency, increased delivered energy, and improved controller progress
+  - the short and medium maps stayed on the cheaper worker-first path, so dropping bank-low as a required signal did not reintroduce the old broad-trigger problem
+- The suite still failed its training gate, but the failure mode was fully explained by existing metrics and did not require another telemetry rerun:
+  - the candidate spent slightly more spawn time on sustained transport, so train median `spawnWaitingForSufficientEnergyPct` rose by `0.29 pts`
+  - that small cost was enough to miss the manifest's `2 improved primary metrics` rule even though heavy-map throughput and progress improved materially
+- After consulting the Screeps world-model expert with only the experiment goal, setup, observed behavior, metrics, and results, the strongest external read matched the run data:
+  - the candidate found real pre-`RCL3` haul bottlenecks on exactly two maps and fixed them by sustaining transport capacity rather than by changing harvest
+  - `5k` map length alone is not the causal variable, because `train-c-5k` stayed flat without `courier #3`
+  - the highest-information next step is now a focused sustain ablation that proves the heavy-map gain comes from keeping `courier #3`, not merely from admitting it once
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: the heavy-map win comes specifically from sustaining `courier #3`; if the room is forced back off the `3 courier` track after admission, `train-d-5k` and `holdout-b-5k` should revert toward baseline backlog, latency, delivered-energy, and controller-progress outcomes.
+- Hypothesis B: `train-c-5k` should remain effectively flat in that sustain ablation, confirming that the current selector is reacting to real haul pressure rather than to nominal map size.
+- Hypothesis C: if the sustain ablation confirms the causal win, the next optimization lever is reducing the upkeep or spawn-bank cost of the heavy-map third courier rather than reopening admission logic again.
+
+### Decision
+
+- `continue`
+- Do not promote this variant as the new baseline yet. Keep the completed result because it validates the heavy-haul sustain mechanism, but use a focused causal ablation next because the milestone suite still failed its training gate.
+- Next planned experiment: `exp-2026-04-10-opener-source-sitter-runner-courier3-sustain-causal-ablation`.
+
+## Entry `exp-2026-04-10-opener-source-sitter-runner-courier3-sustain-causal-ablation`
+
+- Status: `planned`
+- Owner: `OpenCode`
+- Date: `2026-04-10`
+
+### Hypothesis
+
+- The completed no-bank-low sustain experiment showed that the heavy-map win appears when `courier #3` is sustained to the end on `train-d-5k` and `holdout-b-5k`, while short and medium maps stay worker-first.
+- If that sustained `2/3/4` state is the real causal lever, then an otherwise-matched candidate that removes or time-boxes post-admission `courier #3` sustainment should lose backlog, latency, delivered-energy, and controller-progress ground on those heavy maps, while `train-c-5k` should stay effectively flat.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: planned focused opener sub-suite covering `train-c-5k`, `train-d-5k`, and `holdout-b-5k`
+- Planned change:
+  - keep the current heavy-haul admission selector unchanged so the run does not reopen the already-solved short-map broad-trigger question
+  - remove or sharply time-box post-admission `courier #3` sustainment in the candidate while keeping the rest of the opener unchanged
+  - use `train-c-5k` as the negative control and `train-d-5k` plus `holdout-b-5k` as the positive heavy-haul cases
+  - keep post-`RCL3` logic unchanged so the run isolates whether heavy-map gains come from sustainment itself
+- Key evaluation focus:
+  - time spent at `2/3/4`
+  - final role counts
+  - `controllerProgressToRCL3Pct`
+  - `spawnWaitingForSufficientEnergyPct`
+  - `backlogEnergy`
+  - `sourceDropToBankLatencyTotal / sourceDropToBankLatencySamples`
+  - delivered energy to `spawn` and `worker_handoff`
+  - exact first `courier #3` and `worker #4` admission ticks so the run can distinguish admission from sustainment

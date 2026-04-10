@@ -12,7 +12,6 @@ const preRcl3BodyCostCapByRole: Partial<Record<WorkerRole, number>> = {
 };
 
 const preRcl3Courier3SourceBacklogThreshold = 700;
-const preRcl3Courier3BankLowBacklogPressureThreshold = 500;
 const preRcl3Courier3LatencyThreshold = 200;
 const preRcl3Courier3PostRcl2GraceTicks = 50;
 const preRcl3BacklogCourierTarget = 3;
@@ -332,6 +331,7 @@ type PreRcl3DemandContext = {
   sourceDropToBankLatencyAvg: number | null;
   rcl2Tick: number | null;
   withinCourier3Window: boolean;
+  courier3Started: boolean;
   worker4Started: boolean;
 };
 
@@ -361,6 +361,7 @@ function createPreRcl3DemandContext(room: Room): PreRcl3DemandContext {
     ),
     rcl2Tick,
     withinCourier3Window: rcl2Tick === null || Game.time <= rcl2Tick + preRcl3Courier3PostRcl2GraceTicks,
+    courier3Started: Memory.telemetry?.spawnAdmissions?.firstCourier3 != null,
     worker4Started: Memory.telemetry?.spawnAdmissions?.firstWorker4 != null
   };
 }
@@ -403,19 +404,27 @@ function determinePreRcl3BacklogCourierTargetCount(
 }
 
 function isPreRcl3Courier3PriorityActive(context: PreRcl3DemandContext): boolean {
-  const bankLowBacklogPressure = context.spawnWaitingWithSourceBacklogTicks >= preRcl3Courier3BankLowBacklogPressureThreshold;
-  const latencyPressure = context.sourceDropToBankLatencyAvg !== null
-    && context.sourceDropToBankLatencyAvg >= preRcl3Courier3LatencyThreshold;
+  const latencyPressure = hasPreRcl3Courier3LatencyPressure(context);
+
+  if (!latencyPressure || context.sourceBacklog < preRcl3Courier3SourceBacklogThreshold || context.workers < 3) {
+    return false;
+  }
+
+  if (context.courier3Started) {
+    return true;
+  }
 
   return (
-    context.workers >= 3
-    && context.couriers >= context.fullSourceSitterCount
+    context.couriers >= context.fullSourceSitterCount
     && !context.worker4Started
     && context.withinCourier3Window
-    && context.sourceBacklog >= preRcl3Courier3SourceBacklogThreshold
     && context.loadedCouriers > 0
-    && (bankLowBacklogPressure || latencyPressure)
   );
+}
+
+function hasPreRcl3Courier3LatencyPressure(context: PreRcl3DemandContext): boolean {
+  return context.sourceDropToBankLatencyAvg !== null
+    && context.sourceDropToBankLatencyAvg >= preRcl3Courier3LatencyThreshold;
 }
 
 function resolvePreRcl3ExtraWorkerGate(
