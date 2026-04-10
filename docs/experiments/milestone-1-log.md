@@ -3108,9 +3108,9 @@ node src/cli.ts experiment run suite \
 
 ## Entry `exp-2026-04-09-opener-source-sitter-runner-spawn-reserve-gating`
 
-- Status: `planned`
+- Status: `completed`
 - Owner: `OpenCode`
-- Date: `2026-04-09`
+- Date: `2026-04-10`
 
 ### Hypothesis
 
@@ -3123,7 +3123,7 @@ node src/cli.ts experiment run suite \
 - Variant or branch: `git:HEAD` vs `workspace`
 - Bot package: `bots/basic`
 - Suite: `experiments/suites/milestone-1-opener.yaml`
-- Planned change:
+- Change tested:
   - keep the standard `duel-basic` scenario with no free extensions or other room mutations on either side
   - keep the source-sitter plus runner/bootstrap split and the broader pre-`RCL3` spender-demand shape from the completed experiment
   - keep courier routing and handoff behavior unchanged so the run isolates the worker-admission gate rather than transport contracts
@@ -3136,3 +3136,107 @@ node src/cli.ts experiment run suite \
   - `backlogEnergy`
   - `withEnergyNoSpendTicks`
   - whether representative `5k` runs still reach `2 harvester / 2 courier / 4 worker` or a nearby shape without reopening the old `2/2/2` plateau
+
+### Command
+
+- `node src/cli.ts experiment run suite --manifest ../../experiments/suites/milestone-1-opener.yaml --baseline-source git:HEAD --baseline-package bots/basic --candidate-source workspace --candidate-package bots/basic`
+- Suite ID: `2026-04-10T11-35-09-071Z-9958908a`
+- Cases and run IDs:
+  - `train-a-2k`: `2026-04-10T11-35-09-072Z-4c520d57`
+  - `train-b-2k`: `2026-04-10T11-37-08-084Z-8e884429`
+  - `train-c-5k`: `2026-04-10T11-39-01-583Z-5375b024`
+  - `train-d-5k`: `2026-04-10T11-42-38-813Z-c24c36fe`
+  - `holdout-a-2k`: `2026-04-10T11-46-11-316Z-0eec1ff5`
+  - `holdout-b-5k`: `2026-04-10T11-48-02-410Z-b82f917d`
+
+### Results
+
+- Validation:
+  - `bots/basic`: `npm test` passed, `npm run typecheck` passed
+  - `tools/autoscreeps-cli`: `npm test` passed, `npm run typecheck` passed
+- All `6/6` suite cases completed.
+- Train cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: `20.71 -> 20.70`
+  - `spawnWaitingForSufficientEnergyPct`: `16.41% -> 16.42%`
+  - upstream and spawn metrics:
+    - `spawnIdlePct`: `75.71% -> 75.70%`
+    - `sourceHarvestEnergyPerTick`: `6.27 -> 6.27`
+    - `sourceHarvestUtilizationPct`: `31.34 -> 31.34`
+    - `activeHarvestingSourceCoveragePct`: `88.60 -> 88.60`
+    - `activeHarvestingSourceUptimePct`: `78.86 -> 78.86`
+- Holdout cohort summary:
+  - `T_RCL3`: not reached for baseline or candidate
+  - `controllerProgressToRCL3Pct`: `19.11 -> 19.11`
+  - `spawnWaitingForSufficientEnergyPct`: `17.13% -> 17.14%`
+  - upstream and spawn metrics:
+    - `spawnIdlePct`: `75.34% -> 75.33%`
+    - `sourceHarvestEnergyPerTick`: `6.22 -> 6.22`
+    - `sourceHarvestUtilizationPct`: `31.10 -> 31.10`
+    - `activeHarvestingSourceCoveragePct`: `87.88 -> 87.89`
+    - `activeHarvestingSourceUptimePct`: `77.28 -> 77.30`
+- Gate result:
+  - training failed because `0/3` primary metrics improved
+  - holdout passed and did not trigger the regression ceiling
+  - overall suite result: `candidate-failed-gates`
+- Notable behavior:
+  - the stricter gate was effectively a no-op against the committed baseline:
+    - representative `5k` runs still reached `2 harvester / 2 courier / 4 worker` on both sides
+    - `holdout-b-5k` late-run controller progress stayed nearly identical while source backlog stayed large on both sides, e.g. `controllerProgress 11091 -> 11087` with `backlogEnergy 2019 -> 2019`
+    - `train-d-5k` likewise stayed on the same `2/2/4` shape with essentially unchanged late backlog, e.g. `controllerProgress 10355 -> 10351` with `backlogEnergy 1114 -> 1114`
+    - `train-c-5k` was the only map where backlog was already low; even there the candidate just trailed the baseline slightly instead of improving spawn liquidity, e.g. `controllerProgress 12342 -> 12329` while both sides remained at `2/2/4`
+  - shorter cases still showed brief `2/2/2` or `2/2/3` windows, but delaying worker admission at that margin did not recover `spawnWaitingForSufficientEnergyPct`
+
+### Interpretation
+
+- This experiment falsified the hypothesis. Tightening worker `#3/#4` admission with a slightly stricter reserve signal did not materially change the committed opener.
+- The result means the current bottleneck is no longer simple worker-admission timing by itself:
+  - the colony still reached the same `2/2/4` composition in representative long runs
+  - controller progress and spawn-waiting metrics stayed effectively flat against baseline
+  - source-adjacent backlog still accumulated into the `~1k-2k` range on the heavier maps even while the spawn bank metrics did not improve
+- Against Screeps first principles, that points at a transport-to-bank timing problem rather than a source-labor or spender-count problem:
+  - only energy already in the spawn/extension bank can start the next creep
+  - source-side drops do not help spawn timing until couriers convert them into room energy
+  - the suite still reports only about `6.27 e/t` of realized harvest against a two-source theoretical ceiling of `20 e/t`, so the opener is leaving a large amount of source income stranded before it becomes useful liquidity
+
+### Follow-Up Hypotheses
+
+- Hypothesis A: if loaded couriers hard-prioritize spawn/extensions whenever the room bank is below a refill reserve, `spawnWaitingForSufficientEnergyPct` should improve even if the colony still grows to `2 harvester / 2 courier / 4 worker`.
+- Hypothesis B: if worker `#3/#4` are instead gated on sustained spawn-bank stability over multiple ticks and the suite still stays flat, that will confirm worker-admission timing is not the dominant remaining lever.
+- Hypothesis C: if hard spawn-feed priority still leaves large source backlog and flat spawn-waiting metrics, the next marginal pre-`RCL3` body should probably be courier-duty rather than worker-duty.
+
+### Decision
+
+- `continue`
+- Do not promote this gating change. Keep the committed opener baseline, keep this failed near-no-op result in the log, and next isolate courier delivery priority to the spawn bank.
+
+## Entry `exp-2026-04-10-opener-source-sitter-runner-hard-spawn-feed-priority`
+
+- Status: `planned`
+- Owner: `OpenCode`
+- Date: `2026-04-10`
+
+### Hypothesis
+
+- The completed spawn-reserve-gating run showed that worker-admission timing is no longer the dominant control lever: representative `5k` runs still reached `2 harvester / 2 courier / 4 worker` and then tracked the baseline almost exactly.
+- The same run also showed that large amounts of energy still remain stranded near sources while the bank-side spawn metric stays flat, which means the colony is harvesting energy that is not arriving at the spawn pool at the right time.
+- If the next candidate keeps the sitter-plus-runner opener and the proven `2/2/4` demand shape, but makes couriers hard-prioritize spawn/extensions whenever the bank is below a refill reserve, it should improve `spawnWaitingForSufficientEnergyPct` without giving back the controller-progress gains.
+
+### Experiment
+
+- Variant or branch: `git:HEAD` vs `workspace`
+- Bot package: `bots/basic`
+- Suite: `experiments/suites/milestone-1-opener.yaml`
+- Planned change:
+  - keep the standard `duel-basic` scenario with no free extensions or other room mutations on either side
+  - keep the source-sitter plus runner/bootstrap split and the broader pre-`RCL3` spender-demand shape from the committed baseline
+  - keep worker admission and body sizing unchanged so the run isolates transport policy rather than composition
+  - revise pre-`RCL3` courier delivery so when spawn/extensions are below a refill reserve, loaded couriers always feed the bank before worker handoff or other downstream delivery
+  - keep post-`RCL3` logic unchanged so the run isolates pre-`RCL3` spawn-liquidity control through delivery priority alone
+- Key evaluation focus:
+  - `spawnWaitingForSufficientEnergyPct`
+  - `controllerProgressToRCL3Pct`
+  - `spawnIdlePct`
+  - `backlogEnergy`
+  - `withEnergyNoSpendTicks`
+  - whether representative `5k` runs still reach `2 harvester / 2 courier / 4 worker` while reducing source-adjacent backlog
