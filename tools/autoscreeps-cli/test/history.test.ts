@@ -26,7 +26,7 @@ describe("history", () => {
       startedAt: "2026-01-01T00:00:01.000Z",
       finishedAt: "2026-01-01T00:00:02.000Z",
       repoRoot,
-      scenarioPath: "experiments/scenarios/duel-basic.yaml",
+      scenarioPath: "e2e/scenarios/duel-basic.yaml",
       scenarioName: "duel-basic",
       rooms: {
         baseline: "W5N5",
@@ -219,9 +219,10 @@ describe("history", () => {
       finishedAt: "2026-01-01T00:00:02.000Z",
       repoRoot,
       name: "duel-basic",
+      mode: "duel",
       source: {
         kind: "scenario",
-        path: "experiments/scenarios/duel-basic.yaml"
+        path: "e2e/scenarios/duel-basic.yaml"
       },
       baseline: {
         source: "git:main",
@@ -230,11 +231,6 @@ describe("history", () => {
       candidate: {
         source: "workspace",
         packagePath: "bots/basic"
-      },
-      gates: {
-        primaryMetrics: ["T_RCL2", "T_RCL3", "spawnWaitingForSufficientEnergyPct", "sourceCoveragePct", "sourceUptimePct"],
-        training: { minImprovedPrimaryMetrics: 2 },
-        holdout: { maxRegressionPct: 5 }
       },
       progress: {
         caseCount: 1,
@@ -293,7 +289,7 @@ function createRunRecord(repoRoot: string, runId: string, createdAt: string): Ru
     startedAt: null,
     finishedAt: null,
     repoRoot,
-    scenarioPath: "experiments/scenarios/duel-basic.yaml",
+    scenarioPath: "e2e/scenarios/duel-basic.yaml",
     scenarioName: "duel-basic",
     rooms: {
       baseline: "W5N5",

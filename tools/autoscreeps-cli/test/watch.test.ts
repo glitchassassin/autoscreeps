@@ -262,9 +262,10 @@ function createSuiteRecord(id: string, createdAt: string): SuiteRecord {
     finishedAt: null,
     repoRoot: "/repo",
     name: "duel-basic",
+    mode: "duel",
     source: {
       kind: "scenario",
-      path: "experiments/scenarios/duel-basic.yaml"
+      path: "e2e/scenarios/duel-basic.yaml"
     },
     baseline: {
       source: "git:main",
@@ -273,11 +274,6 @@ function createSuiteRecord(id: string, createdAt: string): SuiteRecord {
     candidate: {
       source: "workspace",
       packagePath: "bots/basic"
-    },
-    gates: {
-      primaryMetrics: ["T_RCL2", "T_RCL3", "spawnWaitingForSufficientEnergyPct", "sourceCoveragePct", "sourceUptimePct"],
-      training: { minImprovedPrimaryMetrics: 2 },
-      holdout: { maxRegressionPct: 5 }
     },
     progress: {
       caseCount: 1,
@@ -292,7 +288,7 @@ function createSuiteRecord(id: string, createdAt: string): SuiteRecord {
         cohort: "train",
         caseIndex: 1,
         tags: [],
-        scenarioPath: "experiments/scenarios/duel-basic.yaml",
+        scenarioPath: "e2e/scenarios/duel-basic.yaml",
         scenarioName: "duel-basic",
         runId: "run-1",
         status: "running",
@@ -311,7 +307,7 @@ function createCaseDetails(runId: string): SuiteCaseDetails {
     cohort: "train",
     caseIndex: 1,
     tags: [],
-    scenarioPath: "experiments/scenarios/duel-basic.yaml",
+    scenarioPath: "e2e/scenarios/duel-basic.yaml",
     scenarioName: "duel-basic",
     runId,
     status: "running",
@@ -327,7 +323,7 @@ function createCaseDetails(runId: string): SuiteCaseDetails {
         startedAt: "2026-01-01T00:00:01.000Z",
         finishedAt: null,
         repoRoot: "/repo",
-        scenarioPath: "experiments/scenarios/duel-basic.yaml",
+        scenarioPath: "e2e/scenarios/duel-basic.yaml",
         scenarioName: "duel-basic",
         suite: {
           id: "suite-1",

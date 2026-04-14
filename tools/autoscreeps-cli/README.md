@@ -17,7 +17,7 @@ Use Node 24 for this package. The repository root includes `.nvmrc`, so `nvm use
 ```sh
 nvm use
 node src/cli.ts experiment run duel \
-  --scenario ../../experiments/scenarios/duel-basic.yaml \
+  --scenario ../../e2e/scenarios/duel-basic.yaml \
   --baseline-source git:main \
   --baseline-package bots/basic \
   --candidate-source workspace \
@@ -37,7 +37,7 @@ Example:
 ```sh
 nvm use
 node src/cli.ts experiment run suite \
-  --manifest ../../experiments/suites/milestone-1-smoke.yaml \
+  --manifest ../../e2e/suites/smoke.yaml \
   --baseline-source workspace \
   --baseline-package bots/basic \
   --candidate-source workspace \

@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { EventRecord, RunDetails, RunIndexEntry, RunMetrics, RunRecord, RunSample, SuiteDetails, SuiteIndexEntry, SuiteRecord, UserRunSummaryMetrics, VariantRecord } from "./contracts.ts";
+import type { EventRecord, RoleRecord, RunDetails, RunIndexEntry, RunMetrics, RunRecord, RunSample, SuiteDetails, SuiteIndexEntry, SuiteRecord, VariantRecord } from "./contracts.ts";
 import { createRunId, ensureDirectory } from "./utils.ts";
 
 const indexFileName = "index.jsonl";
@@ -74,7 +74,7 @@ export async function writeSuiteRecord(suiteDir: string, record: SuiteRecord): P
   await writeJson(path.join(suiteDir, "suite.json"), record);
 }
 
-export async function writeVariantRecords(runDir: string, variants: Record<"baseline" | "candidate", VariantRecord>): Promise<void> {
+export async function writeVariantRecords(runDir: string, variants: RoleRecord<VariantRecord>): Promise<void> {
   await writeJson(path.join(runDir, "variants.json"), variants);
 }
 
@@ -170,7 +170,7 @@ export async function listSuites(repoRoot: string): Promise<SuiteIndexEntry[]> {
       .filter((entry) => entry.isDirectory())
       .map(async (entry) => {
         try {
-          return normalizeSuiteRecord((await readJson(path.join(suitesRoot, entry.name, "suite.json"))) as SuiteRecord);
+          return (await readJson(path.join(suitesRoot, entry.name, "suite.json"))) as SuiteRecord;
         } catch (error) {
           if (shouldIgnoreTransientJsonError(error)) {
             return null;
@@ -203,12 +203,12 @@ export async function readCaseRunDetails(runDir: string): Promise<RunDetails> {
   const metricsPath = path.join(runDir, "metrics.json");
   const samplesPath = path.join(runDir, "samples.jsonl");
 
-  let variants: Record<"baseline" | "candidate", VariantRecord> | null = null;
+  let variants: RoleRecord<VariantRecord> | null = null;
   let metrics: RunMetrics | null = null;
   let samples: RunSample[] | null = null;
 
   try {
-    variants = (await readJson(variantsPath)) as Record<"baseline" | "candidate", VariantRecord>;
+    variants = (await readJson(variantsPath)) as RoleRecord<VariantRecord>;
   } catch (error) {
     const fileError = error as NodeJS.ErrnoException;
     if (fileError.code !== "ENOENT") {
@@ -217,7 +217,7 @@ export async function readCaseRunDetails(runDir: string): Promise<RunDetails> {
   }
 
   try {
-    metrics = normalizeRunMetrics((await readJson(metricsPath)) as RunMetrics);
+    metrics = (await readJson(metricsPath)) as RunMetrics;
   } catch (error) {
     const fileError = error as NodeJS.ErrnoException;
     if (fileError.code !== "ENOENT") {
@@ -243,7 +243,7 @@ export async function readCaseRunDetails(runDir: string): Promise<RunDetails> {
 }
 
 export async function readSuiteRecord(repoRoot: string, suiteId: string): Promise<SuiteRecord> {
-  return normalizeSuiteRecord((await readJson(path.join(resolveSuiteDir(repoRoot, suiteId), "suite.json"))) as SuiteRecord);
+  return (await readJson(path.join(resolveSuiteDir(repoRoot, suiteId), "suite.json"))) as SuiteRecord;
 }
 
 export async function readSuiteDetails(repoRoot: string, suiteId: string): Promise<SuiteDetails> {
@@ -309,65 +309,6 @@ async function readJsonLines<T>(filePath: string): Promise<T[]> {
   }
 
   return items;
-}
-
-function normalizeSuiteRecord(record: SuiteRecord): SuiteRecord {
-  const legacyPrimaryMetrics = record.gates.primaryMetrics as string[];
-
-  return {
-    ...record,
-    gates: {
-      ...record.gates,
-      primaryMetrics: legacyPrimaryMetrics.map((metric) => {
-        if (metric === "spawnIdlePct" || metric === "spawnIdleWithDemandPct") {
-          return "spawnWaitingForSufficientEnergyPct";
-        }
-
-        return metric;
-      }) as SuiteRecord["gates"]["primaryMetrics"]
-    }
-  };
-}
-
-function normalizeRunMetrics(metrics: RunMetrics): RunMetrics {
-  if (!metrics.summary) {
-    return metrics;
-  }
-
-  return {
-    ...metrics,
-    summary: {
-      ...metrics.summary,
-      users: {
-        baseline: normalizeUserRunSummaryMetrics(metrics.summary.users.baseline),
-        candidate: normalizeUserRunSummaryMetrics(metrics.summary.users.candidate)
-      }
-    }
-  };
-}
-
-function normalizeUserRunSummaryMetrics(summary: UserRunSummaryMetrics): UserRunSummaryMetrics {
-  const legacySummary = summary as UserRunSummaryMetrics & {
-    spawnIdlePct?: number | null;
-    spawnIdleWithDemandPct?: number | null;
-  };
-
-  return {
-    ...summary,
-    sourceHarvestEnergyPerTick: summary.sourceHarvestEnergyPerTick ?? null,
-    sourceHarvestCeilingEnergyPerTick: summary.sourceHarvestCeilingEnergyPerTick ?? null,
-    sourceHarvestUtilizationPct: summary.sourceHarvestUtilizationPct ?? null,
-    spawnIdlePct: summary.spawnIdlePct ?? null,
-    spawnSpawningPct: summary.spawnSpawningPct ?? null,
-    spawnWaitingForSufficientEnergyPct:
-      summary.spawnWaitingForSufficientEnergyPct
-      ?? legacySummary.spawnIdleWithDemandPct
-      ?? legacySummary.spawnIdlePct
-      ?? null,
-    creepIdlePct: summary.creepIdlePct ?? null,
-    creepActivePct: summary.creepActivePct ?? null,
-    creepWaitingForEnergyPct: summary.creepWaitingForEnergyPct ?? null
-  };
 }
 
 function shouldIgnoreTransientJsonError(error: unknown): boolean {

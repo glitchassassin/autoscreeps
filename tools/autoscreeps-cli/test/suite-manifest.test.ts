@@ -50,7 +50,7 @@ describe("suite manifests", () => {
     const manifest = await loadSuiteManifest(manifestPath);
     const scenario = await resolveSuiteCaseScenario(manifest, manifest.config.cases[0]!);
 
-    expect(manifest.config.gates.training.minImprovedPrimaryMetrics).toBe(2);
+    expect(manifest.config.mode).toBe("single");
     expect(manifest.config.cases[0]?.cohort).toBe("train");
     expect(scenario.path).toBe(path.join(scenariosDir, "duel-basic.yaml"));
     expect(scenario.config.name).toBe("opener-suite:train-a");

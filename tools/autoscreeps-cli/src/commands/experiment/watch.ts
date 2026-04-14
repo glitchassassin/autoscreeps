@@ -156,8 +156,8 @@ async function collectDashboardSnapshot(
       displayCase,
       events,
       eventsLabel: currentCaseRunId ? "Recent Case Events" : "Recent Suite Events",
-      baseline: details.metrics ? summarizeRecordedRoom(details.metrics.rooms.baseline) : null,
-      candidate: details.metrics ? summarizeRecordedRoom(details.metrics.rooms.candidate) : null,
+      baseline: details.metrics?.rooms.baseline ? summarizeRecordedRoom(details.metrics.rooms.baseline) : null,
+      candidate: details.metrics?.rooms.candidate ? summarizeRecordedRoom(details.metrics.rooms.candidate) : null,
       configuredTickDurationMs: details.run.run.tickDuration,
       measuredTickDurationMs,
       displayGameTime: details.run.run.endGameTime ?? details.run.run.startGameTime,
@@ -170,8 +170,8 @@ async function collectDashboardSnapshot(
     const api = new ScreepsApiClient(details.run.server.httpUrl, { requestTimeoutMs: 1500 });
     const [gameTime, baselineRoom, candidateRoom, measuredTickDurationMs] = await Promise.all([
       api.getGameTime(),
-      api.getRoomObjects(details.run.rooms.baseline),
-      api.getRoomObjects(details.run.rooms.candidate),
+      api.getRoomObjects(details.run.rooms.baseline!),
+      details.run.rooms.candidate ? api.getRoomObjects(details.run.rooms.candidate) : Promise.resolve(null),
       api.getMeasuredTickDuration()
     ]);
 
@@ -181,8 +181,8 @@ async function collectDashboardSnapshot(
       displayCase,
       events,
       eventsLabel: "Recent Case Events",
-      baseline: summarizeLiveRoom(details.run.rooms.baseline, baselineRoom),
-      candidate: summarizeLiveRoom(details.run.rooms.candidate, candidateRoom),
+      baseline: summarizeLiveRoom(details.run.rooms.baseline!, baselineRoom),
+      candidate: details.run.rooms.candidate && candidateRoom ? summarizeLiveRoom(details.run.rooms.candidate, candidateRoom) : null,
       configuredTickDurationMs: details.run.run.tickDuration,
       measuredTickDurationMs,
       displayGameTime: gameTime,

@@ -1,36 +1,33 @@
-import { ensureBootstrapInfrastructure } from "./bootstrap";
 import { cleanupDeadCreeps } from "./memory";
-import { runCourier } from "./roles/courier";
-import { runHarvester } from "./roles/harvester";
 import { runWorker } from "./roles/worker";
 import { runSpawnManager } from "./spawn";
+import { recordBotError } from "./telemetry-state";
 import { recordTelemetry } from "./telemetry";
 
-const roleHandlers: Record<WorkerRole, (creep: Creep) => void> = {
-  harvester: runHarvester,
-  courier: runCourier,
-  worker: runWorker
-};
-
-export function runTick(): void {
+export function runTick(): StructureSpawn | null {
   cleanupDeadCreeps();
-  ensureBootstrapInfrastructure();
 
-  const firstSpawn = Object.values(Game.spawns)[0];
-  if (firstSpawn) {
-    runSpawnManager(firstSpawn);
+  const primarySpawn = Object.values(Game.spawns)[0] ?? null;
+  if (primarySpawn) {
+    runSpawnManager(primarySpawn);
   }
 
   for (const creep of Object.values(Game.creeps)) {
-    const handler = roleHandlers[creep.memory.role];
-    if (handler) {
-      handler(creep);
-    }
+    runWorker(creep);
   }
 
-  recordTelemetry(firstSpawn ?? null);
+  return primarySpawn;
 }
 
 export const loop = (): void => {
-  runTick();
+  let primarySpawn: StructureSpawn | null = null;
+
+  try {
+    primarySpawn = runTick();
+  } catch (error) {
+    const message = error instanceof Error ? error.stack ?? error.message : String(error);
+    recordBotError(message);
+  }
+
+  recordTelemetry(primarySpawn);
 };

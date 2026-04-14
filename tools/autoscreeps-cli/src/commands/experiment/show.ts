@@ -7,7 +7,7 @@ export async function showExperimentCommand(suiteId: string): Promise<void> {
   const details = await readSuiteDetails(repoRoot, suiteId);
   process.stdout.write(`${JSON.stringify({
     suite: details.suite,
-    summary: summarizeSuiteResults(details.suite.gates, details.cases),
+    summary: summarizeSuiteResults(details.cases),
     cases: details.cases
   }, null, 2)}\n`);
 }

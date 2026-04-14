@@ -47,39 +47,6 @@ describe("run samples", () => {
             controllerProgressTotal: 200,
             extensions: 0
           }
-        },
-        telemetry: {
-          baseline: {
-            schemaVersion: 4,
-            gameTime: 100,
-            spawn: {
-              queueDepth: 1,
-              isSpawning: false,
-              nextRole: "harvester",
-              unmetDemand: { harvester: 1 }
-            },
-            sources: {
-              total: 2,
-              staffed: 1,
-              assignments: { sourceA: 1 },
-              harvestingStaffed: 1,
-              harvestingAssignments: { sourceA: 1 },
-              harvestedEnergy: 50,
-              activeHarvestingStaffed: 1,
-              activeHarvestingAssignments: { sourceA: 1 }
-            },
-            loop: {
-              phaseTicks: {
-                "harvester.gathering": 8,
-                "harvester.move": 4,
-                "worker.working": 3
-              },
-              noEnergyAvailableTicks: {
-                harvester: 2
-              }
-            }
-          },
-          candidate: null
         }
       },
       {
@@ -111,41 +78,6 @@ describe("run samples", () => {
             controllerProgressTotal: 200,
             extensions: 0
           }
-        },
-        telemetry: {
-          baseline: {
-            schemaVersion: 4,
-            gameTime: 125,
-            spawn: {
-              queueDepth: 1,
-              isSpawning: true,
-              nextRole: "upgrader",
-              unmetDemand: { upgrader: 1 }
-            },
-            sources: {
-              total: 2,
-              staffed: 2,
-              assignments: { sourceA: 1, sourceB: 1 },
-              harvestingStaffed: 1,
-              harvestingAssignments: { sourceA: 1 },
-              harvestedEnergy: 150,
-              activeHarvestingStaffed: 0,
-              activeHarvestingAssignments: {}
-            },
-            loop: {
-              phaseTicks: {
-                "harvester.gathering": 12,
-                "harvester.move": 10,
-                "worker.upgrade": 4,
-                "worker.working": 6
-              },
-              noEnergyAvailableTicks: {
-                harvester: 3,
-                worker: 1
-              }
-            }
-          },
-          candidate: null
         }
       },
       {
@@ -177,104 +109,24 @@ describe("run samples", () => {
             controllerProgressTotal: 200,
             extensions: 0
           }
-        },
-        telemetry: {
-          baseline: {
-            schemaVersion: 4,
-            gameTime: 150,
-            spawn: {
-              queueDepth: 0,
-              isSpawning: false,
-              nextRole: null,
-              unmetDemand: { harvester: 0, upgrader: 0 }
-            },
-            sources: {
-              total: 2,
-              staffed: 2,
-              assignments: { sourceA: 2, sourceB: 1 },
-              harvestingStaffed: 0,
-              harvestingAssignments: {},
-              harvestedEnergy: 255,
-              activeHarvestingStaffed: 0,
-              activeHarvestingAssignments: {}
-            },
-            loop: {
-              phaseTicks: {
-                "harvester.gathering": 15,
-                "harvester.move": 20,
-                "harvester.harvest": 10,
-                "worker.upgrade": 5,
-                "worker.working": 10
-              },
-              noEnergyAvailableTicks: {
-                harvester: 5,
-                worker: 4
-              },
-              spawnObservedTicks: 51,
-              spawnIdleTicks: 17,
-              spawnSpawningTicks: 17,
-              spawnWaitingForSufficientEnergyTicks: 17,
-              sourceObservedTicks: 51,
-              sourceTotalTicks: 102,
-              sourceStaffedTicks: 85,
-              sourceFullyStaffedTicks: 34,
-              harvestingSourceStaffedTicks: 34,
-              harvestingSourceFullyStaffedTicks: 0,
-              activeHarvestingSourceStaffedTicks: 17,
-              activeHarvestingSourceFullyStaffedTicks: 0
-            }
-          },
-          candidate: null
         }
       }
     ], 25);
 
     expect(summary.sampleEveryTicks).toBe(25);
-    expect(summary.users.baseline.sampleCount).toBe(3);
-    expect(summary.users.baseline.firstSeenGameTime).toBe(100);
-    expect(summary.users.baseline.controllerLevelMilestones["1"]).toBe(100);
-    expect(summary.users.baseline.controllerLevelMilestones["2"]).toBe(125);
-    expect(summary.users.baseline.controllerLevelMilestones["3"]).toBe(150);
-    expect(summary.users.baseline.controllerProgressToRCL3Pct).toBe(100);
-    expect(summary.users.baseline.maxCombinedRCL).toBe(3);
-    expect(summary.users.baseline.telemetrySampleCount).toBe(3);
-    expect(summary.users.baseline.firstExtensionTick).toBe(125);
-    expect(summary.users.baseline.allRcl2ExtensionsTick).toBe(150);
-    expect(summary.users.baseline.spawnWaitingForSufficientEnergyPct).toBeCloseTo(33.33, 2);
-    expect(summary.users.baseline.spawnSpawningPct).toBeCloseTo(33.33, 2);
-    expect(summary.users.baseline.spawnIdlePct).toBeCloseTo(33.33, 2);
-    expect(summary.users.baseline.sourceHarvestEnergyPerTick).toBe(5);
-    expect(summary.users.baseline.sourceHarvestCeilingEnergyPerTick).toBe(20);
-    expect(summary.users.baseline.sourceHarvestUtilizationPct).toBe(25);
-    expect(summary.users.baseline.creepActivePct).toBeCloseTo(58.33, 2);
-    expect(summary.users.baseline.creepWaitingForEnergyPct).toBe(15);
-    expect(summary.users.baseline.creepIdlePct).toBeCloseTo(26.67, 2);
-    expect(summary.users.baseline.sourceCoveragePct).toBeCloseTo(83.33, 2);
-    expect(summary.users.baseline.sourceUptimePct).toBeCloseTo(66.67, 2);
-    expect(summary.users.baseline.harvestingSourceCoveragePct).toBeCloseTo(33.33, 2);
-    expect(summary.users.baseline.harvestingSourceUptimePct).toBe(0);
-    expect(summary.users.baseline.activeHarvestingSourceCoveragePct).toBeCloseTo(16.67, 2);
-    expect(summary.users.baseline.activeHarvestingSourceUptimePct).toBe(0);
-    expect(summary.users.candidate.controllerLevelMilestones["2"]).toBeNull();
-    expect(summary.users.candidate.controllerProgressToRCL3Pct).toBeCloseTo(0.33, 2);
-    expect(summary.users.candidate.maxOwnedControllers).toBe(2);
-    expect(summary.users.candidate.firstExtensionTick).toBeNull();
-    expect(summary.users.candidate.allRcl2ExtensionsTick).toBeNull();
-    expect(summary.users.candidate.telemetrySampleCount).toBe(0);
-    expect(summary.users.candidate.sourceHarvestEnergyPerTick).toBeNull();
-    expect(summary.users.candidate.sourceHarvestCeilingEnergyPerTick).toBeNull();
-    expect(summary.users.candidate.sourceHarvestUtilizationPct).toBeNull();
-    expect(summary.users.candidate.spawnIdlePct).toBeNull();
-    expect(summary.users.candidate.spawnSpawningPct).toBeNull();
-    expect(summary.users.candidate.spawnWaitingForSufficientEnergyPct).toBeNull();
-    expect(summary.users.candidate.creepIdlePct).toBeNull();
-    expect(summary.users.candidate.creepActivePct).toBeNull();
-    expect(summary.users.candidate.creepWaitingForEnergyPct).toBeNull();
-    expect(summary.users.candidate.sourceCoveragePct).toBeNull();
-    expect(summary.users.candidate.sourceUptimePct).toBeNull();
-    expect(summary.users.candidate.harvestingSourceCoveragePct).toBeNull();
-    expect(summary.users.candidate.harvestingSourceUptimePct).toBeNull();
-    expect(summary.users.candidate.activeHarvestingSourceCoveragePct).toBeNull();
-    expect(summary.users.candidate.activeHarvestingSourceUptimePct).toBeNull();
+    expect(summary.users.baseline?.sampleCount).toBe(3);
+    expect(summary.users.baseline?.firstSeenGameTime).toBe(100);
+    expect(summary.users.baseline?.controllerLevelMilestones["1"]).toBe(100);
+    expect(summary.users.baseline?.controllerLevelMilestones["2"]).toBe(125);
+    expect(summary.users.baseline?.controllerLevelMilestones["3"]).toBe(150);
+    expect(summary.users.baseline?.controllerProgressToRCL3Pct).toBe(100);
+    expect(summary.users.baseline?.maxCombinedRCL).toBe(3);
+    expect(summary.users.baseline?.firstExtensionTick).toBe(125);
+    expect(summary.users.baseline?.allRcl2ExtensionsTick).toBe(150);
+    expect(summary.users.candidate?.controllerLevelMilestones["2"]).toBeNull();
+    expect(summary.users.candidate?.controllerProgressToRCL3Pct).toBeCloseTo(0.33, 2);
+    expect(summary.users.candidate?.maxOwnedControllers).toBe(2);
+    expect(summary.users.candidate?.firstExtensionTick).toBeNull();
+    expect(summary.users.candidate?.allRcl2ExtensionsTick).toBeNull();
   });
 });

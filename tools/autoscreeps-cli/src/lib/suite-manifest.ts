@@ -2,31 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
-import type { SuiteGates } from "./contracts.ts";
 import { loadScenario, mapGeneratorSchema, roomSelectionStrategySchema, scenarioSchema, terminalConditionSetSchema, type ScenarioConfig } from "./scenario.ts";
-
-export const defaultSuitePrimaryMetrics = [
-  "T_RCL2",
-  "T_RCL3",
-  "spawnWaitingForSufficientEnergyPct",
-  "sourceCoveragePct",
-  "sourceUptimePct"
-] as const;
-
-export const defaultSuiteGates: SuiteGates = {
-  primaryMetrics: [...defaultSuitePrimaryMetrics],
-  training: { minImprovedPrimaryMetrics: 2 },
-  holdout: { maxRegressionPct: 5 }
-};
-
-export const suitePrimaryMetricSchema = z.enum([
-  "T_RCL2",
-  "T_RCL3",
-  "controllerProgressToRCL3Pct",
-  "spawnWaitingForSufficientEnergyPct",
-  "sourceCoveragePct",
-  "sourceUptimePct"
-]);
 
 const mapGeneratorOverrideSchema = z.object({
   type: z.literal("mirrored-random-1x1").optional(),
@@ -63,22 +39,12 @@ const suiteRunOverrideSchema = scenarioRunOverrideSchema.pick({
   tickDuration: true
 }).partial();
 
-const suiteGatesSchema = z.object({
-  primaryMetrics: z.array(suitePrimaryMetricSchema).min(1).default([...defaultSuitePrimaryMetrics]),
-  training: z.object({
-    minImprovedPrimaryMetrics: z.number().int().nonnegative().default(2)
-  }).default(defaultSuiteGates.training),
-  holdout: z.object({
-    maxRegressionPct: z.number().nonnegative().default(5)
-  }).default(defaultSuiteGates.holdout)
-}).default(defaultSuiteGates);
-
 export const suiteManifestSchema = z.object({
   version: z.literal(1),
   name: z.string().min(1),
   description: z.string().optional(),
+  mode: z.enum(["single", "duel"]).default("single"),
   run: suiteRunOverrideSchema.optional(),
-  gates: suiteGatesSchema.default(defaultSuiteGates),
   cases: z.array(suiteCaseSchema).min(1)
 }).superRefine((value, context) => {
   const seen = new Set<string>();
@@ -95,7 +61,6 @@ export const suiteManifestSchema = z.object({
   }
 });
 
-export type SuitePrimaryMetric = z.infer<typeof suitePrimaryMetricSchema>;
 export type SuiteManifest = z.infer<typeof suiteManifestSchema>;
 export type SuiteCase = SuiteManifest["cases"][number];
 export type LoadedSuiteManifest = { path: string; config: SuiteManifest };

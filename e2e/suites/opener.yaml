@@ -1,33 +1,29 @@
 version: 1
-name: milestone-1-smoke
-description: Quick smoke suite for manifest-driven opener evaluation.
+name: opener
+description: Fixed-map opener benchmark suite for milestone 1.
+mode: duel
 run:
   tickDuration: 25
-gates:
-  training:
-    minImprovedPrimaryMetrics: 0
-  holdout:
-    maxRegressionPct: 100
 cases:
-  - id: smoke-train-a
+  - id: train-a-10k
     cohort: train
     scenario: ../scenarios/duel-basic.yaml
     overrides:
       mapGenerator:
         sourceMapId: 3a278e6d
       run:
-        maxTicks: 200
+        maxTicks: 10000
         pollIntervalMs: 250
-        maxWallClockMs: 600000
+        maxWallClockMs: 1800000
         maxStalledPolls: 240
-  - id: smoke-holdout-a
+  - id: holdout-a-10k
     cohort: holdout
     scenario: ../scenarios/duel-basic.yaml
     overrides:
       mapGenerator:
-        sourceMapId: e665861f
+        sourceMapId: bf4049e8
       run:
-        maxTicks: 200
+        maxTicks: 10000
         pollIntervalMs: 250
-        maxWallClockMs: 600000
+        maxWallClockMs: 1800000
         maxStalledPolls: 240

@@ -19,6 +19,11 @@ export const terminalConditionSchema = z.discriminatedUnion("type", [
     level: z.number().int().min(1).max(8)
   }),
   z.object({
+    type: z.literal("owned-structure-count-at-least"),
+    structureType: z.string().min(1),
+    count: z.number().int().nonnegative()
+  }),
+  z.object({
     type: z.literal("no-owned-controllers")
   })
 ]);

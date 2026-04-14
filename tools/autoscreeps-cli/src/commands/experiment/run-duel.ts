@@ -23,7 +23,7 @@ export async function runDuelExperimentCommand(options: DuelCommandOptions): Pro
   });
 
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-  if (result.suite.status !== "completed" || result.suite.progress.failedCaseCount > 0 || !result.summary.gates.passed) {
+  if (result.suite.status !== "completed" || result.suite.progress.failedCaseCount > 0) {
     process.exitCode = 1;
   }
 }
