@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { chooseBody, createSpawnRequest, runSpawnManager, summarizeSpawnDemand } from "../src/spawn";
+import { executeSpawnPlan } from "../src/execution/spawn";
+import { chooseBody, createSpawnPlan, summarizeSpawnDemand } from "../src/planning/spawn-plan";
+import { observeWorld } from "../src/world/observe";
 import { installScreepsGlobals } from "./helpers/install-globals";
 
 describe("spawn manager", () => {
@@ -26,9 +28,13 @@ describe("spawn manager", () => {
   });
 
   it("spawns workers until the target count is met", () => {
-    const request = createSpawnRequest(makeSpawn());
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+    const spawn = makeSpawn();
+    testGlobal.Game.spawns = { [spawn.name]: spawn } as Game["spawns"];
+    const plan = createSpawnPlan(observeWorld());
 
-    expect(request).toMatchObject({
+    expect(plan.request).toMatchObject({
+      spawnName: "Spawn1",
       name: "worker-123",
       memory: {
         role: "worker",
@@ -44,7 +50,7 @@ describe("spawn manager", () => {
       Array.from({ length: 5 }, (_, index) => [`worker-${index}`, makeWorkerCreep("W0N0")])
     ) as Record<string, Creep>;
 
-    expect(summarizeSpawnDemand(makeSpawn().room)).toEqual({
+    expect(summarizeSpawnDemand(observeWorld())).toEqual({
       unmetDemand: { worker: 0 },
       nextRole: null,
       totalUnmetDemand: 0
@@ -52,9 +58,12 @@ describe("spawn manager", () => {
   });
 
   it("delegates to spawnCreep when a worker should be spawned", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
     const spawn = makeSpawn();
+    testGlobal.Game.spawns = { [spawn.name]: spawn } as Game["spawns"];
+    const plan = createSpawnPlan(observeWorld());
 
-    const result = runSpawnManager(spawn);
+    const result = executeSpawnPlan(plan);
 
     expect(result).toBe(OK);
     expect(spawn.spawnCreep).toHaveBeenCalledWith(

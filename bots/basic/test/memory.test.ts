@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { cleanupDeadCreeps } from "../src/memory";
+import { cleanupDeadCreeps } from "../src/state/reconcile-creeps";
 import { installScreepsGlobals } from "./helpers/install-globals";
 
 describe("cleanupDeadCreeps", () => {

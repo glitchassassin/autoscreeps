@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createTelemetrySnapshot, recordTelemetry, telemetrySegmentId } from "../src/telemetry";
+import { createTelemetrySnapshot, telemetrySegmentId } from "../src/telemetry/snapshot";
+import { recordTelemetry } from "../src/telemetry/report";
+import { observeWorld } from "../src/world/observe";
 import { installScreepsGlobals } from "./helpers/install-globals";
 
 describe("telemetry", () => {
@@ -37,7 +39,9 @@ describe("telemetry", () => {
           }
         } as Room
       },
-      spawns: {},
+      spawns: {
+        Spawn1: makeSpawn()
+      },
       time: 25
     } as unknown as Game;
 
@@ -48,7 +52,7 @@ describe("telemetry", () => {
   });
 
   it("creates a compact snapshot from game state", () => {
-    const snapshot = createTelemetrySnapshot(makeSpawn(), Memory.telemetry!);
+    const snapshot = createTelemetrySnapshot(observeWorld(), Memory.telemetry!);
 
     expect(snapshot).toEqual({
       schemaVersion: 12,
@@ -79,7 +83,7 @@ describe("telemetry", () => {
   it("writes the report envelope with telemetry on sample ticks", () => {
     const testGlobal = globalThis as typeof globalThis & { RawMemory: RawMemory };
 
-    recordTelemetry(makeSpawn());
+    recordTelemetry(observeWorld());
 
     expect(testGlobal.RawMemory.setActiveSegments).toHaveBeenCalledWith([telemetrySegmentId]);
     expect(JSON.parse(testGlobal.RawMemory.segments[telemetrySegmentId] as string)).toMatchObject({
@@ -101,7 +105,7 @@ describe("telemetry", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game; RawMemory: RawMemory };
     testGlobal.Game.time = 26;
 
-    recordTelemetry(makeSpawn());
+    recordTelemetry(observeWorld());
 
     expect(JSON.parse(testGlobal.RawMemory.segments[telemetrySegmentId] as string)).toEqual({
       schemaVersion: 12,

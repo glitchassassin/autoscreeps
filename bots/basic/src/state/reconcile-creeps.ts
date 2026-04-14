@@ -1,4 +1,4 @@
-import { recordCreepDeath } from "./telemetry-state";
+import { recordCreepDeath } from "./telemetry";
 
 export function cleanupDeadCreeps(): void {
   Memory.creeps ??= {};

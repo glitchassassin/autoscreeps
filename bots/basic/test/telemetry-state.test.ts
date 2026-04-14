@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { ensureTelemetryState, recordBotError, recordCreepDeath } from "../src/telemetry-state";
+import { ensureTelemetryState, recordBotError, recordCreepDeath } from "../src/state/telemetry";
 import { installScreepsGlobals } from "./helpers/install-globals";
 
 describe("telemetry state", () => {

@@ -5,8 +5,8 @@ This subproject is a very basic Screeps bot based on the TypeScript Starter Kit 
 ## What is included
 
 - `src/main.ts` exports the Screeps `loop` entry point.
-- `src/spawn.ts` keeps a tiny worker economy running.
-- `src/roles/` contains basic harvester and upgrader behavior.
+- `src/core/`, `src/world/`, `src/state/`, `src/planning/`, `src/execution/`, and `src/telemetry/` split the bot into explicit pipeline stages.
+- `src/execution/roles/` contains the current creep role behavior.
 - `vitest` covers memory cleanup and spawn planning.
 - `vite.config.ts` can build only, or build and upload to the local private server.
 

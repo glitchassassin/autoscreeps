@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { runWorker } from "../src/roles/worker";
+import { runWorker } from "../src/execution/roles/worker";
 import { installScreepsGlobals } from "./helpers/install-globals";
 
 describe("runWorker", () => {
