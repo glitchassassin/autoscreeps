@@ -4,8 +4,7 @@ const sourceRegenTicks = 300;
 
 export function createSitePlans(world: WorldSnapshot): SitePlan[] {
   const sites = world.sources
-    .slice()
-    .sort((left, right) => left.sourceId.localeCompare(right.sourceId))
+    .toSorted((left, right) => left.sourceId.localeCompare(right.sourceId))
     .map((source) => ({
       siteId: source.sourceId,
       sourceId: source.sourceId,
@@ -18,8 +17,7 @@ export function createSitePlans(world: WorldSnapshot): SitePlan[] {
 
   const harvesters = world.creeps
     .filter((creep) => creep.role === "harvester" && creep.homeRoom === world.primaryRoomName)
-    .slice()
-    .sort((left, right) => left.name.localeCompare(right.name));
+    .toSorted((left, right) => left.name.localeCompare(right.name));
 
   for (const harvester of harvesters) {
     const site = chooseLeastStaffedSite(sites);
