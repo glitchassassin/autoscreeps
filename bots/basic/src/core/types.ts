@@ -7,6 +7,7 @@ export type OwnedControllerSnapshot = {
 export type WorldSnapshot = {
   gameTime: number;
   primarySpawnName: string | null;
+  primarySpawnConstructionSiteCount: number;
   primarySpawnSpawning: boolean | null;
   primaryRoomName: string | null;
   primaryRoomEnergyAvailable: number | null;
@@ -31,6 +32,7 @@ export type SpawnRequestPlan = {
 };
 
 export type SpawnPlan = {
+  bootstrapRoomName: string | null;
   demand: SpawnDemandSummary;
   request: SpawnRequestPlan | null;
 };

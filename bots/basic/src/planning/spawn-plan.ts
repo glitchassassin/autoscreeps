@@ -15,7 +15,12 @@ export function chooseBody(role: WorkerRole, availableEnergy: number): BodyPartC
     return null;
   }
 
-  return Array.from({ length: patternCount }, () => bodyPartPattern).flat();
+  const body: BodyPartConstant[] = [];
+  for (let index = 0; index < patternCount; index += 1) {
+    body.push(...bodyPartPattern);
+  }
+
+  return body;
 }
 
 export function summarizeSpawnDemand(world: Pick<WorldSnapshot, "creepsByRole">): SpawnDemandSummary {
@@ -35,9 +40,16 @@ export function createSpawnPlan(world: WorldSnapshot): SpawnPlan {
   const request = buildSpawnRequest(world, demand);
 
   return {
+    bootstrapRoomName: request === null && shouldBootstrapSpawn(world) ? world.primaryRoomName : null,
     demand,
     request
   };
+}
+
+function shouldBootstrapSpawn(world: WorldSnapshot): boolean {
+  return world.primarySpawnName === null
+    && world.primaryRoomName !== null
+    && world.primarySpawnConstructionSiteCount === 0;
 }
 
 function buildSpawnRequest(world: WorldSnapshot, demand: SpawnDemandSummary): SpawnRequestPlan | null {

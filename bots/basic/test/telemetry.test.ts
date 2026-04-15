@@ -29,6 +29,7 @@ describe("telemetry", () => {
           memory: { role: "worker", working: true, homeRoom: "W0N0" }
         } as Creep
       },
+      constructionSites: {},
       rooms: {
         W0N0: {
           controller: {

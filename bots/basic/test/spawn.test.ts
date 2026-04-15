@@ -15,6 +15,7 @@ describe("spawn manager", () => {
 
     testGlobal.Game = {
       creeps: {},
+      constructionSites: {},
       spawns: {},
       rooms: {},
       time: 123
@@ -41,6 +42,19 @@ describe("spawn manager", () => {
         working: false,
         homeRoom: "W0N0"
       }
+    });
+    expect(plan.bootstrapRoomName).toBeNull();
+  });
+
+  it("requests a bootstrap spawn site when the room is owned but no spawn exists", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+    testGlobal.Game.rooms = {
+      W0N0: makeOwnedRoom()
+    } as Game["rooms"];
+
+    expect(createSpawnPlan(observeWorld())).toMatchObject({
+      bootstrapRoomName: "W0N0",
+      request: null
     });
   });
 
@@ -78,6 +92,19 @@ describe("spawn manager", () => {
       }
     );
   });
+
+  it("places a bootstrap spawn site before the first spawn exists", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+    const room = makeOwnedRoom();
+    testGlobal.Game.rooms = {
+      W0N0: room
+    } as Game["rooms"];
+
+    const result = executeSpawnPlan(createSpawnPlan(observeWorld()));
+
+    expect(result).toBe(OK);
+    expect(room.createConstructionSite).toHaveBeenCalledWith(7, 7, STRUCTURE_SPAWN);
+  });
 });
 
 function makeSpawn(): StructureSpawn {
@@ -105,4 +132,22 @@ function makeWorkerCreep(homeRoom: string): Creep {
       homeRoom
     }
   } as Creep;
+}
+
+function makeOwnedRoom(): Room {
+  return {
+    name: "W0N0",
+    energyAvailable: 0,
+    energyCapacityAvailable: 0,
+    controller: {
+      my: true,
+      level: 1,
+      pos: {
+        x: 10,
+        y: 10,
+        roomName: "W0N0"
+      }
+    } as StructureController,
+    createConstructionSite: vi.fn(() => OK)
+  } as unknown as Room;
 }
