@@ -1,8 +1,8 @@
-import type { WorldSnapshot } from "../core/types";
+import type { ColonyPlan, ExecutionSummary, WorldSnapshot } from "../core/types";
 import { ensureTelemetryState } from "../state/telemetry";
-import { createTelemetrySnapshot, telemetrySampleEveryTicks, telemetrySchemaVersion, telemetrySegmentId, type BotReport, type BotTelemetrySnapshot } from "./snapshot";
+import { createTelemetrySnapshot, telemetrySchemaVersion, telemetrySegmentId, type BotReport, type BotTelemetrySnapshot } from "./snapshot";
 
-export function recordTelemetry(world: WorldSnapshot): void {
+export function recordTelemetry(world: WorldSnapshot, plan?: ColonyPlan, execution?: ExecutionSummary): void {
   if (typeof RawMemory === "undefined") {
     return;
   }
@@ -21,8 +21,8 @@ export function recordTelemetry(world: WorldSnapshot): void {
     telemetryState.rcl3Tick = world.gameTime;
   }
 
-  const telemetry = world.gameTime % telemetrySampleEveryTicks === 0
-    ? createTelemetrySnapshot(world, telemetryState)
+  const telemetry = plan && execution
+    ? createTelemetrySnapshot(world, plan, execution, telemetryState)
     : undefined;
 
   writeBotReport(world.gameTime, telemetryState, telemetry);

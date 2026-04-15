@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createColonyPlan } from "../src/planning/colony-plan";
 import { createTelemetrySnapshot, telemetrySegmentId } from "../src/telemetry/snapshot";
 import { recordTelemetry } from "../src/telemetry/report";
 import { observeWorld } from "../src/world/observe";
@@ -22,23 +23,42 @@ describe("telemetry", () => {
 
     testGlobal.Game = {
       creeps: {
-        workerA: {
-          memory: { role: "worker", working: false, homeRoom: "W0N0" }
-        } as Creep,
-        workerB: {
-          memory: { role: "worker", working: true, homeRoom: "W0N0" }
-        } as Creep
+        harvesterA: {
+          name: "harvesterA",
+          memory: { role: "harvester", homeRoom: "W0N0" },
+          body: [{ type: WORK, hits: 100 }, { type: WORK, hits: 100 }],
+          room: { name: "W0N0" },
+          store: { [RESOURCE_ENERGY]: 0, getFreeCapacity: vi.fn(() => 0) },
+          getActiveBodyparts: vi.fn(() => 2)
+        } as unknown as Creep,
+        runnerA: {
+          name: "runnerA",
+          memory: { role: "runner", working: true, homeRoom: "W0N0" },
+          body: [{ type: CARRY, hits: 100 }, { type: MOVE, hits: 100 }],
+          room: { name: "W0N0" },
+          store: { [RESOURCE_ENERGY]: 50, getFreeCapacity: vi.fn(() => 0) },
+          getActiveBodyparts: vi.fn(() => 0)
+        } as unknown as Creep
       },
       constructionSites: {},
+      getObjectById: vi.fn(() => null),
       rooms: {
         W0N0: {
+          name: "W0N0",
+          find: vi.fn((type: FindConstant) => {
+            if (type === FIND_SOURCES) {
+              return [makeSource("source-1")];
+            }
+
+            return [];
+          }),
           controller: {
             my: true,
             level: 2,
             progress: 500,
             progressTotal: 45000
           }
-        } as Room
+        } as unknown as Room
       },
       spawns: {
         Spawn1: makeSpawn()
@@ -53,18 +73,42 @@ describe("telemetry", () => {
   });
 
   it("creates a compact snapshot from game state", () => {
-    const snapshot = createTelemetrySnapshot(observeWorld(), Memory.telemetry!);
+    const world = observeWorld();
+    const plan = createColonyPlan(world);
+    const snapshot = createTelemetrySnapshot(world, plan, {
+      harvestedEnergyBySourceId: {
+        "source-1": 4
+      }
+    }, Memory.telemetry!);
 
     expect(snapshot).toEqual({
-      schemaVersion: 12,
+      schemaVersion: 13,
       gameTime: 25,
       totalCreeps: 2,
-      workerCount: 2,
+      mode: "normal",
+      roleCounts: {
+        "recovery-worker": 0,
+        harvester: 1,
+        runner: 1,
+        upgrader: 0
+      },
       spawn: {
         isSpawning: false,
-        queueDepth: 3,
-        nextRole: "worker"
+        queueDepth: 1,
+        nextRole: "upgrader"
       },
+      sources: [
+        {
+          sourceId: "source-1",
+          theoreticalGrossEpt: 10,
+          plannedGrossEpt: 4,
+          actualGrossEpt: 4,
+          staffingCoverage: 0.4,
+          harvestExecutionRatio: 1,
+          overallUtilization: 0.4,
+          assignedHarvesterCount: 1
+        }
+      ],
       controller: {
         level: 2,
         progress: 500,
@@ -81,37 +125,100 @@ describe("telemetry", () => {
     });
   });
 
-  it("writes the report envelope with telemetry on sample ticks", () => {
+  it("writes the report envelope with telemetry", () => {
     const testGlobal = globalThis as typeof globalThis & { RawMemory: RawMemory };
+    const world = observeWorld();
+    const plan = createColonyPlan(world);
 
-    recordTelemetry(observeWorld());
+    recordTelemetry(world, plan, {
+      harvestedEnergyBySourceId: {
+        "source-1": 4
+      }
+    });
 
     expect(testGlobal.RawMemory.setActiveSegments).toHaveBeenCalledWith([telemetrySegmentId]);
     expect(JSON.parse(testGlobal.RawMemory.segments[telemetrySegmentId] as string)).toMatchObject({
-      schemaVersion: 12,
+      schemaVersion: 13,
       gameTime: 25,
       errors: [],
       telemetry: {
         totalCreeps: 2,
-        workerCount: 2,
         spawn: {
-          queueDepth: 3,
-          nextRole: "worker"
+          queueDepth: 1,
+          nextRole: "upgrader"
+        },
+        sources: [
+          {
+            sourceId: "source-1",
+            actualGrossEpt: 4
+          }
+        ],
+        roleCounts: {
+          harvester: 1,
+          runner: 1
         }
       }
     });
   });
 
-  it("writes only the control-plane report between sample ticks", () => {
+  it("keeps telemetry in the report between former sample ticks", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game; RawMemory: RawMemory };
     testGlobal.Game.time = 26;
+    const world = observeWorld();
+    const plan = createColonyPlan(world);
 
-    recordTelemetry(observeWorld());
+    recordTelemetry(world, plan, {
+      harvestedEnergyBySourceId: {
+        "source-1": 4
+      }
+    });
 
     expect(JSON.parse(testGlobal.RawMemory.segments[telemetrySegmentId] as string)).toEqual({
-      schemaVersion: 12,
+      schemaVersion: 13,
       gameTime: 26,
-      errors: []
+      errors: [],
+      telemetry: {
+        schemaVersion: 13,
+        gameTime: 26,
+        totalCreeps: 2,
+        mode: "normal",
+        roleCounts: {
+          "recovery-worker": 0,
+          harvester: 1,
+          runner: 1,
+          upgrader: 0
+        },
+        spawn: {
+          isSpawning: false,
+          queueDepth: 1,
+          nextRole: "upgrader"
+        },
+        sources: [
+          {
+            sourceId: "source-1",
+            theoreticalGrossEpt: 10,
+            plannedGrossEpt: 4,
+            actualGrossEpt: 4,
+            staffingCoverage: 0.4,
+            harvestExecutionRatio: 1,
+            overallUtilization: 0.4,
+            assignedHarvesterCount: 1
+          }
+        ],
+        controller: {
+          level: 2,
+          progress: 500,
+          progressTotal: 45000
+        },
+        milestones: {
+          firstOwnedSpawnTick: 26,
+          rcl2Tick: 26,
+          rcl3Tick: null
+        },
+        counters: {
+          creepDeaths: 2
+        }
+      }
     });
   });
 });
@@ -122,6 +229,13 @@ function makeSpawn(): StructureSpawn {
     spawning: null,
     room: {
       name: "W0N0",
+      find: vi.fn((type: FindConstant) => {
+        if (type === FIND_SOURCES) {
+          return [makeSource("source-1")];
+        }
+
+        return [];
+      }),
       controller: {
         my: true,
         level: 2,
@@ -130,6 +244,23 @@ function makeSpawn(): StructureSpawn {
       },
       energyAvailable: 300,
       energyCapacityAvailable: 300
-    } as Room
+    } as unknown as Room
   } as unknown as StructureSpawn;
+}
+
+function makeSource(id: string): Source {
+  return {
+    id,
+    energy: 3000,
+    energyCapacity: 3000,
+    ticksToRegeneration: 300,
+    pos: {
+      x: 10,
+      y: 10,
+      roomName: "W0N0"
+    },
+    room: {
+      name: "W0N0"
+    } as Room
+  } as Source;
 }

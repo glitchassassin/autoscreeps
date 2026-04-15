@@ -1,21 +1,33 @@
-import type { WorldSnapshot } from "../core/types";
+import type { ColonyPlan, ExecutionSummary, SitePlan, WorldSnapshot } from "../core/types";
 import { ensureTelemetryState } from "../state/telemetry";
-import { summarizeSpawnDemand } from "../planning/spawn-plan";
 
 export const telemetrySegmentId = 42;
 export const telemetrySampleEveryTicks = 25;
-export const telemetrySchemaVersion = 12;
+export const telemetrySchemaVersion = 13;
+
+export type SourceTelemetrySnapshot = {
+  sourceId: string;
+  theoreticalGrossEpt: number;
+  plannedGrossEpt: number;
+  actualGrossEpt: number;
+  staffingCoverage: number | null;
+  harvestExecutionRatio: number | null;
+  overallUtilization: number | null;
+  assignedHarvesterCount: number;
+};
 
 export type BotTelemetrySnapshot = {
   schemaVersion: number;
   gameTime: number;
   totalCreeps: number;
-  workerCount: number;
+  mode: ColonyPlan["mode"];
+  roleCounts: Record<WorkerRole, number>;
   spawn: {
     isSpawning: boolean;
     queueDepth: number;
     nextRole: WorkerRole | null;
   };
+  sources: SourceTelemetrySnapshot[];
   controller: {
     level: number | null;
     progress: number | null;
@@ -40,20 +52,22 @@ export type BotReport = {
 
 export function createTelemetrySnapshot(
   world: WorldSnapshot,
+  plan: ColonyPlan,
+  execution: ExecutionSummary,
   telemetryState: TelemetryMemoryState = ensureTelemetryState()
 ): BotTelemetrySnapshot {
-  const demand = summarizeSpawnDemand(world);
-
   return {
     schemaVersion: telemetrySchemaVersion,
     gameTime: world.gameTime,
     totalCreeps: world.totalCreeps,
-    workerCount: world.creepsByRole.worker,
+    mode: plan.mode,
+    roleCounts: world.creepsByRole,
     spawn: {
       isSpawning: Boolean(world.primarySpawnSpawning),
-      queueDepth: demand.totalUnmetDemand,
-      nextRole: demand.nextRole
+      queueDepth: plan.spawn.demand.totalUnmetDemand,
+      nextRole: plan.spawn.demand.nextRole
     },
+    sources: plan.sites.map((site) => createSourceTelemetrySnapshot(site, execution)),
     controller: {
       level: world.primaryController?.level ?? null,
       progress: world.primaryController?.progress ?? null,
@@ -68,4 +82,27 @@ export function createTelemetrySnapshot(
       creepDeaths: telemetryState.creepDeaths
     }
   };
+}
+
+function createSourceTelemetrySnapshot(site: SitePlan, execution: ExecutionSummary): SourceTelemetrySnapshot {
+  const actualGrossEpt = execution.harvestedEnergyBySourceId[site.sourceId] ?? 0;
+
+  return {
+    sourceId: site.sourceId,
+    theoreticalGrossEpt: site.theoreticalGrossEpt,
+    plannedGrossEpt: site.plannedGrossEpt,
+    actualGrossEpt,
+    staffingCoverage: divide(site.plannedGrossEpt, site.theoreticalGrossEpt),
+    harvestExecutionRatio: divide(actualGrossEpt, site.plannedGrossEpt),
+    overallUtilization: divide(actualGrossEpt, site.theoreticalGrossEpt),
+    assignedHarvesterCount: site.assignedHarvesterNames.length
+  };
+}
+
+function divide(numerator: number, denominator: number): number | null {
+  if (denominator <= 0) {
+    return null;
+  }
+
+  return numerator / denominator;
 }

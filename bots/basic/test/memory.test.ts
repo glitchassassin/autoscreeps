@@ -18,12 +18,12 @@ describe("cleanupDeadCreeps", () => {
     testGlobal.Memory = {
       creeps: {
         alive: {
-          role: "worker",
+          role: "runner",
           working: false,
           homeRoom: "W0N0"
         },
         missing: {
-          role: "worker",
+          role: "harvester",
           working: true,
           homeRoom: "W0N0"
         }

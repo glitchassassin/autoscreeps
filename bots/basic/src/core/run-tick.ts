@@ -12,10 +12,11 @@ export function runTick(): TickResult {
   const plan = createColonyPlan(world);
 
   executeSpawnPlan(plan.spawn);
-  executeCreepRoles();
+  const execution = executeCreepRoles(plan);
 
   return {
     world,
-    plan
+    plan,
+    execution
   };
 }

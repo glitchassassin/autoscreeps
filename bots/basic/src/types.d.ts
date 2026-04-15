@@ -1,5 +1,5 @@
 declare global {
-  type WorkerRole = "worker";
+  type WorkerRole = "recovery-worker" | "harvester" | "runner" | "upgrader";
 
   interface TelemetryMemoryState {
     creepDeaths: number;
@@ -11,7 +11,7 @@ declare global {
 
   interface CreepMemory {
     role: WorkerRole;
-    working: boolean;
+    working?: boolean;
     homeRoom: string;
   }
 
