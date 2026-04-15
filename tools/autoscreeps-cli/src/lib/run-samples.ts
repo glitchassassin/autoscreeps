@@ -1,4 +1,4 @@
-import type { RoleRecord, RunSample, RunSampleRoomMetrics, RunSummaryMetrics, UserRunSummaryMetrics, UserSampleMetrics, VariantRole } from "./contracts.ts";
+import type { BotReport, CpuRunSummaryMetrics, RoleRecord, RunSample, RunSampleRoomMetrics, RunSummaryMetrics, UserRunSummaryMetrics, UserSampleMetrics, VariantRole } from "./contracts.ts";
 
 const trackedControllerLevels = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 const rcl1ProgressTotal = 200;
@@ -49,6 +49,7 @@ function collectRoles(samples: RunSample[]): VariantRole[] {
 
 function summarizeVariant(samples: RunSample[], role: VariantRole): UserRunSummaryMetrics {
   const controllerLevelMilestones = initializeControllerLevelMilestones();
+  const cpuAccumulator = createCpuSummaryAccumulator();
   let firstSeenGameTime: number | null = null;
   let controllerProgressToRCL3Pct: number | null = null;
   let maxCombinedRCL = 0;
@@ -90,6 +91,8 @@ function summarizeVariant(samples: RunSample[], role: VariantRole): UserRunSumma
         allRcl2ExtensionsTick = sample.gameTime;
       }
     }
+
+    recordCpuSummary(cpuAccumulator, sample.reports?.[role] ?? null);
   }
 
   return {
@@ -100,7 +103,102 @@ function summarizeVariant(samples: RunSample[], role: VariantRole): UserRunSumma
     maxCombinedRCL,
     maxOwnedControllers,
     firstExtensionTick,
-    allRcl2ExtensionsTick
+    allRcl2ExtensionsTick,
+    ...(cpuAccumulator.observedTickCount > 0 ? { cpu: finalizeCpuSummary(cpuAccumulator) } : {})
+  };
+}
+
+function createCpuSummaryAccumulator(): {
+  observedTickCount: number;
+  totalUsed: number;
+  peakUsed: number | null;
+  topLevelTotals: Record<string, number>;
+  topLevelPeaks: Record<string, number>;
+} {
+  return {
+    observedTickCount: 0,
+    totalUsed: 0,
+    peakUsed: null,
+    topLevelTotals: {},
+    topLevelPeaks: {}
+  };
+}
+
+function recordCpuSummary(
+  accumulator: ReturnType<typeof createCpuSummaryAccumulator>,
+  report: BotReport | null
+): void {
+  const cpu = extractCpuSummary(report);
+  if (cpu === null) {
+    return;
+  }
+
+  accumulator.observedTickCount += 1;
+  accumulator.totalUsed += cpu.used;
+  accumulator.peakUsed = accumulator.peakUsed === null ? cpu.used : Math.max(accumulator.peakUsed, cpu.used);
+
+  for (const phase of cpu.topLevelPhases) {
+    accumulator.topLevelTotals[phase.label] = (accumulator.topLevelTotals[phase.label] ?? 0) + phase.total;
+    accumulator.topLevelPeaks[phase.label] = Math.max(accumulator.topLevelPeaks[phase.label] ?? 0, phase.total);
+  }
+}
+
+function finalizeCpuSummary(
+  accumulator: ReturnType<typeof createCpuSummaryAccumulator>
+): CpuRunSummaryMetrics {
+  return {
+    observedTickCount: accumulator.observedTickCount,
+    avgUsedPerTick: divideAndRound(accumulator.totalUsed, accumulator.observedTickCount),
+    peakUsedPerTick: roundMetric(accumulator.peakUsed),
+    topLevelAvgPerTick: Object.fromEntries(
+      Object.entries(accumulator.topLevelTotals)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([label, total]) => [label, divideAndRound(total, accumulator.observedTickCount) ?? 0])
+    ),
+    topLevelPeakPerTick: Object.fromEntries(
+      Object.entries(accumulator.topLevelPeaks)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([label, peak]) => [label, roundMetric(peak) ?? 0])
+    )
+  };
+}
+
+function extractCpuSummary(report: BotReport | null): {
+  used: number;
+  topLevelPhases: Array<{ label: string; total: number }>;
+} | null {
+  if (!report || !isRecord(report.telemetry)) {
+    return null;
+  }
+
+  const cpu = report.telemetry.cpu;
+  if (!isRecord(cpu)) {
+    return null;
+  }
+
+  const used = normalizeNumber(cpu.used);
+  if (used === null) {
+    return null;
+  }
+
+  const rawProfile = Array.isArray(cpu.profile) ? cpu.profile : [];
+  const topLevelPhases = rawProfile.flatMap((entry) => {
+    if (!isRecord(entry)) {
+      return [];
+    }
+
+    const label = typeof entry.label === "string" ? entry.label : null;
+    const total = normalizeNumber(entry.total);
+    if (label === null || total === null) {
+      return [];
+    }
+
+    return [{ label, total }];
+  });
+
+  return {
+    used,
+    topLevelPhases
   };
 }
 
@@ -139,4 +237,28 @@ function calculateControllerProgressToRcl3Pct(room: RunSampleRoomMetrics | undef
 function normalizeControllerProgressToRcl3Pct(progress: number): number {
   const boundedProgress = Math.min(Math.max(progress, 0), totalProgressToRcl3);
   return Math.round((boundedProgress / totalProgressToRcl3) * 10000) / 100;
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return typeof value === "object" && value !== null;
+}
+
+function normalizeNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function divideAndRound(total: number, count: number): number | null {
+  if (count <= 0) {
+    return null;
+  }
+
+  return roundMetric(total / count);
+}
+
+function roundMetric(value: number | null): number | null {
+  if (value === null) {
+    return null;
+  }
+
+  return Math.round(value * 1000) / 1000;
 }

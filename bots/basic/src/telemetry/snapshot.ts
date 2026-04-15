@@ -1,9 +1,10 @@
 import type { ColonyPlan, ExecutionSummary, SitePlan, SpawnDemandInputs, WorldSnapshot } from "../core/types";
 import { ensureTelemetryState } from "../state/telemetry";
+import { createEmptyCpuTelemetrySnapshot, type CpuTelemetrySnapshot } from "./cpu-profiler";
 
 export const telemetrySegmentId = 42;
 export const telemetrySampleEveryTicks = 25;
-export const telemetrySchemaVersion = 14;
+export const telemetrySchemaVersion = 16;
 
 export type SourceTelemetrySnapshot = {
   sourceId: string;
@@ -19,6 +20,8 @@ export type SourceTelemetrySnapshot = {
 export type BotTelemetrySnapshot = {
   schemaVersion: number;
   gameTime: number;
+  cpuGameTime: number | null;
+  cpu: CpuTelemetrySnapshot;
   totalCreeps: number;
   mode: ColonyPlan["mode"];
   roleCounts: Record<WorkerRole, number>;
@@ -55,11 +58,15 @@ export function createTelemetrySnapshot(
   world: WorldSnapshot,
   plan: ColonyPlan,
   execution: ExecutionSummary,
-  telemetryState: TelemetryMemoryState = ensureTelemetryState()
+  telemetryState: TelemetryMemoryState = ensureTelemetryState(),
+  cpu: CpuTelemetrySnapshot = createEmptyCpuTelemetrySnapshot(),
+  cpuGameTime: number | null = null
 ): BotTelemetrySnapshot {
   return {
     schemaVersion: telemetrySchemaVersion,
     gameTime: world.gameTime,
+    cpuGameTime,
+    cpu,
     totalCreeps: world.totalCreeps,
     mode: plan.mode,
     roleCounts: world.creepsByRole,

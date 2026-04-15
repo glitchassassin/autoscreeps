@@ -47,6 +47,35 @@ describe("run samples", () => {
             controllerProgressTotal: 200,
             extensions: 0
           }
+        },
+        reports: {
+          baseline: {
+            schemaVersion: 15,
+            gameTime: 100,
+            errors: [],
+            telemetry: {
+              cpu: {
+                used: 0.6,
+                profile: [
+                  { label: "observe", total: 0.2 },
+                  { label: "creeps", total: 0.3 }
+                ]
+              }
+            }
+          },
+          candidate: {
+            schemaVersion: 15,
+            gameTime: 100,
+            errors: [],
+            telemetry: {
+              cpu: {
+                used: 0.3,
+                profile: [
+                  { label: "observe", total: 0.1 }
+                ]
+              }
+            }
+          }
         }
       },
       {
@@ -77,6 +106,36 @@ describe("run samples", () => {
             controllerProgress: 125,
             controllerProgressTotal: 200,
             extensions: 0
+          }
+        },
+        reports: {
+          baseline: {
+            schemaVersion: 15,
+            gameTime: 125,
+            errors: [],
+            telemetry: {
+              cpu: {
+                used: 0.9,
+                profile: [
+                  { label: "observe", total: 0.3 },
+                  { label: "creeps", total: 0.4 }
+                ]
+              }
+            }
+          },
+          candidate: {
+            schemaVersion: 15,
+            gameTime: 125,
+            errors: [],
+            telemetry: {
+              cpu: {
+                used: 0.5,
+                profile: [
+                  { label: "observe", total: 0.2 },
+                  { label: "plan", total: 0.1 }
+                ]
+              }
+            }
           }
         }
       },
@@ -109,6 +168,22 @@ describe("run samples", () => {
             controllerProgressTotal: 200,
             extensions: 0
           }
+        },
+        reports: {
+          candidate: {
+            schemaVersion: 15,
+            gameTime: 150,
+            errors: [],
+            telemetry: {
+              cpu: {
+                used: 0.7,
+                profile: [
+                  { label: "observe", total: 0.25 },
+                  { label: "creeps", total: 0.2 }
+                ]
+              }
+            }
+          }
         }
       }
     ], 25);
@@ -123,10 +198,38 @@ describe("run samples", () => {
     expect(summary.users.baseline?.maxCombinedRCL).toBe(3);
     expect(summary.users.baseline?.firstExtensionTick).toBe(125);
     expect(summary.users.baseline?.allRcl2ExtensionsTick).toBe(150);
+    expect(summary.users.baseline?.cpu).toEqual({
+      observedTickCount: 2,
+      avgUsedPerTick: 0.75,
+      peakUsedPerTick: 0.9,
+      topLevelAvgPerTick: {
+        creeps: 0.35,
+        observe: 0.25
+      },
+      topLevelPeakPerTick: {
+        creeps: 0.4,
+        observe: 0.3
+      }
+    });
     expect(summary.users.candidate?.controllerLevelMilestones["2"]).toBeNull();
     expect(summary.users.candidate?.controllerProgressToRCL3Pct).toBeCloseTo(0.33, 2);
     expect(summary.users.candidate?.maxOwnedControllers).toBe(2);
     expect(summary.users.candidate?.firstExtensionTick).toBeNull();
     expect(summary.users.candidate?.allRcl2ExtensionsTick).toBeNull();
+    expect(summary.users.candidate?.cpu).toEqual({
+      observedTickCount: 3,
+      avgUsedPerTick: 0.5,
+      peakUsedPerTick: 0.7,
+      topLevelAvgPerTick: {
+        creeps: 0.067,
+        observe: 0.183,
+        plan: 0.033
+      },
+      topLevelPeakPerTick: {
+        creeps: 0.2,
+        observe: 0.25,
+        plan: 0.1
+      }
+    });
   });
 });

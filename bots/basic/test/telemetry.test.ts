@@ -1,14 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createColonyPlan } from "../src/planning/colony-plan";
+import { createEmptyCpuTelemetrySnapshot } from "../src/telemetry/cpu-profiler";
+import { beginCpuSpan, createCpuProfiler, endCpuSpan } from "../src/telemetry/cpu-profiler";
+import { recordTelemetry, resetPendingCpuTelemetry } from "../src/telemetry/report";
 import { createTelemetrySnapshot, telemetrySegmentId } from "../src/telemetry/snapshot";
-import { recordTelemetry } from "../src/telemetry/report";
 import { observeWorld } from "../src/world/observe";
 import { installScreepsGlobals } from "./helpers/install-globals";
 
 describe("telemetry", () => {
+  let cpuUsed = 0;
+
   beforeEach(() => {
     installScreepsGlobals();
     const testGlobal = globalThis as typeof globalThis & { Game: Game; Memory: Memory; RawMemory: RawMemory };
+    cpuUsed = 0;
+    resetPendingCpuTelemetry();
 
     testGlobal.Memory = {
       creeps: {},
@@ -68,6 +74,12 @@ describe("telemetry", () => {
       spawns: {
         Spawn1: makeSpawn()
       },
+      cpu: {
+        limit: 20,
+        tickLimit: 500,
+        bucket: 10000,
+        getUsed: vi.fn(() => cpuUsed)
+      },
       time: 25
     } as unknown as Game;
 
@@ -80,15 +92,24 @@ describe("telemetry", () => {
   it("creates a compact snapshot from game state", () => {
     const world = observeWorld();
     const plan = createColonyPlan(world);
+    const cpu = createEmptyCpuTelemetrySnapshot();
     const snapshot = createTelemetrySnapshot(world, plan, {
       harvestedEnergyBySourceId: {
         "source-1": 4
       }
-    }, Memory.telemetry!);
+    }, Memory.telemetry!, cpu, null);
 
     expect(snapshot).toEqual({
-      schemaVersion: 14,
+      schemaVersion: 16,
       gameTime: 25,
+      cpuGameTime: null,
+      cpu: {
+        used: null,
+        limit: 20,
+        tickLimit: 500,
+        bucket: 10000,
+        profile: []
+      },
       totalCreeps: 2,
       mode: "normal",
       roleCounts: {
@@ -157,19 +178,28 @@ describe("telemetry", () => {
     const testGlobal = globalThis as typeof globalThis & { RawMemory: RawMemory };
     const world = observeWorld();
     const plan = createColonyPlan(world);
+    const profiler = createCpuProfiler();
 
     recordTelemetry(world, plan, {
       harvestedEnergyBySourceId: {
         "source-1": 4
       }
-    });
+    }, profiler);
 
     expect(testGlobal.RawMemory.setActiveSegments).toHaveBeenCalledWith([telemetrySegmentId]);
     expect(JSON.parse(testGlobal.RawMemory.segments[telemetrySegmentId] as string)).toMatchObject({
-      schemaVersion: 14,
+      schemaVersion: 16,
       gameTime: 25,
       errors: [],
       telemetry: {
+        cpuGameTime: null,
+        cpu: {
+          used: null,
+          limit: 20,
+          tickLimit: 500,
+          bucket: 10000,
+          profile: []
+        },
         totalCreeps: 2,
         spawn: {
           queueDepth: 15,
@@ -202,6 +232,16 @@ describe("telemetry", () => {
 
   it("keeps telemetry in the report between former sample ticks", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game; RawMemory: RawMemory };
+    const profiler = createCpuProfiler();
+    const firstWorld = observeWorld();
+    const firstPlan = createColonyPlan(firstWorld);
+
+    recordTelemetry(firstWorld, firstPlan, {
+      harvestedEnergyBySourceId: {
+        "source-1": 4
+      }
+    }, profiler);
+
     testGlobal.Game.time = 26;
     const world = observeWorld();
     const plan = createColonyPlan(world);
@@ -210,15 +250,31 @@ describe("telemetry", () => {
       harvestedEnergyBySourceId: {
         "source-1": 4
       }
-    });
+    }, createCpuProfiler());
 
     expect(JSON.parse(testGlobal.RawMemory.segments[telemetrySegmentId] as string)).toEqual({
-      schemaVersion: 14,
+      schemaVersion: 16,
       gameTime: 26,
       errors: [],
       telemetry: {
-        schemaVersion: 14,
+        schemaVersion: 16,
         gameTime: 26,
+        cpuGameTime: 25,
+        cpu: {
+          used: 0,
+          limit: 20,
+          tickLimit: 500,
+          bucket: 10000,
+          profile: [
+            {
+              label: "report",
+              total: 0,
+              self: 0,
+              calls: 1,
+              children: []
+            }
+          ]
+        },
         totalCreeps: 2,
         mode: "normal",
         roleCounts: {
@@ -273,12 +329,144 @@ describe("telemetry", () => {
           progressTotal: 45000
         },
         milestones: {
-          firstOwnedSpawnTick: 26,
-          rcl2Tick: 26,
+          firstOwnedSpawnTick: 25,
+          rcl2Tick: 25,
           rcl3Tick: null
         },
         counters: {
           creepDeaths: 2
+        }
+      }
+    });
+  });
+
+  it("records nested cpu profile spans when a profiler is provided", () => {
+    const testGlobal = globalThis as typeof globalThis & { RawMemory: RawMemory };
+    const world = observeWorld();
+    const plan = createColonyPlan(world);
+    const profiler = createCpuProfiler();
+
+    const planSpan = beginCpuSpan(profiler, "plan");
+    cpuUsed = 2;
+    const spawnDemandSpan = beginCpuSpan(profiler, "summarizeSpawnDemand");
+    cpuUsed = 4;
+    endCpuSpan(profiler, spawnDemandSpan);
+    cpuUsed = 5;
+    endCpuSpan(profiler, planSpan);
+
+    recordTelemetry(world, plan, {
+      harvestedEnergyBySourceId: {
+        "source-1": 4
+      }
+    }, profiler);
+
+    const nextProfiler = createCpuProfiler();
+    const nextWorld = observeWorld();
+    const nextPlan = createColonyPlan(nextWorld);
+
+    recordTelemetry(nextWorld, nextPlan, {
+      harvestedEnergyBySourceId: {
+        "source-1": 4
+      }
+    }, nextProfiler);
+
+    expect(JSON.parse(testGlobal.RawMemory.segments[telemetrySegmentId] as string)).toMatchObject({
+      telemetry: {
+        cpuGameTime: 25,
+        cpu: {
+          used: 5,
+          limit: 20,
+          tickLimit: 500,
+          bucket: 10000,
+          profile: [
+            {
+              label: "plan",
+              total: 5,
+              self: 3,
+              calls: 1,
+              children: [
+                {
+                  label: "summarizeSpawnDemand",
+                  total: 2,
+                  self: 2,
+                  calls: 1,
+                  children: []
+                }
+              ]
+            },
+            {
+              label: "report",
+              total: 0,
+              self: 0,
+              calls: 1,
+              children: []
+            }
+          ]
+        }
+      }
+    });
+  });
+
+  it("captures report cpu after the first report write completes", () => {
+    const testGlobal = globalThis as typeof globalThis & { RawMemory: RawMemory };
+    const storedSegments: Record<string, string> = {};
+
+    testGlobal.RawMemory = {
+      segments: new Proxy(storedSegments, {
+        set(target, property, value) {
+          target[String(property)] = String(value);
+          cpuUsed += 2;
+          return true;
+        }
+      }) as unknown as RawMemory["segments"],
+      setActiveSegments: vi.fn()
+    } as unknown as RawMemory;
+
+    const world = observeWorld();
+    const plan = createColonyPlan(world);
+    const profiler = createCpuProfiler();
+
+    const planSpan = beginCpuSpan(profiler, "plan");
+    cpuUsed = 3;
+    endCpuSpan(profiler, planSpan);
+
+    recordTelemetry(world, plan, {
+      harvestedEnergyBySourceId: {
+        "source-1": 4
+      }
+    }, profiler);
+
+    testGlobal.Game.time = 26;
+    const nextWorld = observeWorld();
+    const nextPlan = createColonyPlan(nextWorld);
+
+    recordTelemetry(nextWorld, nextPlan, {
+      harvestedEnergyBySourceId: {
+        "source-1": 4
+      }
+    }, createCpuProfiler());
+
+    expect(JSON.parse(storedSegments[telemetrySegmentId]!)).toMatchObject({
+      telemetry: {
+        cpuGameTime: 25,
+        cpu: {
+          used: 5,
+          profile: [
+            {
+              label: "plan",
+              total: 3,
+              self: 3,
+              calls: 1,
+              children: []
+            },
+            {
+              label: "report",
+              total: 2,
+              self: 2,
+              calls: 1,
+              children: []
+            }
+          ]
         }
       }
     });

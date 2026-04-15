@@ -225,6 +225,14 @@ export type RunSample = {
   reports?: RoleRecord<BotReport | null>;
 };
 
+export type CpuRunSummaryMetrics = {
+  observedTickCount: number;
+  avgUsedPerTick: number | null;
+  peakUsedPerTick: number | null;
+  topLevelAvgPerTick: Record<string, number>;
+  topLevelPeakPerTick: Record<string, number>;
+};
+
 export type UserRunSummaryMetrics = {
   sampleCount: number;
   firstSeenGameTime: number | null;
@@ -234,6 +242,7 @@ export type UserRunSummaryMetrics = {
   maxOwnedControllers: number;
   firstExtensionTick: number | null;
   allRcl2ExtensionsTick: number | null;
+  cpu?: CpuRunSummaryMetrics;
 };
 
 export type RunSummaryMetrics = {
