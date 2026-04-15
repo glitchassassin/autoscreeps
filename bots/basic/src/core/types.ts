@@ -13,8 +13,10 @@ export type CreepSnapshot = {
   roomName: string;
   working: boolean;
   activeWorkParts: number;
+  activeCarryParts: number;
   storeEnergy: number;
   freeCapacity: number;
+  bodyCost: number;
 };
 
 export type SourceSnapshot = {
@@ -25,6 +27,7 @@ export type SourceSnapshot = {
   energy: number;
   energyCapacity: number;
   ticksToRegeneration: number | null;
+  pathLengthToPrimarySpawn: number | null;
 };
 
 export type WorldSnapshot = {
@@ -35,6 +38,7 @@ export type WorldSnapshot = {
   primaryRoomName: string | null;
   primaryRoomEnergyAvailable: number | null;
   primaryRoomEnergyCapacityAvailable: number | null;
+  primarySpawnToControllerPathLength: number | null;
   primaryController: OwnedControllerSnapshot | null;
   maxOwnedControllerLevel: number;
   totalCreeps: number;
@@ -59,7 +63,32 @@ export type CreepPlan = {
   sourceId: string | null;
 };
 
+export type SpawnDemandInputs = {
+  harvest: {
+    requiredWorkParts: number;
+    coveredWorkParts: number;
+    plannedWorkPartsPerCreep: number;
+    targetCount: number;
+    coverage: number;
+  };
+  haul: {
+    requiredCarryParts: number;
+    coveredCarryParts: number;
+    plannedCarryPartsPerCreep: number;
+    targetCount: number;
+    coverage: number;
+  };
+  upgrade: {
+    surplusBudgetEpt: number;
+    coveredNetEpt: number;
+    plannedNetEptPerCreep: number;
+    targetCount: number;
+    coverage: number;
+  };
+};
+
 export type SpawnDemandSummary = {
+  inputs: SpawnDemandInputs;
   unmetDemand: Record<WorkerRole, number>;
   nextRole: WorkerRole | null;
   totalUnmetDemand: number;

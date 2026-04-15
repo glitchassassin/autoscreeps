@@ -37,7 +37,7 @@ describe("telemetry", () => {
           body: [{ type: CARRY, hits: 100 }, { type: MOVE, hits: 100 }],
           room: { name: "W0N0" },
           store: { [RESOURCE_ENERGY]: 50, getFreeCapacity: vi.fn(() => 0) },
-          getActiveBodyparts: vi.fn(() => 0)
+          getActiveBodyparts: vi.fn((part: BodyPartConstant) => part === CARRY ? 1 : 0)
         } as unknown as Creep
       },
       constructionSites: {},
@@ -56,7 +56,12 @@ describe("telemetry", () => {
             my: true,
             level: 2,
             progress: 500,
-            progressTotal: 45000
+            progressTotal: 45000,
+            pos: {
+              x: 20,
+              y: 20,
+              roomName: "W0N0"
+            }
           }
         } as unknown as Room
       },
@@ -82,7 +87,7 @@ describe("telemetry", () => {
     }, Memory.telemetry!);
 
     expect(snapshot).toEqual({
-      schemaVersion: 13,
+      schemaVersion: 14,
       gameTime: 25,
       totalCreeps: 2,
       mode: "normal",
@@ -94,8 +99,31 @@ describe("telemetry", () => {
       },
       spawn: {
         isSpawning: false,
-        queueDepth: 1,
-        nextRole: "upgrader"
+        queueDepth: 15,
+        nextRole: "runner",
+        inputs: {
+          harvest: {
+            requiredWorkParts: 5,
+            coveredWorkParts: 2,
+            plannedWorkPartsPerCreep: 2,
+            targetCount: 3,
+            coverage: 0.4
+          },
+          haul: {
+            requiredCarryParts: 3,
+            coveredCarryParts: 1,
+            plannedCarryPartsPerCreep: 3,
+            targetCount: 1,
+            coverage: 1 / 3
+          },
+          upgrade: {
+            surplusBudgetEpt: 9.3,
+            coveredNetEpt: 0,
+            plannedNetEptPerCreep: 50 / 71 + 200 / 1500,
+            targetCount: 12,
+            coverage: 0
+          }
+        }
       },
       sources: [
         {
@@ -138,14 +166,25 @@ describe("telemetry", () => {
 
     expect(testGlobal.RawMemory.setActiveSegments).toHaveBeenCalledWith([telemetrySegmentId]);
     expect(JSON.parse(testGlobal.RawMemory.segments[telemetrySegmentId] as string)).toMatchObject({
-      schemaVersion: 13,
+      schemaVersion: 14,
       gameTime: 25,
       errors: [],
       telemetry: {
         totalCreeps: 2,
         spawn: {
-          queueDepth: 1,
-          nextRole: "upgrader"
+          queueDepth: 15,
+          nextRole: "runner",
+          inputs: {
+            harvest: {
+              requiredWorkParts: 5
+            },
+            haul: {
+              requiredCarryParts: 3
+            },
+            upgrade: {
+              surplusBudgetEpt: 9.3
+            }
+          }
         },
         sources: [
           {
@@ -174,11 +213,11 @@ describe("telemetry", () => {
     });
 
     expect(JSON.parse(testGlobal.RawMemory.segments[telemetrySegmentId] as string)).toEqual({
-      schemaVersion: 13,
+      schemaVersion: 14,
       gameTime: 26,
       errors: [],
       telemetry: {
-        schemaVersion: 13,
+        schemaVersion: 14,
         gameTime: 26,
         totalCreeps: 2,
         mode: "normal",
@@ -190,8 +229,31 @@ describe("telemetry", () => {
         },
         spawn: {
           isSpawning: false,
-          queueDepth: 1,
-          nextRole: "upgrader"
+          queueDepth: 15,
+          nextRole: "runner",
+          inputs: {
+            harvest: {
+              requiredWorkParts: 5,
+              coveredWorkParts: 2,
+              plannedWorkPartsPerCreep: 2,
+              targetCount: 3,
+              coverage: 0.4
+            },
+            haul: {
+              requiredCarryParts: 3,
+              coveredCarryParts: 1,
+              plannedCarryPartsPerCreep: 3,
+              targetCount: 1,
+              coverage: 1 / 3
+            },
+            upgrade: {
+              surplusBudgetEpt: 9.3,
+              coveredNetEpt: 0,
+              plannedNetEptPerCreep: 50 / 71 + 200 / 1500,
+              targetCount: 12,
+              coverage: 0
+            }
+          }
         },
         sources: [
           {
@@ -240,11 +302,21 @@ function makeSpawn(): StructureSpawn {
         my: true,
         level: 2,
         progress: 500,
-        progressTotal: 45000
+        progressTotal: 45000,
+        pos: {
+          x: 20,
+          y: 20,
+          roomName: "W0N0"
+        }
       },
       energyAvailable: 300,
       energyCapacityAvailable: 300
-    } as unknown as Room
+    } as unknown as Room,
+    pos: {
+      x: 10,
+      y: 10,
+      roomName: "W0N0"
+    } as RoomPosition
   } as unknown as StructureSpawn;
 }
 
@@ -255,7 +327,7 @@ function makeSource(id: string): Source {
     energyCapacity: 3000,
     ticksToRegeneration: 300,
     pos: {
-      x: 10,
+      x: 5,
       y: 10,
       roomName: "W0N0"
     },

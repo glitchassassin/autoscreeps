@@ -66,6 +66,22 @@ describe("role execution", () => {
     expect(creep.pickup).toHaveBeenCalledWith(resource);
   });
 
+  it("runners do not deliver directly to upgraders when the spawn is full", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+    const spawn = makeSpawn({ freeCapacity: 0, storedEnergy: 300 });
+    const upgrader = makeCreep({ role: "upgrader", energy: 0 });
+    const creep = makeCreep({ role: "runner", working: true, energy: 50 });
+    testGlobal.Game.spawns = { Spawn1: spawn } as Game["spawns"];
+    testGlobal.Game.creeps = {
+      runner1: creep,
+      upgrader1: upgrader
+    } as Game["creeps"];
+
+    runRunner(creep);
+
+    expect(creep.transfer).not.toHaveBeenCalled();
+  });
+
   it("upgraders upgrade the controller once they have energy", () => {
     const controller = { my: true, pos: { x: 15, y: 15, roomName: "W0N0" } } as StructureController;
     const creep = makeCreep({ role: "upgrader", energy: 50, controller });
@@ -74,16 +90,33 @@ describe("role execution", () => {
 
     expect(creep.upgradeController).toHaveBeenCalledWith(controller);
   });
+
+  it("upgraders only withdraw from a full spawn", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+    const spawn = makeSpawn({ freeCapacity: 50, storedEnergy: 250 });
+    const resource = { resourceType: RESOURCE_ENERGY, amount: 50, pos: { x: 10, y: 10, roomName: "W0N0" } } as Resource<ResourceConstant>;
+    const creep = makeCreep({
+      role: "upgrader",
+      energy: 0,
+      roomFind: vi.fn((type: FindConstant) => type === FIND_DROPPED_RESOURCES ? [resource] : [])
+    });
+    testGlobal.Game.spawns = { Spawn1: spawn } as Game["spawns"];
+
+    runUpgrader(creep);
+
+    expect(creep.withdraw).not.toHaveBeenCalled();
+    expect(creep.pickup).not.toHaveBeenCalled();
+  });
 });
 
-function makeSpawn(input: { freeCapacity: number }): StructureSpawn {
+function makeSpawn(input: { freeCapacity: number; storedEnergy?: number }): StructureSpawn {
   return {
     name: "Spawn1",
     room: {
       name: "W0N0"
     } as Room,
     store: {
-      [RESOURCE_ENERGY]: 0,
+      [RESOURCE_ENERGY]: input.storedEnergy ?? 0,
       getFreeCapacity: vi.fn(() => input.freeCapacity)
     },
     spawnCreep: vi.fn()

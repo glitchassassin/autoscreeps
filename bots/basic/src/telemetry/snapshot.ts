@@ -1,9 +1,9 @@
-import type { ColonyPlan, ExecutionSummary, SitePlan, WorldSnapshot } from "../core/types";
+import type { ColonyPlan, ExecutionSummary, SitePlan, SpawnDemandInputs, WorldSnapshot } from "../core/types";
 import { ensureTelemetryState } from "../state/telemetry";
 
 export const telemetrySegmentId = 42;
 export const telemetrySampleEveryTicks = 25;
-export const telemetrySchemaVersion = 13;
+export const telemetrySchemaVersion = 14;
 
 export type SourceTelemetrySnapshot = {
   sourceId: string;
@@ -26,6 +26,7 @@ export type BotTelemetrySnapshot = {
     isSpawning: boolean;
     queueDepth: number;
     nextRole: WorkerRole | null;
+    inputs: SpawnDemandInputs;
   };
   sources: SourceTelemetrySnapshot[];
   controller: {
@@ -65,7 +66,8 @@ export function createTelemetrySnapshot(
     spawn: {
       isSpawning: Boolean(world.primarySpawnSpawning),
       queueDepth: plan.spawn.demand.totalUnmetDemand,
-      nextRole: plan.spawn.demand.nextRole
+      nextRole: plan.spawn.demand.nextRole,
+      inputs: plan.spawn.demand.inputs
     },
     sources: plan.sites.map((site) => createSourceTelemetrySnapshot(site, execution)),
     controller: {

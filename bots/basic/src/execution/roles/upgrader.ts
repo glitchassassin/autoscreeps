@@ -1,4 +1,4 @@
-import { findPickupTarget, findWithdrawTarget } from "./energy";
+import { findWithdrawTarget } from "./energy";
 
 export function runUpgrader(creep: Creep): void {
   if (creep.store[RESOURCE_ENERGY] === 0) {
@@ -11,22 +11,13 @@ export function runUpgrader(creep: Creep): void {
 
 function refillEnergy(creep: Creep): void {
   const withdrawTarget = findWithdrawTarget(creep);
-  if (withdrawTarget) {
-    const result = creep.withdraw(withdrawTarget, RESOURCE_ENERGY);
-    if (result === ERR_NOT_IN_RANGE) {
-      creep.moveTo(withdrawTarget, { visualizePathStyle: { stroke: "#ffaa00" } });
-    }
+  if (!withdrawTarget) {
     return;
   }
 
-  const pickupTarget = findPickupTarget(creep);
-  if (!pickupTarget) {
-    return;
-  }
-
-  const result = creep.pickup(pickupTarget);
+  const result = creep.withdraw(withdrawTarget, RESOURCE_ENERGY);
   if (result === ERR_NOT_IN_RANGE) {
-    creep.moveTo(pickupTarget, { visualizePathStyle: { stroke: "#ffaa00" } });
+    creep.moveTo(withdrawTarget, { visualizePathStyle: { stroke: "#ffaa00" } });
   }
 }
 

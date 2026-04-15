@@ -6,7 +6,7 @@ export function observeWorld(): WorldSnapshot {
   const primaryRoom = primarySpawn?.room ?? Object.values(Game.rooms).find((room) => room.controller?.my) ?? null;
   const constructionSites = Object.values(Game.constructionSites ?? {});
   const creeps = snapshotCreeps();
-  const sources = snapshotPrimarySources(primaryRoom);
+  const sources = snapshotPrimarySources(primaryRoom, primarySpawn);
 
   return {
     gameTime: Game.time,
@@ -16,6 +16,7 @@ export function observeWorld(): WorldSnapshot {
     primaryRoomName: primaryRoom?.name ?? null,
     primaryRoomEnergyAvailable: primaryRoom?.energyAvailable ?? null,
     primaryRoomEnergyCapacityAvailable: primaryRoom?.energyCapacityAvailable ?? null,
+    primarySpawnToControllerPathLength: measurePathLength(primarySpawn?.pos, primaryRoom?.controller?.my ? primaryRoom.controller.pos : null),
     primaryController: snapshotOwnedController(primaryRoom?.controller),
     maxOwnedControllerLevel: findMaxOwnedControllerLevel(),
     totalCreeps: creeps.length,
@@ -80,12 +81,14 @@ function snapshotCreeps(): CreepSnapshot[] {
     roomName: creep.room.name,
     working: Boolean(creep.memory.working),
     activeWorkParts: countActiveBodyParts(creep, WORK),
+    activeCarryParts: countActiveBodyParts(creep, CARRY),
     storeEnergy: creep.store[RESOURCE_ENERGY] ?? 0,
-    freeCapacity: creep.store.getFreeCapacity(RESOURCE_ENERGY)
+    freeCapacity: creep.store.getFreeCapacity(RESOURCE_ENERGY),
+    bodyCost: calculateCreepBodyCost(creep)
   }));
 }
 
-function snapshotPrimarySources(primaryRoom: Room | null): SourceSnapshot[] {
+function snapshotPrimarySources(primaryRoom: Room | null, primarySpawn: StructureSpawn | null): SourceSnapshot[] {
   if (primaryRoom === null) {
     return [];
   }
@@ -97,6 +100,42 @@ function snapshotPrimarySources(primaryRoom: Room | null): SourceSnapshot[] {
     y: source.pos.y,
     energy: source.energy,
     energyCapacity: source.energyCapacity,
-    ticksToRegeneration: source.ticksToRegeneration ?? null
+    ticksToRegeneration: source.ticksToRegeneration ?? null,
+    pathLengthToPrimarySpawn: measurePathLength(source.pos, primarySpawn?.pos)
   }));
+}
+
+function calculateCreepBodyCost(creep: Creep): number {
+  let total = 0;
+
+  for (const part of creep.body ?? []) {
+    total += getBodyPartCost(part.type);
+  }
+
+  return total;
+}
+
+function getBodyPartCost(part: BodyPartConstant): number {
+  switch (part) {
+    case WORK:
+      return 100;
+    case CARRY:
+      return 50;
+    case MOVE:
+      return 50;
+    default:
+      return 0;
+  }
+}
+
+function measurePathLength(origin: RoomPosition | undefined | null, target: RoomPosition | undefined | null): number | null {
+  if (!origin || !target || origin.roomName !== target.roomName) {
+    return null;
+  }
+
+  if (typeof origin.findPathTo === "function") {
+    return origin.findPathTo(target, { ignoreCreeps: true }).length;
+  }
+
+  return Math.max(Math.abs(origin.x - target.x), Math.abs(origin.y - target.y));
 }

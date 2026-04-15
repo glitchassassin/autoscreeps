@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createColonyPlan } from "../src/planning/colony-plan";
 import { executeSpawnPlan } from "../src/execution/spawn";
 import { chooseBody, summarizeSpawnDemand } from "../src/planning/spawn-plan";
+import { createSitePlans } from "../src/planning/site-plan";
+import type { WorldSnapshot } from "../src/core/types";
 import { observeWorld } from "../src/world/observe";
 import { installScreepsGlobals } from "./helpers/install-globals";
 
@@ -28,6 +30,8 @@ describe("spawn manager", () => {
     expect(chooseBody("recovery-worker", 150)).toBeNull();
     expect(chooseBody("recovery-worker", 300)).toEqual([WORK, CARRY, MOVE]);
     expect(chooseBody("harvester", 300)).toEqual([WORK, WORK, MOVE]);
+    expect(chooseBody("harvester", 500)).toEqual([WORK, WORK, WORK, WORK, MOVE, MOVE]);
+    expect(chooseBody("harvester", 650)).toEqual([WORK, WORK, WORK, WORK, WORK, MOVE, MOVE, MOVE]);
     expect(chooseBody("runner", 300)).toEqual([CARRY, MOVE, CARRY, MOVE, CARRY, MOVE]);
     expect(chooseBody("upgrader", 600)).toEqual([WORK, CARRY, MOVE, WORK, CARRY, MOVE, WORK, CARRY, MOVE]);
   });
@@ -63,23 +67,46 @@ describe("spawn manager", () => {
     });
   });
 
-  it("reports normal-mode role deficits once harvester and runner exist", () => {
-    expect(summarizeSpawnDemand({
-      creepsByRole: {
-        "recovery-worker": 0,
-        harvester: 1,
-        runner: 1,
-        upgrader: 0
-      }
-    }, "normal", 2)).toEqual({
+  it("prioritizes hauling demand before upgraders in normal mode", () => {
+    const world = makeDemandWorld({
+      creeps: [
+        makeDemandCreepSnapshot("harvester-a", "harvester", { activeWorkParts: 2, bodyCost: 250 }),
+        makeDemandCreepSnapshot("runner-a", "runner", { activeCarryParts: 1, bodyCost: 100 })
+      ]
+    });
+
+    expect(summarizeSpawnDemand(world, "normal", createSitePlans(world))).toEqual({
+      inputs: {
+        harvest: {
+          requiredWorkParts: 10,
+          coveredWorkParts: 2,
+          plannedWorkPartsPerCreep: 4,
+          targetCount: 4,
+          coverage: 0.2
+        },
+        haul: {
+          requiredCarryParts: 6,
+          coveredCarryParts: 1,
+          plannedCarryPartsPerCreep: 5,
+          targetCount: 2,
+          coverage: 1 / 6
+        },
+        upgrade: {
+          surplusBudgetEpt: 18,
+          coveredNetEpt: 0,
+          plannedNetEptPerCreep: 2.512676056338028,
+          targetCount: 8,
+          coverage: 0
+        }
+      },
       unmetDemand: {
         "recovery-worker": 0,
-        harvester: 1,
-        runner: 0,
-        upgrader: 1
+        harvester: 3,
+        runner: 1,
+        upgrader: 8
       },
-      nextRole: "upgrader",
-      totalUnmetDemand: 2
+      nextRole: "runner",
+      totalUnmetDemand: 12
     });
   });
 
@@ -145,6 +172,11 @@ function makeSpawn(): StructureSpawn {
         }
       }
     } as unknown as Room,
+    pos: {
+      x: 10,
+      y: 10,
+      roomName: "W0N0"
+    } as RoomPosition,
     spawnCreep: vi.fn(() => OK)
   } as unknown as StructureSpawn;
 }
@@ -189,4 +221,72 @@ function makeSource(id: string): Source {
       name: "W0N0"
     } as Room
   } as Source;
+}
+
+function makeDemandWorld(input: { creeps: WorldSnapshot["creeps"] }): WorldSnapshot {
+  return {
+    gameTime: 1,
+    primarySpawnName: "Spawn1",
+    primarySpawnConstructionSiteCount: 0,
+    primarySpawnSpawning: false,
+    primaryRoomName: "W0N0",
+    primaryRoomEnergyAvailable: 600,
+    primaryRoomEnergyCapacityAvailable: 600,
+    primarySpawnToControllerPathLength: 10,
+    primaryController: {
+      level: 2,
+      progress: 0,
+      progressTotal: 45000
+    },
+    maxOwnedControllerLevel: 2,
+    totalCreeps: input.creeps.length,
+    creepsByRole: {
+      "recovery-worker": input.creeps.filter((creep) => creep.role === "recovery-worker").length,
+      harvester: input.creeps.filter((creep) => creep.role === "harvester").length,
+      runner: input.creeps.filter((creep) => creep.role === "runner").length,
+      upgrader: input.creeps.filter((creep) => creep.role === "upgrader").length
+    },
+    creeps: input.creeps,
+    sources: [
+      {
+        sourceId: "source-1",
+        roomName: "W0N0",
+        x: 5,
+        y: 10,
+        energy: 3000,
+        energyCapacity: 3000,
+        ticksToRegeneration: 300,
+        pathLengthToPrimarySpawn: 5
+      },
+      {
+        sourceId: "source-2",
+        roomName: "W0N0",
+        x: 15,
+        y: 10,
+        energy: 3000,
+        energyCapacity: 3000,
+        ticksToRegeneration: 300,
+        pathLengthToPrimarySpawn: 5
+      }
+    ]
+  };
+}
+
+function makeDemandCreepSnapshot(
+  name: string,
+  role: WorkerRole,
+  input: { activeWorkParts?: number; activeCarryParts?: number; bodyCost: number }
+): WorldSnapshot["creeps"][number] {
+  return {
+    name,
+    role,
+    homeRoom: "W0N0",
+    roomName: "W0N0",
+    working: false,
+    activeWorkParts: input.activeWorkParts ?? 0,
+    activeCarryParts: input.activeCarryParts ?? 0,
+    storeEnergy: 0,
+    freeCapacity: 50,
+    bodyCost: input.bodyCost
+  };
 }

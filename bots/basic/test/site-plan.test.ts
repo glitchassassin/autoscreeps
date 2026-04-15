@@ -76,6 +76,7 @@ function makeWorld(input: { creeps: WorldSnapshot["creeps"] }): WorldSnapshot {
     primaryRoomName: "W0N0",
     primaryRoomEnergyAvailable: 300,
     primaryRoomEnergyCapacityAvailable: 300,
+    primarySpawnToControllerPathLength: 10,
     primaryController: {
       level: 1,
       progress: 0,
@@ -98,7 +99,8 @@ function makeWorld(input: { creeps: WorldSnapshot["creeps"] }): WorldSnapshot {
         y: 10,
         energy: 3000,
         energyCapacity: 3000,
-        ticksToRegeneration: 300
+        ticksToRegeneration: 300,
+        pathLengthToPrimarySpawn: 5
       },
       {
         sourceId: "source-2",
@@ -107,7 +109,8 @@ function makeWorld(input: { creeps: WorldSnapshot["creeps"] }): WorldSnapshot {
         y: 10,
         energy: 3000,
         energyCapacity: 3000,
-        ticksToRegeneration: 300
+        ticksToRegeneration: 300,
+        pathLengthToPrimarySpawn: 5
       }
     ]
   };
@@ -121,7 +124,9 @@ function makeCreepSnapshot(name: string, role: WorkerRole, activeWorkParts: numb
     roomName: "W0N0",
     working: false,
     activeWorkParts,
+    activeCarryParts: 0,
     storeEnergy: 0,
-    freeCapacity: 50
+    freeCapacity: 50,
+    bodyCost: 0
   };
 }

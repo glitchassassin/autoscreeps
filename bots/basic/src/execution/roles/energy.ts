@@ -1,4 +1,4 @@
-type EnergyDeliveryTarget = StructureSpawn | Creep;
+type EnergyDeliveryTarget = StructureSpawn;
 type EnergyPickupTarget = Resource<ResourceConstant>;
 type EnergyWithdrawTarget = StructureSpawn;
 
@@ -6,17 +6,7 @@ export function findDeliveryTarget(creep: Creep): EnergyDeliveryTarget | null {
   const spawnTargets = Object.values(Game.spawns).filter(
     (spawn) => spawn.room.name === creep.room.name && getFreeEnergyCapacity(spawn) > 0
   );
-  const nearestSpawn = findClosestByPath(creep, spawnTargets);
-  if (nearestSpawn) {
-    return nearestSpawn;
-  }
-
-  const upgraderTargets = Object.values(Game.creeps).filter(
-    (other) => other.memory.role === "upgrader"
-      && other.room.name === creep.room.name
-      && other.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-  );
-  return findClosestByPath(creep, upgraderTargets);
+  return findClosestByPath(creep, spawnTargets);
 }
 
 export function findPickupTarget(creep: Creep): EnergyPickupTarget | null {
@@ -28,7 +18,9 @@ export function findPickupTarget(creep: Creep): EnergyPickupTarget | null {
 
 export function findWithdrawTarget(creep: Creep): EnergyWithdrawTarget | null {
   const spawns = Object.values(Game.spawns).filter(
-    (spawn) => spawn.room.name === creep.room.name && getStoredEnergy(spawn) > 0
+    (spawn) => spawn.room.name === creep.room.name
+      && getStoredEnergy(spawn) > 0
+      && getFreeEnergyCapacity(spawn) === 0
   );
   return findClosestByPath(creep, spawns);
 }
