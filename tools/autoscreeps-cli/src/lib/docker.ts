@@ -9,6 +9,10 @@ export async function restartScreepsService(repoRoot: string): Promise<void> {
   await execa("docker", ["compose", "restart", "screeps"], { cwd: repoRoot, stdio: "pipe" });
 }
 
-export async function copyFileToScreepsService(repoRoot: string, localPath: string, containerPath: string): Promise<void> {
-  await execa("docker", ["compose", "cp", localPath, `screeps:${containerPath}`], { cwd: repoRoot, stdio: "pipe" });
+export async function stopScreepsService(repoRoot: string): Promise<void> {
+  await execa("docker", ["compose", "stop", "screeps"], { cwd: repoRoot, stdio: "pipe" });
+}
+
+export async function startScreepsService(repoRoot: string): Promise<void> {
+  await execa("docker", ["compose", "start", "screeps"], { cwd: repoRoot, stdio: "pipe" });
 }

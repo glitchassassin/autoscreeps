@@ -24,10 +24,11 @@ import type {
   VariantRole
 } from "./contracts.ts";
 import { autoscreepsReportSegmentId, inspectReportsByRole, type BotReportInspection } from "./bot-telemetry.ts";
-import { copyFileToScreepsService, resetPrivateServer, restartScreepsService } from "./docker.ts";
+import { resetPrivateServer, restartScreepsService, startScreepsService, stopScreepsService } from "./docker.ts";
 import { createWorkspaceSnapshot, parseVariantSource, resolveRepoRoot, withGitWorktree } from "./git.ts";
 import { appendEvent, appendIndexEntry, appendRunSample, createRunWorkspace, writeMetrics, writeRunRecord, writeVariantRecords } from "./history.ts";
 import { generateExperimentMap } from "./map-generator.ts";
+import { importMapFileOffline } from "./offline-map-import.ts";
 import { buildRunSummaryMetrics, shouldCaptureRunSample } from "./run-samples.ts";
 import { loadScenario } from "./scenario.ts";
 import type { ScenarioConfig, ScenarioRoomMutation, TerminalCondition, TerminalConditionSet } from "./scenario.ts";
@@ -280,33 +281,44 @@ async function runExperiment(input: ExperimentRunInput): Promise<RunDetails> {
       port: runRecord.server.cliPort
     });
 
-    await Promise.all([api.waitForReady(), cli.waitForReady()]);
+    await waitForServerControlReady({
+      api,
+      cli,
+      tickDuration: runRecord.run.tickDuration
+    });
     await logEvent(runDir, "info", "server.ready", "Private server HTTP and CLI endpoints are ready.");
 
-    await cli.pauseSimulation();
-    await cli.setTickDuration(runRecord.run.tickDuration);
     if (world.import.kind === "map-id") {
       await logEvent(runDir, "info", "server.map", "Importing scenario map.", { map: world.label });
       await cli.importMap(world.import.value);
       await logEvent(runDir, "info", "server.restart", "Restarting the Screeps service after map import.");
       await restartScreepsService(repoRoot);
-      await Promise.all([api.waitForReady(), cli.waitForReady()]);
-      await cli.pauseSimulation();
-      await cli.setTickDuration(runRecord.run.tickDuration);
+      await waitForServerControlReady({
+        api,
+        cli,
+        tickDuration: runRecord.run.tickDuration
+      });
     }
 
     if (world.import.kind === "map-file") {
+      const mapLabel = world.label ?? path.basename(world.import.hostFilePath);
       await logEvent(runDir, "info", "server.map", "Importing generated scenario map file.", {
-        map: world.label,
+        map: mapLabel,
         file: path.relative(repoRoot, world.import.hostFilePath)
       });
-      await copyFileToScreepsService(repoRoot, world.import.hostFilePath, world.import.containerFilePath);
-      await cli.importMapFile(world.import.containerFilePath);
-      await logEvent(runDir, "info", "server.restart", "Restarting the Screeps service after map import.");
-      await restartScreepsService(repoRoot);
-      await Promise.all([api.waitForReady(), cli.waitForReady()]);
-      await cli.pauseSimulation();
-      await cli.setTickDuration(runRecord.run.tickDuration);
+      await stopScreepsService(repoRoot);
+      let importResult;
+      try {
+        importResult = await importMapFileOffline(world.import.hostFilePath, mapLabel);
+      } finally {
+        await startScreepsService(repoRoot);
+      }
+      await logEvent(runDir, "info", "server.mapImported", "Imported generated scenario map while the Screeps service was stopped.", importResult);
+      await waitForServerControlReady({
+        api,
+        cli,
+        tickDuration: runRecord.run.tickDuration
+      });
     }
 
     await api.registerUser({
@@ -580,6 +592,40 @@ async function runExperiment(input: ExperimentRunInput): Promise<RunDetails> {
     variants,
     metrics
   };
+}
+
+async function waitForServerControlReady(input: {
+  api: ScreepsApiClient;
+  cli: ScreepsServerCli;
+  tickDuration: number;
+  timeoutMs?: number;
+}): Promise<void> {
+  const timeoutMs = input.timeoutMs ?? 120000;
+  const start = Date.now();
+  let lastError: unknown = null;
+
+  while (Date.now() - start < timeoutMs) {
+    try {
+      await Promise.all([input.api.waitForReady(30000), input.cli.waitForReady(30000)]);
+      await input.cli.pauseSimulation();
+      await input.cli.setTickDuration(input.tickDuration);
+      return;
+    } catch (error) {
+      lastError = error;
+      await waitForServerControlRetryDelay(1000);
+    }
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+  throw new Error("Timed out waiting for the Screeps server control plane to become ready.");
+}
+
+function waitForServerControlRetryDelay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 async function prepareVariant(input: {
