@@ -1,0 +1,1 @@
+STUB: Evaluate the most efficient (by space, energy, and/or intents) strategy for upgrading. Consider energy hand-offs between upgraders; dedicated manager creeps to withdraw from storage and hand off to upgraders; or upgrader chains that take turns withdrawing from storage and then swapping places with other upgraders while they refill.
