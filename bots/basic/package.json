@@ -2,6 +2,7 @@
   "name": "autoscreeps-basic-bot",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "Very basic Screeps bot built with Vite and Vitest",
   "engines": {
     "node": "24.x"
@@ -10,6 +11,7 @@
     "build": "vite build",
     "watch": "vite build --watch",
     "push:pserver": "vite build --mode pserver",
+    "preview:dijkstra": "node scripts/generate-dijkstra-preview.ts",
     "watch:pserver": "vite build --watch --mode pserver",
     "test": "vitest run",
     "test:watch": "vitest",

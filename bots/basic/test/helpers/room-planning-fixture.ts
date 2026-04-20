@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import type { RoomPlanningMap, RoomPlanningObject, RoomPlanningRoomData } from "../../src/planning/room-plan";
-import { isHighwayRoom, isSourceKeeperRoom } from "../../src/world/room-topology";
+import type { RoomPlanningMap, RoomPlanningObject, RoomPlanningRoomData } from "../../src/planning/room-plan.ts";
+import { isHighwayRoom, isSourceKeeperRoom } from "../../src/world/room-topology.ts";
 
 type RawMapFile = {
   rooms: RawMapRoom[];

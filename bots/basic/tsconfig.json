@@ -8,6 +8,7 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "useDefineForClassFields": true,
     "allowSyntheticDefaultImports": true,
     "noFallthroughCasesInSwitch": true
