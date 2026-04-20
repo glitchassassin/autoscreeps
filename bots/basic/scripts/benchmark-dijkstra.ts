@@ -1,4 +1,4 @@
-import { createDijkstraMap, type DijkstraMapOptions, type DijkstraGoal } from "../src/planning/dijkstra-map.ts";
+import { createDijkstraMap, type DijkstraMapOptions, type DijkstraFallbackQueue, type DijkstraGoal, type DijkstraQueueStrategy } from "../src/planning/dijkstra-map.ts";
 import { loadBotarena212RoomPlanningFixture } from "../test/helpers/room-planning-fixture.ts";
 
 type BenchmarkCase = {
@@ -31,7 +31,10 @@ const defaultConfig: BenchmarkConfig = {
     plainCost: 2,
     swampCost: 10,
     wallCost: null,
-    costMatrix: null
+    costMatrix: null,
+    queueStrategy: "auto",
+    fallbackQueue: "radix",
+    bucketThreshold: 4096
   },
   roomNames: []
 };
@@ -55,6 +58,7 @@ async function main(): Promise<void> {
   process.stdout.write(`Iterations per sample: ${config.iterationsPerSample}\n`);
   process.stdout.write(`Per-room iterations: ${config.perRoomIterations}\n`);
   process.stdout.write(`Costs: plain=${config.dijkstraOptions.plainCost ?? 2}, swamp=${config.dijkstraOptions.swampCost ?? 10}, wall=${config.dijkstraOptions.wallCost ?? "blocked"}\n`);
+  process.stdout.write(`Queue: ${config.dijkstraOptions.queueStrategy ?? "auto"} (fallback=${config.dijkstraOptions.fallbackQueue ?? "radix"}, bucketThreshold=${config.dijkstraOptions.bucketThreshold ?? 4096})\n`);
   process.stdout.write(`GC between samples: ${config.gcBetweenSamples && getGlobalGc() ? "on" : "off"}\n\n`);
 
   let checksum = 0;
@@ -172,6 +176,28 @@ function parseArgs(args: string[]): BenchmarkConfig {
         config.dijkstraOptions.wallCost = value === "blocked" ? null : parseIntegerFlag(key, value);
         break;
       }
+      case "queue": {
+        const value = readStringFlag(key, inlineValue, args, index);
+        if (inlineValue === null) {
+          index += 1;
+        }
+        config.dijkstraOptions.queueStrategy = parseQueueStrategy(value);
+        break;
+      }
+      case "fallback-queue": {
+        const value = readStringFlag(key, inlineValue, args, index);
+        if (inlineValue === null) {
+          index += 1;
+        }
+        config.dijkstraOptions.fallbackQueue = parseFallbackQueue(value);
+        break;
+      }
+      case "bucket-threshold":
+        config.dijkstraOptions.bucketThreshold = readNumberFlag(key, inlineValue, args, index);
+        if (inlineValue === null) {
+          index += 1;
+        }
+        break;
       case "gc-between-samples":
         config.gcBetweenSamples = true;
         break;
@@ -333,6 +359,22 @@ function parseIntegerFlag(name: string, value: string): number {
   return parsed;
 }
 
+function parseQueueStrategy(value: string): DijkstraQueueStrategy {
+  if (value === "auto" || value === "heap" || value === "radix") {
+    return value;
+  }
+
+  throw new Error(`Flag '--queue' expects one of: auto, heap, radix.`);
+}
+
+function parseFallbackQueue(value: string): DijkstraFallbackQueue {
+  if (value === "heap" || value === "radix") {
+    return value;
+  }
+
+  throw new Error(`Flag '--fallback-queue' expects one of: heap, radix.`);
+}
+
 function readStringFlag(name: string, inlineValue: string | null, args: string[], index: number): string {
   if (inlineValue !== null) {
     return inlineValue;
@@ -358,6 +400,9 @@ function printHelp(): void {
   process.stdout.write(`  --plain-cost <n>           Plain terrain cost (default: 2)\n`);
   process.stdout.write(`  --swamp-cost <n>           Swamp terrain cost (default: 10)\n`);
   process.stdout.write(`  --wall-cost <n|blocked>    Wall movement cost or blocked (default: blocked)\n`);
+  process.stdout.write(`  --queue <auto|heap|radix>  Queue strategy (default: auto)\n`);
+  process.stdout.write(`  --fallback-queue <mode>    Auto-mode fallback queue: heap or radix (default: radix)\n`);
+  process.stdout.write(`  --bucket-threshold <n>     Auto-mode bucket cutoff (default: 4096)\n`);
   process.stdout.write(`  --gc-between-samples       Force GC between measured samples when available\n`);
   process.stdout.write(`  --no-gc-between-samples    Disable forced GC between measured samples\n`);
 }

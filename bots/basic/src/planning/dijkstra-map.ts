@@ -9,6 +9,7 @@
  * - split no-`CostMatrix` fast path plus `terrain.charCodeAt(index) - 48`
  * - reused heap pop storage instead of allocating `{ cost, index }` per pop
  * - bucketed priority queue for room-scale costs, then a cyclic Dial queue
+ *   with a radix-heap fallback for larger integer costs
  *
  * Tried and rejected because they regressed:
  * - typed-array heap storage (~6% slower)
@@ -28,7 +29,7 @@ const roomSize = 50;
 const roomArea = roomSize * roomSize;
 const maxNeighbors = 8;
 const maxQueueEntries = roomArea * (maxNeighbors + 1);
-const maxBucketWidth = 4096;
+const defaultBucketThreshold = 4096;
 const terrainMaskWall = 1;
 const terrainMaskSwamp = 2;
 
@@ -39,13 +40,19 @@ export type DijkstraGoal = {
   y: number;
 };
 
-export type DijkstraCostMatrix = Pick<PathFinder.CostMatrix, "get">;
+export type DijkstraCostMatrix = Pick<PathFinder["CostMatrix"], "get">;
+
+export type DijkstraQueueStrategy = "auto" | "heap" | "radix";
+export type DijkstraFallbackQueue = "heap" | "radix";
 
 export type DijkstraMapOptions = {
   plainCost?: number;
   swampCost?: number;
   wallCost?: number | null;
   costMatrix?: DijkstraCostMatrix | null;
+  queueStrategy?: DijkstraQueueStrategy;
+  fallbackQueue?: DijkstraFallbackQueue;
+  bucketThreshold?: number;
 };
 
 export type DijkstraMap = {
@@ -80,14 +87,26 @@ type BucketQueue = {
   currentCost: number;
 };
 
+type RadixHeap = {
+  costs: number[][];
+  indexes: number[][];
+  last: number;
+  size: number;
+};
+
+type QueueOptions = {
+  queueStrategy: DijkstraQueueStrategy;
+  fallbackQueue: DijkstraFallbackQueue;
+  bucketThreshold: number;
+};
+
 export function createDijkstraMap(terrain: string, goals: DijkstraGoal[], options: DijkstraMapOptions = {}): DijkstraMap {
   validateTerrain(terrain);
   validateGoals(goals);
 
   const movementCostGrid = buildMovementCosts(terrain, options);
-  const distances = shouldUseBucketQueue(movementCostGrid.maxStepCost)
-    ? buildDistancesWithBucketQueue(goals, movementCostGrid.movementCosts, movementCostGrid.maxStepCost)
-    : buildDistancesWithHeap(goals, movementCostGrid.movementCosts);
+  const queueOptions = resolveQueueOptions(options);
+  const distances = buildDistances(goals, movementCostGrid.movementCosts, movementCostGrid.maxStepCost, queueOptions);
 
   return {
     distances,
@@ -101,6 +120,29 @@ export function createDijkstraMap(terrain: string, goals: DijkstraGoal[], option
       return movementCostGrid.movementCosts[toIndex(x, y)] === dijkstraUnreachable;
     }
   };
+}
+
+function buildDistances(
+  goals: DijkstraGoal[],
+  movementCosts: Uint32Array,
+  maxStepCost: number,
+  queueOptions: QueueOptions
+): Uint32Array {
+  if (queueOptions.queueStrategy === "heap") {
+    return buildDistancesWithHeap(goals, movementCosts);
+  }
+
+  if (queueOptions.queueStrategy === "radix") {
+    return buildDistancesWithRadixHeap(goals, movementCosts);
+  }
+
+  if (shouldUseBucketQueue(maxStepCost, queueOptions.bucketThreshold)) {
+    return buildDistancesWithBucketQueue(goals, movementCosts, maxStepCost);
+  }
+
+  return queueOptions.fallbackQueue === "radix"
+    ? buildDistancesWithRadixHeap(goals, movementCosts)
+    : buildDistancesWithHeap(goals, movementCosts);
 }
 
 function buildDistancesWithHeap(goals: DijkstraGoal[], movementCosts: Uint32Array): Uint32Array {
@@ -146,6 +188,55 @@ function buildDistancesWithHeap(goals: DijkstraGoal[], movementCosts: Uint32Arra
 
       distances[nextIndex] = nextDistance;
       pushHeap(heap, nextDistance, nextIndex);
+    }
+  }
+
+  return distances;
+}
+
+function buildDistancesWithRadixHeap(goals: DijkstraGoal[], movementCosts: Uint32Array): Uint32Array {
+  const distances = new Uint32Array(roomArea);
+  distances.fill(dijkstraUnreachable);
+  const heap = createRadixHeap();
+  const entry: HeapEntry = { cost: 0, index: 0 };
+
+  for (const goal of goals) {
+    const index = toIndex(goal.x, goal.y);
+    if (distances[index] === 0) {
+      continue;
+    }
+
+    distances[index] = 0;
+    pushRadix(heap, 0, index);
+  }
+
+  while (heap.size > 0) {
+    if (!popRadix(heap, entry)) {
+      break;
+    }
+
+    const currentDistance = distances[entry.index];
+    if (entry.cost !== currentDistance) {
+      continue;
+    }
+
+    const neighborOffset = entry.index * maxNeighbors;
+    const neighborCount = neighborCounts[entry.index]!;
+
+    for (let neighborIndexOffset = 0; neighborIndexOffset < neighborCount; neighborIndexOffset += 1) {
+      const nextIndex = neighborIndexes[neighborOffset + neighborIndexOffset]!;
+      const stepCost = movementCosts[nextIndex];
+      if (stepCost === dijkstraUnreachable) {
+        continue;
+      }
+
+      const nextDistance = currentDistance + stepCost;
+      if (nextDistance >= distances[nextIndex]) {
+        continue;
+      }
+
+      distances[nextIndex] = nextDistance;
+      pushRadix(heap, nextDistance, nextIndex);
     }
   }
 
@@ -201,8 +292,8 @@ function buildDistancesWithBucketQueue(goals: DijkstraGoal[], movementCosts: Uin
   return distances;
 }
 
-function shouldUseBucketQueue(maxStepCost: number): boolean {
-  return maxStepCost > 0 && maxStepCost < maxBucketWidth;
+function shouldUseBucketQueue(maxStepCost: number, bucketThreshold: number): boolean {
+  return maxStepCost > 0 && maxStepCost < bucketThreshold;
 }
 
 function buildMovementCosts(terrain: string, options: DijkstraMapOptions): MovementCostGrid {
@@ -326,6 +417,25 @@ function validateBaseCost(name: string, cost: number): void {
   }
 }
 
+function validateBucketThreshold(bucketThreshold: number): void {
+  if (!Number.isInteger(bucketThreshold) || bucketThreshold <= 1) {
+    throw new Error("bucketThreshold must be an integer greater than 1.");
+  }
+}
+
+function resolveQueueOptions(options: DijkstraMapOptions): QueueOptions {
+  const queueStrategy = options.queueStrategy ?? "auto";
+  const fallbackQueue = options.fallbackQueue ?? "radix";
+  const bucketThreshold = options.bucketThreshold ?? defaultBucketThreshold;
+  validateBucketThreshold(bucketThreshold);
+
+  return {
+    queueStrategy,
+    fallbackQueue,
+    bucketThreshold
+  };
+}
+
 function toIndex(x: number, y: number): number {
   return y * roomSize + x;
 }
@@ -349,6 +459,15 @@ function createBucketQueue(width: number): BucketQueue {
     size: 0,
     entryCount: 0,
     currentCost: 0
+  };
+}
+
+function createRadixHeap(): RadixHeap {
+  return {
+    costs: Array.from({ length: 33 }, () => []),
+    indexes: Array.from({ length: 33 }, () => []),
+    last: 0,
+    size: 0
   };
 }
 
@@ -415,6 +534,79 @@ function popHeap(heap: BinaryHeap, entry: HeapEntry): boolean {
   heap.indexes[cursor] = lastIndex;
 
   return true;
+}
+
+function pushRadix(heap: RadixHeap, cost: number, index: number): void {
+  if (cost < heap.last) {
+    throw new Error(`Radix heap received non-monotone key ${cost} after ${heap.last}.`);
+  }
+
+  const bucketIndex = getRadixBucketIndex(cost, heap.last);
+  heap.costs[bucketIndex]!.push(cost);
+  heap.indexes[bucketIndex]!.push(index);
+  heap.size += 1;
+}
+
+function popRadix(heap: RadixHeap, entry: HeapEntry): boolean {
+  if (heap.size === 0) {
+    return false;
+  }
+
+  if (heap.costs[0]!.length === 0) {
+    refillRadixBucketZero(heap);
+  }
+
+  const cost = heap.costs[0]!.pop();
+  const index = heap.indexes[0]!.pop();
+  if (cost === undefined || index === undefined) {
+    return false;
+  }
+
+  entry.cost = cost;
+  entry.index = index;
+  heap.size -= 1;
+  return true;
+}
+
+function refillRadixBucketZero(heap: RadixHeap): void {
+  let sourceBucket = 1;
+  while (sourceBucket < heap.costs.length && heap.costs[sourceBucket]!.length === 0) {
+    sourceBucket += 1;
+  }
+
+  if (sourceBucket >= heap.costs.length) {
+    throw new Error("Radix heap refill failed: no non-empty bucket found.");
+  }
+
+  const sourceCosts = heap.costs[sourceBucket]!;
+  const sourceIndexes = heap.indexes[sourceBucket]!;
+  heap.costs[sourceBucket] = [];
+  heap.indexes[sourceBucket] = [];
+  let nextLast = sourceCosts[0]!;
+
+  for (let index = 1; index < sourceCosts.length; index += 1) {
+    if (sourceCosts[index]! < nextLast) {
+      nextLast = sourceCosts[index]!;
+    }
+  }
+
+  heap.last = nextLast;
+
+  for (let index = 0; index < sourceCosts.length; index += 1) {
+    const cost = sourceCosts[index]!;
+    const tileIndex = sourceIndexes[index]!;
+    const bucketIndex = getRadixBucketIndex(cost, heap.last);
+    heap.costs[bucketIndex]!.push(cost);
+    heap.indexes[bucketIndex]!.push(tileIndex);
+  }
+
+  sourceCosts.length = 0;
+  sourceIndexes.length = 0;
+}
+
+function getRadixBucketIndex(cost: number, last: number): number {
+  const difference = (cost ^ last) >>> 0;
+  return difference === 0 ? 0 : 32 - Math.clz32(difference);
 }
 
 function pushBucket(queue: BucketQueue, cost: number, index: number): void {

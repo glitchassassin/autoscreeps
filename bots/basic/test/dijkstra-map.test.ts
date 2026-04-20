@@ -38,6 +38,53 @@ describe("dijkstra map", () => {
     expect(map.get(25, 24)).toBe(dijkstraUnreachable);
   });
 
+  it("matches default results across queue strategies and thresholds", () => {
+    const terrain = createTerrain([
+      { x: 26, y: 25, code: 1 },
+      { x: 24, y: 25, code: 2 },
+      { x: 24, y: 24, code: 1 },
+      { x: 27, y: 25, code: 2 }
+    ]);
+    const goals = [{ x: 25, y: 25 }, { x: 28, y: 25 }];
+    const costMatrix = new TestCostMatrix();
+    costMatrix.set(24, 25, 7);
+    costMatrix.set(25, 24, 255);
+    costMatrix.set(28, 24, 13);
+
+    const baseline = createDijkstraMap(terrain, goals, {
+      wallCost: 5000,
+      costMatrix
+    });
+
+    const variants = [
+      createDijkstraMap(terrain, goals, {
+        wallCost: 5000,
+        costMatrix,
+        queueStrategy: "heap"
+      }),
+      createDijkstraMap(terrain, goals, {
+        wallCost: 5000,
+        costMatrix,
+        queueStrategy: "radix"
+      }),
+      createDijkstraMap(terrain, goals, {
+        wallCost: 5000,
+        costMatrix,
+        fallbackQueue: "radix"
+      }),
+      createDijkstraMap(terrain, goals, {
+        wallCost: 5000,
+        costMatrix,
+        bucketThreshold: 8192
+      })
+    ];
+
+    for (const variant of variants) {
+      expect(Array.from(variant.distances)).toEqual(Array.from(baseline.distances));
+      expect(Array.from(variant.movementCosts)).toEqual(Array.from(baseline.movementCosts));
+    }
+  });
+
   it("matches botarena-212 controller distance snapshots", () => {
     const fixture = loadBotarena212RoomPlanningFixture();
     const renderedByRoom = Object.fromEntries(fixture.candidateRooms.map((roomName) => {
@@ -69,16 +116,16 @@ function createTerrain(overrides: Array<{ x: number; y: number; code: 0 | 1 | 2 
   return cells.join("");
 }
 
-class TestCostMatrix implements Pick<PathFinder.CostMatrix, "get" | "set"> {
+class TestCostMatrix implements Pick<PathFinder["CostMatrix"], "get" | "set"> {
   private readonly values = new Uint8Array(2500);
 
   get(x: number, y: number): number {
     return this.values[y * 50 + x] ?? 0;
   }
 
-  set(x: number, y: number, value: number): this {
+  set(x: number, y: number, value: number): undefined {
     this.values[y * 50 + x] = value;
-    return this;
+    return undefined;
   }
 }
 
