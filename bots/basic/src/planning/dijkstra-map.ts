@@ -17,7 +17,6 @@ export type DijkstraMapOptions = {
   swampCost?: number;
   wallCost?: number | null;
   costMatrix?: DijkstraCostMatrix | null;
-  includeDiagonals?: boolean;
 };
 
 export type DijkstraMap = {
@@ -46,8 +45,6 @@ export function createDijkstraMap(terrain: string, goals: DijkstraGoal[], option
     pushHeap(heap, 0, index);
   }
 
-  const directions = options.includeDiagonals === false ? cardinalDirections : allDirections;
-
   while (heap.size > 0) {
     const entry = popHeap(heap);
     if (!entry) {
@@ -62,7 +59,7 @@ export function createDijkstraMap(terrain: string, goals: DijkstraGoal[], option
     const x = entry.index % roomSize;
     const y = Math.floor(entry.index / roomSize);
 
-    for (const direction of directions) {
+    for (const direction of allDirections) {
       const nextX = x + direction.dx;
       const nextY = y + direction.dy;
       if (nextX < 0 || nextX >= roomSize || nextY < 0 || nextY >= roomSize) {
@@ -260,15 +257,11 @@ function popHeap(heap: BinaryHeap): HeapEntry | null {
   return { cost, index };
 }
 
-const cardinalDirections = [
+const allDirections = [
   { dx: 1, dy: 0 },
   { dx: -1, dy: 0 },
   { dx: 0, dy: 1 },
-  { dx: 0, dy: -1 }
-];
-
-const allDirections = [
-  ...cardinalDirections,
+  { dx: 0, dy: -1 },
   { dx: 1, dy: 1 },
   { dx: 1, dy: -1 },
   { dx: -1, dy: 1 },
