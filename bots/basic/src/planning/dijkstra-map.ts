@@ -2,7 +2,7 @@ const roomSize = 50;
 const roomArea = roomSize * roomSize;
 const maxNeighbors = 8;
 const maxQueueEntries = roomArea * (maxNeighbors + 1);
-const maxBucketDistanceUpperBound = 65535;
+const maxBucketWidth = 4096;
 const terrainMaskWall = 1;
 const terrainMaskSwamp = 2;
 
@@ -129,7 +129,7 @@ function buildDistancesWithHeap(goals: DijkstraGoal[], movementCosts: Uint32Arra
 function buildDistancesWithBucketQueue(goals: DijkstraGoal[], movementCosts: Uint32Array, maxStepCost: number): Uint32Array {
   const distances = new Uint32Array(roomArea);
   distances.fill(dijkstraUnreachable);
-  const queue = createBucketQueue(maxStepCost * (roomArea - 1));
+  const queue = createBucketQueue(maxStepCost + 1);
   const entry: HeapEntry = { cost: 0, index: 0 };
 
   for (const goal of goals) {
@@ -176,7 +176,7 @@ function buildDistancesWithBucketQueue(goals: DijkstraGoal[], movementCosts: Uin
 }
 
 function shouldUseBucketQueue(maxStepCost: number): boolean {
-  return maxStepCost > 0 && maxStepCost * (roomArea - 1) <= maxBucketDistanceUpperBound;
+  return maxStepCost > 0 && maxStepCost < maxBucketWidth;
 }
 
 function buildMovementCosts(terrain: string, options: DijkstraMapOptions): MovementCostGrid {
@@ -312,8 +312,8 @@ function createBinaryHeap(): BinaryHeap {
   };
 }
 
-function createBucketQueue(maxDistanceUpperBound: number): BucketQueue {
-  const heads = new Int32Array(maxDistanceUpperBound + 1);
+function createBucketQueue(width: number): BucketQueue {
+  const heads = new Int32Array(width);
   heads.fill(-1);
 
   return {
@@ -396,11 +396,12 @@ function pushBucket(queue: BucketQueue, cost: number, index: number): void {
     throw new Error(`Dijkstra bucket queue capacity exceeded (${maxQueueEntries}).`);
   }
 
+  const bucketIndex = cost % queue.heads.length;
   const entryId = queue.entryCount;
   queue.entryCount += 1;
-  queue.next[entryId] = queue.heads[cost]!;
+  queue.next[entryId] = queue.heads[bucketIndex]!;
   queue.indexes[entryId] = index;
-  queue.heads[cost] = entryId;
+  queue.heads[bucketIndex] = entryId;
   queue.size += 1;
 }
 
@@ -409,21 +410,20 @@ function popBucket(queue: BucketQueue, entry: HeapEntry): boolean {
     return false;
   }
 
-  while (queue.currentCost < queue.heads.length) {
-    const head = queue.heads[queue.currentCost]!;
+  while (true) {
+    const bucketIndex = queue.currentCost % queue.heads.length;
+    const head = queue.heads[bucketIndex]!;
     if (head === -1) {
       queue.currentCost += 1;
       continue;
     }
 
-    queue.heads[queue.currentCost] = queue.next[head]!;
+    queue.heads[bucketIndex] = queue.next[head]!;
     entry.cost = queue.currentCost;
     entry.index = queue.indexes[head]!;
     queue.size -= 1;
     return true;
   }
-
-  return false;
 }
 
 const { neighborCounts, neighborIndexes } = createNeighborLookup();
