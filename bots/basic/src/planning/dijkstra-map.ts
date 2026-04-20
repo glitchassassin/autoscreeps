@@ -15,6 +15,8 @@
  * - typed-array heap storage (~6% slower)
  * - unchecked fast path that skipped public validation (~3% slower)
  * - 4-ary heap (worse median and much worse tail latency)
+ * - replacing `CostMatrix` with a row-major override array (too little gain to
+ *   justify the API churn)
  *
  * Do not rely on absolute timings from past runs. Different machines and thermal
  * conditions shift the raw numbers. For future changes, benchmark before and
