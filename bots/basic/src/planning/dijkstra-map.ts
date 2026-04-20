@@ -1,5 +1,6 @@
 const roomSize = 50;
 const roomArea = roomSize * roomSize;
+const maxNeighbors = 8;
 const terrainMaskWall = 1;
 const terrainMaskSwamp = 2;
 
@@ -34,6 +35,7 @@ export function createDijkstraMap(terrain: string, goals: DijkstraGoal[], option
   const distances = new Uint32Array(roomArea);
   distances.fill(dijkstraUnreachable);
   const heap = createBinaryHeap();
+  const entry: HeapEntry = { cost: 0, index: 0 };
 
   for (const goal of goals) {
     const index = toIndex(goal.x, goal.y);
@@ -46,8 +48,7 @@ export function createDijkstraMap(terrain: string, goals: DijkstraGoal[], option
   }
 
   while (heap.size > 0) {
-    const entry = popHeap(heap);
-    if (!entry) {
+    if (!popHeap(heap, entry)) {
       break;
     }
 
@@ -56,17 +57,11 @@ export function createDijkstraMap(terrain: string, goals: DijkstraGoal[], option
       continue;
     }
 
-    const x = entry.index % roomSize;
-    const y = Math.floor(entry.index / roomSize);
+    const neighborOffset = entry.index * maxNeighbors;
+    const neighborCount = neighborCounts[entry.index]!;
 
-    for (const direction of allDirections) {
-      const nextX = x + direction.dx;
-      const nextY = y + direction.dy;
-      if (nextX < 0 || nextX >= roomSize || nextY < 0 || nextY >= roomSize) {
-        continue;
-      }
-
-      const nextIndex = toIndex(nextX, nextY);
+    for (let neighborIndexOffset = 0; neighborIndexOffset < neighborCount; neighborIndexOffset += 1) {
+      const nextIndex = neighborIndexes[neighborOffset + neighborIndexOffset]!;
       const stepCost = movementCosts[nextIndex];
       if (stepCost === dijkstraUnreachable) {
         continue;
@@ -107,35 +102,67 @@ function buildMovementCosts(terrain: string, options: DijkstraMapOptions): Uint3
     validateBaseCost("wallCost", wallCost);
   }
 
+  if (costMatrix === null) {
+    return buildMovementCostsWithoutMatrix(terrain, plainCost, swampCost, wallCost);
+  }
+
+  return buildMovementCostsWithMatrix(terrain, plainCost, swampCost, wallCost, costMatrix);
+}
+
+function buildMovementCostsWithoutMatrix(
+  terrain: string,
+  plainCost: number,
+  swampCost: number,
+  wallCost: number | null
+): Uint32Array {
   const movementCosts = new Uint32Array(roomArea);
+  const blockedWallCost = wallCost ?? dijkstraUnreachable;
 
   for (let index = 0; index < roomArea; index += 1) {
-    const terrainCode = Number(terrain[index] ?? "0");
-    const x = index % roomSize;
-    const y = Math.floor(index / roomSize);
-    const isWall = (terrainCode & terrainMaskWall) !== 0;
+    const terrainCode = terrain.charCodeAt(index) - 48;
+    movementCosts[index] = (terrainCode & terrainMaskWall) !== 0
+      ? blockedWallCost
+      : (terrainCode & terrainMaskSwamp) !== 0
+        ? swampCost
+        : plainCost;
+  }
 
-    let cost = dijkstraUnreachable;
-    if (isWall) {
-      if (wallCost !== null) {
-        cost = wallCost;
+  return movementCosts;
+}
+
+function buildMovementCostsWithMatrix(
+  terrain: string,
+  plainCost: number,
+  swampCost: number,
+  wallCost: number | null,
+  costMatrix: DijkstraCostMatrix
+): Uint32Array {
+  const movementCosts = new Uint32Array(roomArea);
+  const blockedWallCost = wallCost ?? dijkstraUnreachable;
+
+  for (let y = 0; y < roomSize; y += 1) {
+    const rowOffset = y * roomSize;
+
+    for (let x = 0; x < roomSize; x += 1) {
+      const index = rowOffset + x;
+      const terrainCode = terrain.charCodeAt(index) - 48;
+      let cost = (terrainCode & terrainMaskWall) !== 0
+        ? blockedWallCost
+        : (terrainCode & terrainMaskSwamp) !== 0
+          ? swampCost
+          : plainCost;
+
+      if (cost !== dijkstraUnreachable) {
+        const matrixCost = costMatrix.get(x, y);
+        if (matrixCost >= 255) {
+          cost = dijkstraUnreachable;
+        } else if (matrixCost > 0) {
+          cost = matrixCost;
+        }
       }
-    } else if ((terrainCode & terrainMaskSwamp) !== 0) {
-      cost = swampCost;
-    } else {
-      cost = plainCost;
-    }
 
-    if (cost !== dijkstraUnreachable && costMatrix !== null) {
-      const matrixCost = costMatrix.get(x, y);
-      if (matrixCost >= 255) {
-        cost = dijkstraUnreachable;
-      } else if (matrixCost > 0) {
-        cost = matrixCost;
-      }
+      movementCosts[index] = cost;
     }
-
-    movementCosts[index] = cost;
   }
 
   return movementCosts;
@@ -213,17 +240,17 @@ function pushHeap(heap: BinaryHeap, cost: number, index: number): void {
   heap.indexes[cursor] = index;
 }
 
-function popHeap(heap: BinaryHeap): HeapEntry | null {
+function popHeap(heap: BinaryHeap, entry: HeapEntry): boolean {
   if (heap.size === 0) {
-    return null;
+    return false;
   }
 
-  const cost = heap.costs[0]!;
-  const index = heap.indexes[0]!;
+  entry.cost = heap.costs[0]!;
+  entry.index = heap.indexes[0]!;
   heap.size -= 1;
 
   if (heap.size === 0) {
-    return { cost, index };
+    return true;
   }
 
   const lastCost = heap.costs[heap.size]!;
@@ -254,16 +281,62 @@ function popHeap(heap: BinaryHeap): HeapEntry | null {
   heap.costs[cursor] = lastCost;
   heap.indexes[cursor] = lastIndex;
 
-  return { cost, index };
+  return true;
 }
 
-const allDirections = [
-  { dx: 1, dy: 0 },
-  { dx: -1, dy: 0 },
-  { dx: 0, dy: 1 },
-  { dx: 0, dy: -1 },
-  { dx: 1, dy: 1 },
-  { dx: 1, dy: -1 },
-  { dx: -1, dy: 1 },
-  { dx: -1, dy: -1 }
-];
+const { neighborCounts, neighborIndexes } = createNeighborLookup();
+
+function createNeighborLookup(): { neighborCounts: Uint8Array; neighborIndexes: Int16Array } {
+  const counts = new Uint8Array(roomArea);
+  const indexes = new Int16Array(roomArea * maxNeighbors);
+
+  for (let index = 0; index < roomArea; index += 1) {
+    const x = index % roomSize;
+    const hasWest = x > 0;
+    const hasEast = x < roomSize - 1;
+    const hasNorth = index >= roomSize;
+    const hasSouth = index < roomArea - roomSize;
+    const offset = index * maxNeighbors;
+    let count = 0;
+
+    if (hasEast) {
+      indexes[offset + count] = index + 1;
+      count += 1;
+    }
+    if (hasWest) {
+      indexes[offset + count] = index - 1;
+      count += 1;
+    }
+    if (hasSouth) {
+      indexes[offset + count] = index + roomSize;
+      count += 1;
+    }
+    if (hasNorth) {
+      indexes[offset + count] = index - roomSize;
+      count += 1;
+    }
+    if (hasEast && hasSouth) {
+      indexes[offset + count] = index + roomSize + 1;
+      count += 1;
+    }
+    if (hasEast && hasNorth) {
+      indexes[offset + count] = index - roomSize + 1;
+      count += 1;
+    }
+    if (hasWest && hasSouth) {
+      indexes[offset + count] = index + roomSize - 1;
+      count += 1;
+    }
+    if (hasWest && hasNorth) {
+      indexes[offset + count] = index - roomSize - 1;
+      count += 1;
+    }
+
+    counts[index] = count;
+  }
+
+  return {
+    neighborCounts: counts,
+    neighborIndexes: indexes
+  };
+}
