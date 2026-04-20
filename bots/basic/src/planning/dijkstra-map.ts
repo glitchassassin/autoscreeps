@@ -1,6 +1,8 @@
 const roomSize = 50;
 const roomArea = roomSize * roomSize;
 const maxNeighbors = 8;
+const maxQueueEntries = roomArea * (maxNeighbors + 1);
+const maxBucketDistanceUpperBound = 65535;
 const terrainMaskWall = 1;
 const terrainMaskSwamp = 2;
 
@@ -27,11 +29,55 @@ export type DijkstraMap = {
   isBlocked(x: number, y: number): boolean;
 };
 
+type MovementCostGrid = {
+  movementCosts: Uint32Array;
+  maxStepCost: number;
+};
+
+type HeapEntry = {
+  cost: number;
+  index: number;
+};
+
+type BinaryHeap = {
+  costs: number[];
+  indexes: number[];
+  size: number;
+};
+
+type BucketQueue = {
+  heads: Int32Array;
+  next: Int32Array;
+  indexes: Uint16Array;
+  size: number;
+  entryCount: number;
+  currentCost: number;
+};
+
 export function createDijkstraMap(terrain: string, goals: DijkstraGoal[], options: DijkstraMapOptions = {}): DijkstraMap {
   validateTerrain(terrain);
   validateGoals(goals);
 
-  const movementCosts = buildMovementCosts(terrain, options);
+  const movementCostGrid = buildMovementCosts(terrain, options);
+  const distances = shouldUseBucketQueue(movementCostGrid.maxStepCost)
+    ? buildDistancesWithBucketQueue(goals, movementCostGrid.movementCosts, movementCostGrid.maxStepCost)
+    : buildDistancesWithHeap(goals, movementCostGrid.movementCosts);
+
+  return {
+    distances,
+    movementCosts: movementCostGrid.movementCosts,
+    get(x: number, y: number): number {
+      validateCoordinate(x, y);
+      return distances[toIndex(x, y)];
+    },
+    isBlocked(x: number, y: number): boolean {
+      validateCoordinate(x, y);
+      return movementCostGrid.movementCosts[toIndex(x, y)] === dijkstraUnreachable;
+    }
+  };
+}
+
+function buildDistancesWithHeap(goals: DijkstraGoal[], movementCosts: Uint32Array): Uint32Array {
   const distances = new Uint32Array(roomArea);
   distances.fill(dijkstraUnreachable);
   const heap = createBinaryHeap();
@@ -77,21 +123,63 @@ export function createDijkstraMap(terrain: string, goals: DijkstraGoal[], option
     }
   }
 
-  return {
-    distances,
-    movementCosts,
-    get(x: number, y: number): number {
-      validateCoordinate(x, y);
-      return distances[toIndex(x, y)];
-    },
-    isBlocked(x: number, y: number): boolean {
-      validateCoordinate(x, y);
-      return movementCosts[toIndex(x, y)] === dijkstraUnreachable;
-    }
-  };
+  return distances;
 }
 
-function buildMovementCosts(terrain: string, options: DijkstraMapOptions): Uint32Array {
+function buildDistancesWithBucketQueue(goals: DijkstraGoal[], movementCosts: Uint32Array, maxStepCost: number): Uint32Array {
+  const distances = new Uint32Array(roomArea);
+  distances.fill(dijkstraUnreachable);
+  const queue = createBucketQueue(maxStepCost * (roomArea - 1));
+  const entry: HeapEntry = { cost: 0, index: 0 };
+
+  for (const goal of goals) {
+    const index = toIndex(goal.x, goal.y);
+    if (distances[index] === 0) {
+      continue;
+    }
+
+    distances[index] = 0;
+    pushBucket(queue, 0, index);
+  }
+
+  while (queue.size > 0) {
+    if (!popBucket(queue, entry)) {
+      break;
+    }
+
+    const currentDistance = distances[entry.index];
+    if (entry.cost !== currentDistance) {
+      continue;
+    }
+
+    const neighborOffset = entry.index * maxNeighbors;
+    const neighborCount = neighborCounts[entry.index]!;
+
+    for (let neighborIndexOffset = 0; neighborIndexOffset < neighborCount; neighborIndexOffset += 1) {
+      const nextIndex = neighborIndexes[neighborOffset + neighborIndexOffset]!;
+      const stepCost = movementCosts[nextIndex];
+      if (stepCost === dijkstraUnreachable) {
+        continue;
+      }
+
+      const nextDistance = currentDistance + stepCost;
+      if (nextDistance >= distances[nextIndex]) {
+        continue;
+      }
+
+      distances[nextIndex] = nextDistance;
+      pushBucket(queue, nextDistance, nextIndex);
+    }
+  }
+
+  return distances;
+}
+
+function shouldUseBucketQueue(maxStepCost: number): boolean {
+  return maxStepCost > 0 && maxStepCost * (roomArea - 1) <= maxBucketDistanceUpperBound;
+}
+
+function buildMovementCosts(terrain: string, options: DijkstraMapOptions): MovementCostGrid {
   const plainCost = options.plainCost ?? 2;
   const swampCost = options.swampCost ?? 10;
   const wallCost = options.wallCost ?? null;
@@ -114,20 +202,29 @@ function buildMovementCostsWithoutMatrix(
   plainCost: number,
   swampCost: number,
   wallCost: number | null
-): Uint32Array {
+): MovementCostGrid {
   const movementCosts = new Uint32Array(roomArea);
   const blockedWallCost = wallCost ?? dijkstraUnreachable;
+  let maxStepCost = 0;
 
   for (let index = 0; index < roomArea; index += 1) {
     const terrainCode = terrain.charCodeAt(index) - 48;
-    movementCosts[index] = (terrainCode & terrainMaskWall) !== 0
+    const cost = (terrainCode & terrainMaskWall) !== 0
       ? blockedWallCost
       : (terrainCode & terrainMaskSwamp) !== 0
         ? swampCost
         : plainCost;
+
+    movementCosts[index] = cost;
+    if (cost !== dijkstraUnreachable && cost > maxStepCost) {
+      maxStepCost = cost;
+    }
   }
 
-  return movementCosts;
+  return {
+    movementCosts,
+    maxStepCost
+  };
 }
 
 function buildMovementCostsWithMatrix(
@@ -136,9 +233,10 @@ function buildMovementCostsWithMatrix(
   swampCost: number,
   wallCost: number | null,
   costMatrix: DijkstraCostMatrix
-): Uint32Array {
+): MovementCostGrid {
   const movementCosts = new Uint32Array(roomArea);
   const blockedWallCost = wallCost ?? dijkstraUnreachable;
+  let maxStepCost = 0;
 
   for (let y = 0; y < roomSize; y += 1) {
     const rowOffset = y * roomSize;
@@ -162,10 +260,16 @@ function buildMovementCostsWithMatrix(
       }
 
       movementCosts[index] = cost;
+      if (cost !== dijkstraUnreachable && cost > maxStepCost) {
+        maxStepCost = cost;
+      }
     }
   }
 
-  return movementCosts;
+  return {
+    movementCosts,
+    maxStepCost
+  };
 }
 
 function validateTerrain(terrain: string): void {
@@ -200,22 +304,25 @@ function toIndex(x: number, y: number): number {
   return y * roomSize + x;
 }
 
-type HeapEntry = {
-  cost: number;
-  index: number;
-};
-
-type BinaryHeap = {
-  costs: number[];
-  indexes: number[];
-  size: number;
-};
-
 function createBinaryHeap(): BinaryHeap {
   return {
     costs: [],
     indexes: [],
     size: 0
+  };
+}
+
+function createBucketQueue(maxDistanceUpperBound: number): BucketQueue {
+  const heads = new Int32Array(maxDistanceUpperBound + 1);
+  heads.fill(-1);
+
+  return {
+    heads,
+    next: new Int32Array(maxQueueEntries),
+    indexes: new Uint16Array(maxQueueEntries),
+    size: 0,
+    entryCount: 0,
+    currentCost: 0
   };
 }
 
@@ -282,6 +389,41 @@ function popHeap(heap: BinaryHeap, entry: HeapEntry): boolean {
   heap.indexes[cursor] = lastIndex;
 
   return true;
+}
+
+function pushBucket(queue: BucketQueue, cost: number, index: number): void {
+  if (queue.entryCount >= maxQueueEntries) {
+    throw new Error(`Dijkstra bucket queue capacity exceeded (${maxQueueEntries}).`);
+  }
+
+  const entryId = queue.entryCount;
+  queue.entryCount += 1;
+  queue.next[entryId] = queue.heads[cost]!;
+  queue.indexes[entryId] = index;
+  queue.heads[cost] = entryId;
+  queue.size += 1;
+}
+
+function popBucket(queue: BucketQueue, entry: HeapEntry): boolean {
+  if (queue.size === 0) {
+    return false;
+  }
+
+  while (queue.currentCost < queue.heads.length) {
+    const head = queue.heads[queue.currentCost]!;
+    if (head === -1) {
+      queue.currentCost += 1;
+      continue;
+    }
+
+    queue.heads[queue.currentCost] = queue.next[head]!;
+    entry.cost = queue.currentCost;
+    entry.index = queue.indexes[head]!;
+    queue.size -= 1;
+    return true;
+  }
+
+  return false;
 }
 
 const { neighborCounts, neighborIndexes } = createNeighborLookup();
