@@ -10,6 +10,7 @@
   "scripts": {
     "build": "vite build",
     "benchmark:dijkstra": "node --expose-gc scripts/benchmark-dijkstra.ts",
+    "benchmark:flood-fill": "node --expose-gc scripts/benchmark-flood-fill.ts",
     "watch": "vite build --watch",
     "push:pserver": "vite build --mode pserver",
     "preview:dijkstra": "node scripts/generate-dijkstra-preview.ts",
