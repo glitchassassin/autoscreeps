@@ -1,3 +1,29 @@
+/*
+ * Optimization notes for future edits:
+ * Benchmarked with `caffeinate -dimsu npm run benchmark:dijkstra` over the 144
+ * `botarena-212` planner-candidate rooms, seeded from each controller, with
+ * `plain=2`, `swamp=10`, `wall=blocked`.
+ *
+ * Kept because they helped:
+ * - precomputed neighbor lookup instead of per-pop direction math
+ * - split no-`CostMatrix` fast path plus `terrain.charCodeAt(index) - 48`
+ * - reused heap pop storage instead of allocating `{ cost, index }` per pop
+ * - bucketed priority queue for room-scale costs, then a cyclic Dial queue
+ *
+ * Tried and rejected because they regressed:
+ * - typed-array heap storage (~6% slower)
+ * - unchecked fast path that skipped public validation (~3% slower)
+ * - 4-ary heap (worse median and much worse tail latency)
+ *
+ * Do not rely on absolute timings from past runs. Different machines and thermal
+ * conditions shift the raw numbers. For future changes, benchmark before and
+ * after the modification on the current machine to measure the real impact.
+ *
+ * If you change the queue or hot loops, rerun:
+ * - `npm test -- test/dijkstra-map.test.ts`
+ * - `caffeinate -dimsu npm run benchmark:dijkstra`
+ * - `npm run benchmark:dijkstra -- --wall-cost=50 --warmup=5 --samples=3 --iterations=2`
+ */
 const roomSize = 50;
 const roomArea = roomSize * roomSize;
 const maxNeighbors = 8;
