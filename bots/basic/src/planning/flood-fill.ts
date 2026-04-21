@@ -1,4 +1,27 @@
 /*
+ * Optimization notes for future edits:
+ * Benchmarked with `npm run benchmark:flood-fill -- --warmup=100
+ * --samples=60 --iterations=75 --per-room-iterations=100` over the 144
+ * `botarena-212` planner-candidate rooms. The benchmark uses a walkable terrain
+ * mask and seeds from walkable tiles in range 1 of the selected room objects.
+ *
+ * Kept because they helped:
+ * - reused module-scope frontier stack instead of allocating a queue per fill
+ * - LIFO stack traversal instead of FIFO queue traversal
+ * - interior-tile fast path using fixed neighbor offsets, with lookup fallback
+ *   for edge tiles
+ * - reusable visit-marker grid for traversal state, while still returning a
+ *   fresh `visited` grid to callers
+ *
+ * Tried and rejected because they regressed or were not worth the complexity:
+ * - scanline/span flood fill (worse on 50x50 Screeps room masks)
+ * - padded-border mask with fixed offsets (~5.6% median win over lookup, but
+ *   slightly worse p95 and extra API/data-shape complexity)
+ *
+ * Do not rely on absolute timings from past runs. Different machines and thermal
+ * conditions shift the raw numbers. For future changes, benchmark before and
+ * after the modification on the current machine to measure the real impact.
+ *
  * If you change the traversal loop or neighbor handling, rerun:
  * - `npm test -- test/flood-fill.test.ts`
  * - `npm run benchmark:flood-fill`
@@ -24,40 +47,117 @@ export function createFloodFill(mask: Uint8Array, seeds: FloodFillSeed[]): Flood
   validateSeeds(seeds);
 
   const visited = new Uint8Array(roomArea);
-  const queue = new Uint16Array(roomArea);
-  let head = 0;
-  let tail = 0;
+  const visitMarker = nextVisitMarker();
+  let stackSize = 0;
   let visitedCount = 0;
 
   for (const seed of seeds) {
     const index = toIndex(seed.x, seed.y);
-    if (mask[index] === 0 || visited[index] !== 0) {
+    if (mask[index] === 0 || visitMarkers[index] === visitMarker) {
       continue;
     }
 
+    visitMarkers[index] = visitMarker;
     visited[index] = 1;
     visitedCount += 1;
-    queue[tail] = index;
-    tail += 1;
+    traversalStack[stackSize] = index;
+    stackSize += 1;
   }
 
-  while (head < tail) {
-    const index = queue[head]!;
-    head += 1;
+  while (stackSize > 0) {
+    stackSize -= 1;
+    const index = traversalStack[stackSize]!;
+
+    if (interiorTiles[index] !== 0) {
+      let nextIndex = index + 1;
+      if (mask[nextIndex] !== 0 && visitMarkers[nextIndex] !== visitMarker) {
+        visitMarkers[nextIndex] = visitMarker;
+        visited[nextIndex] = 1;
+        visitedCount += 1;
+        traversalStack[stackSize] = nextIndex;
+        stackSize += 1;
+      }
+
+      nextIndex = index - 1;
+      if (mask[nextIndex] !== 0 && visitMarkers[nextIndex] !== visitMarker) {
+        visitMarkers[nextIndex] = visitMarker;
+        visited[nextIndex] = 1;
+        visitedCount += 1;
+        traversalStack[stackSize] = nextIndex;
+        stackSize += 1;
+      }
+
+      nextIndex = index + roomSize;
+      if (mask[nextIndex] !== 0 && visitMarkers[nextIndex] !== visitMarker) {
+        visitMarkers[nextIndex] = visitMarker;
+        visited[nextIndex] = 1;
+        visitedCount += 1;
+        traversalStack[stackSize] = nextIndex;
+        stackSize += 1;
+      }
+
+      nextIndex = index - roomSize;
+      if (mask[nextIndex] !== 0 && visitMarkers[nextIndex] !== visitMarker) {
+        visitMarkers[nextIndex] = visitMarker;
+        visited[nextIndex] = 1;
+        visitedCount += 1;
+        traversalStack[stackSize] = nextIndex;
+        stackSize += 1;
+      }
+
+      nextIndex = index + roomSize + 1;
+      if (mask[nextIndex] !== 0 && visitMarkers[nextIndex] !== visitMarker) {
+        visitMarkers[nextIndex] = visitMarker;
+        visited[nextIndex] = 1;
+        visitedCount += 1;
+        traversalStack[stackSize] = nextIndex;
+        stackSize += 1;
+      }
+
+      nextIndex = index - roomSize + 1;
+      if (mask[nextIndex] !== 0 && visitMarkers[nextIndex] !== visitMarker) {
+        visitMarkers[nextIndex] = visitMarker;
+        visited[nextIndex] = 1;
+        visitedCount += 1;
+        traversalStack[stackSize] = nextIndex;
+        stackSize += 1;
+      }
+
+      nextIndex = index + roomSize - 1;
+      if (mask[nextIndex] !== 0 && visitMarkers[nextIndex] !== visitMarker) {
+        visitMarkers[nextIndex] = visitMarker;
+        visited[nextIndex] = 1;
+        visitedCount += 1;
+        traversalStack[stackSize] = nextIndex;
+        stackSize += 1;
+      }
+
+      nextIndex = index - roomSize - 1;
+      if (mask[nextIndex] !== 0 && visitMarkers[nextIndex] !== visitMarker) {
+        visitMarkers[nextIndex] = visitMarker;
+        visited[nextIndex] = 1;
+        visitedCount += 1;
+        traversalStack[stackSize] = nextIndex;
+        stackSize += 1;
+      }
+
+      continue;
+    }
 
     const neighborOffset = index * maxNeighbors;
     const neighborCount = neighborCounts[index]!;
 
     for (let neighborIndexOffset = 0; neighborIndexOffset < neighborCount; neighborIndexOffset += 1) {
       const nextIndex = neighborIndexes[neighborOffset + neighborIndexOffset]!;
-      if (mask[nextIndex] === 0 || visited[nextIndex] !== 0) {
+      if (mask[nextIndex] === 0 || visitMarkers[nextIndex] === visitMarker) {
         continue;
       }
 
+      visitMarkers[nextIndex] = visitMarker;
       visited[nextIndex] = 1;
       visitedCount += 1;
-      queue[tail] = nextIndex;
-      tail += 1;
+      traversalStack[stackSize] = nextIndex;
+      stackSize += 1;
     }
   }
 
@@ -97,7 +197,23 @@ function toIndex(x: number, y: number): number {
   return y * roomSize + x;
 }
 
+function nextVisitMarker(): number {
+  if (visitMarker >= 0xfffe) {
+    visitMarkers.fill(0);
+    visitMarker = 0;
+  }
+
+  visitMarker += 1;
+  return visitMarker;
+}
+
+// Reuse the frontier buffer across calls; this hot path is synchronous and the
+// function returns a fresh visited grid, so scratch reuse is safe.
+const traversalStack = new Uint16Array(roomArea);
+const visitMarkers = new Uint16Array(roomArea);
 const { neighborCounts, neighborIndexes } = createNeighborLookup();
+const interiorTiles = createInteriorTiles();
+let visitMarker = 0;
 
 function createNeighborLookup(): { neighborCounts: Uint8Array; neighborIndexes: Int16Array } {
   const counts = new Uint8Array(roomArea);
@@ -152,4 +268,17 @@ function createNeighborLookup(): { neighborCounts: Uint8Array; neighborIndexes: 
     neighborCounts: counts,
     neighborIndexes: indexes
   };
+}
+
+function createInteriorTiles(): Uint8Array {
+  const tiles = new Uint8Array(roomArea);
+
+  for (let y = 1; y < roomSize - 1; y += 1) {
+    const rowOffset = y * roomSize;
+    for (let x = 1; x < roomSize - 1; x += 1) {
+      tiles[rowOffset + x] = 1;
+    }
+  }
+
+  return tiles;
 }

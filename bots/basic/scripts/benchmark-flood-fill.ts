@@ -54,7 +54,7 @@ async function main(): Promise<void> {
   process.stdout.write(`Iterations per sample: ${config.iterationsPerSample}\n`);
   process.stdout.write(`Per-room iterations: ${config.perRoomIterations}\n`);
   process.stdout.write(`Mask: walkable terrain\n`);
-  process.stdout.write(`Seeds: ${config.seedMode}\n`);
+  process.stdout.write(`Seeds: walkable range 1 around ${config.seedMode}\n`);
   process.stdout.write(`GC between samples: ${config.gcBetweenSamples && getGlobalGc() ? "on" : "off"}\n\n`);
 
   let checksum = 0;
@@ -191,7 +191,7 @@ function loadBenchmarkCases(requestedRoomNames: string[], seedMode: SeedMode): B
     }
 
     const mask = createWalkableTerrainMask(room.terrain);
-    const seeds = selectSeeds(room.objects, seedMode);
+    const seeds = selectSeeds(room.objects, mask, seedMode);
     if (seeds.length === 0) {
       throw new Error(`Room '${roomName}' has no seeds for mode '${seedMode}'.`);
     }
@@ -225,21 +225,46 @@ function createWalkableTerrainMask(terrain: string): Uint8Array {
 
 function selectSeeds(
   objects: Array<{ type: string; x: number; y: number }>,
+  mask: Uint8Array,
   seedMode: SeedMode
 ): FloodFillSeed[] {
+  const seeds: FloodFillSeed[] = [];
+  const seen = new Uint8Array(roomArea);
+  const targets = selectSeedObjects(objects, seedMode);
+
+  for (const target of targets) {
+    const minX = Math.max(0, target.x - 1);
+    const maxX = Math.min(49, target.x + 1);
+    const minY = Math.max(0, target.y - 1);
+    const maxY = Math.min(49, target.y + 1);
+
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let x = minX; x <= maxX; x += 1) {
+        const index = y * 50 + x;
+        if (mask[index] === 0 || seen[index] !== 0) {
+          continue;
+        }
+
+        seen[index] = 1;
+        seeds.push({ x, y });
+      }
+    }
+  }
+
+  return seeds;
+}
+
+function selectSeedObjects(
+  objects: Array<{ type: string; x: number; y: number }>,
+  seedMode: SeedMode
+): Array<{ type: string; x: number; y: number }> {
   switch (seedMode) {
     case "controller":
-      return objects
-        .filter((object) => object.type === "controller")
-        .map((object) => ({ x: object.x, y: object.y }));
+      return objects.filter((object) => object.type === "controller");
     case "sources":
-      return objects
-        .filter((object) => object.type === "source")
-        .map((object) => ({ x: object.x, y: object.y }));
+      return objects.filter((object) => object.type === "source");
     case "controller-and-sources":
-      return objects
-        .filter((object) => object.type === "controller" || object.type === "source")
-        .map((object) => ({ x: object.x, y: object.y }));
+      return objects.filter((object) => object.type === "controller" || object.type === "source");
   }
 }
 
