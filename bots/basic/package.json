@@ -14,6 +14,7 @@
     "watch": "vite build --watch",
     "push:pserver": "vite build --mode pserver",
     "preview:dijkstra": "node scripts/generate-dijkstra-preview.ts",
+    "preview:flood-fill": "node scripts/generate-flood-fill-preview.ts",
     "watch:pserver": "vite build --watch --mode pserver",
     "test": "vitest run",
     "test:watch": "vitest",
