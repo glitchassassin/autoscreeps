@@ -10,10 +10,12 @@
   "scripts": {
     "build": "vite build",
     "benchmark:dijkstra": "node --expose-gc scripts/benchmark-dijkstra.ts",
+    "benchmark:distance-transform": "node --expose-gc scripts/benchmark-distance-transform.ts",
     "benchmark:flood-fill": "node --expose-gc scripts/benchmark-flood-fill.ts",
     "watch": "vite build --watch",
     "push:pserver": "vite build --mode pserver",
     "preview:dijkstra": "node scripts/generate-dijkstra-preview.ts",
+    "preview:distance-transform": "node scripts/generate-distance-transform-preview.ts",
     "preview:flood-fill": "node scripts/generate-flood-fill-preview.ts",
     "watch:pserver": "vite build --watch --mode pserver",
     "test": "vitest run",
