@@ -13,62 +13,71 @@ export type TerrainDistanceTransform = {
 export function createTerrainDistanceTransform(terrain: string): TerrainDistanceTransform {
   validateTerrain(terrain);
 
-  const distances = initializeDistances(terrain);
+  const distances = new Uint8Array(initialWalkableDistances);
+  let maxDistance = initializeDistances(terrain, distances);
 
-  for (let y = 0; y < roomSize; y += 1) {
+  for (let y = 1; y < roomSize - 1; y += 1) {
     const rowOffset = y * roomSize;
 
-    for (let x = 0; x < roomSize; x += 1) {
+    for (let x = 1; x < roomSize - 1; x += 1) {
       const index = rowOffset + x;
       if (distances[index] === 0) {
         continue;
       }
 
       let bestDistance = distances[index]!;
-      if (x > 0) {
-        bestDistance = Math.min(bestDistance, distances[index - 1]! + 1);
+      let candidateDistance = distances[index - 1]! + 1;
+      if (candidateDistance < bestDistance) {
+        bestDistance = candidateDistance;
       }
 
-      if (y > 0) {
-        bestDistance = Math.min(bestDistance, distances[index - roomSize]! + 1);
-        if (x > 0) {
-          bestDistance = Math.min(bestDistance, distances[index - roomSize - 1]! + 1);
-        }
+      candidateDistance = distances[index - roomSize]! + 1;
+      if (candidateDistance < bestDistance) {
+        bestDistance = candidateDistance;
+      }
 
-        if (x < roomSize - 1) {
-          bestDistance = Math.min(bestDistance, distances[index - roomSize + 1]! + 1);
-        }
+      candidateDistance = distances[index - roomSize - 1]! + 1;
+      if (candidateDistance < bestDistance) {
+        bestDistance = candidateDistance;
+      }
+
+      candidateDistance = distances[index - roomSize + 1]! + 1;
+      if (candidateDistance < bestDistance) {
+        bestDistance = candidateDistance;
       }
 
       distances[index] = bestDistance;
     }
   }
 
-  let maxDistance = 0;
-
-  for (let y = roomSize - 1; y >= 0; y -= 1) {
+  for (let y = roomSize - 2; y > 0; y -= 1) {
     const rowOffset = y * roomSize;
 
-    for (let x = roomSize - 1; x >= 0; x -= 1) {
+    for (let x = roomSize - 2; x > 0; x -= 1) {
       const index = rowOffset + x;
       if (distances[index] === 0) {
         continue;
       }
 
       let bestDistance = distances[index]!;
-      if (x < roomSize - 1) {
-        bestDistance = Math.min(bestDistance, distances[index + 1]! + 1);
+      let candidateDistance = distances[index + 1]! + 1;
+      if (candidateDistance < bestDistance) {
+        bestDistance = candidateDistance;
       }
 
-      if (y < roomSize - 1) {
-        bestDistance = Math.min(bestDistance, distances[index + roomSize]! + 1);
-        if (x > 0) {
-          bestDistance = Math.min(bestDistance, distances[index + roomSize - 1]! + 1);
-        }
+      candidateDistance = distances[index + roomSize]! + 1;
+      if (candidateDistance < bestDistance) {
+        bestDistance = candidateDistance;
+      }
 
-        if (x < roomSize - 1) {
-          bestDistance = Math.min(bestDistance, distances[index + roomSize + 1]! + 1);
-        }
+      candidateDistance = distances[index + roomSize - 1]! + 1;
+      if (candidateDistance < bestDistance) {
+        bestDistance = candidateDistance;
+      }
+
+      candidateDistance = distances[index + roomSize + 1]! + 1;
+      if (candidateDistance < bestDistance) {
+        bestDistance = candidateDistance;
       }
 
       distances[index] = bestDistance;
@@ -92,27 +101,21 @@ export function createTerrainDistanceTransform(terrain: string): TerrainDistance
   };
 }
 
-function initializeDistances(terrain: string): Uint8Array {
-  const distances = new Uint8Array(roomArea);
+function initializeDistances(terrain: string, distances: Uint8Array): number {
+  let maxDistance = 0;
+  for (let index = 0; index < roomArea; index += 1) {
+    const terrainCode = terrain.charCodeAt(index) - 48;
+    if ((terrainCode & terrainMaskWall) !== 0) {
+      distances[index] = 0;
+      continue;
+    }
 
-  for (let y = 0; y < roomSize; y += 1) {
-    const rowOffset = y * roomSize;
-
-    for (let x = 0; x < roomSize; x += 1) {
-      const index = rowOffset + x;
-      const terrainCode = terrain.charCodeAt(index) - 48;
-
-      if ((terrainCode & terrainMaskWall) !== 0) {
-        distances[index] = 0;
-      } else if (x === 0 || y === 0 || x === roomSize - 1 || y === roomSize - 1) {
-        distances[index] = 1;
-      } else {
-        distances[index] = unreachableDistance;
-      }
+    if (distances[index] === 1) {
+      maxDistance = 1;
     }
   }
 
-  return distances;
+  return maxDistance;
 }
 
 function validateTerrain(terrain: string): void {
@@ -130,3 +133,23 @@ function validateCoordinate(x: number, y: number): void {
 function toIndex(x: number, y: number): number {
   return y * roomSize + x;
 }
+
+function createInitialWalkableDistances(): Uint8Array {
+  const distances = new Uint8Array(roomArea);
+  distances.fill(unreachableDistance);
+
+  for (let x = 0; x < roomSize; x += 1) {
+    distances[x] = 1;
+    distances[(roomSize - 1) * roomSize + x] = 1;
+  }
+
+  for (let y = 1; y < roomSize - 1; y += 1) {
+    const rowOffset = y * roomSize;
+    distances[rowOffset] = 1;
+    distances[rowOffset + roomSize - 1] = 1;
+  }
+
+  return distances;
+}
+
+const initialWalkableDistances = createInitialWalkableDistances();
