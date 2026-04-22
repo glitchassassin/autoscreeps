@@ -85,7 +85,7 @@ describe("room planning", () => {
       throw new Error("Expected normal room plan to include labs.");
     }
     expect(labs.blockedTiles).toHaveLength(14);
-    expect(getStampPathBlockedTiles(labs)).toHaveLength(10);
+    expect(getStampPathBlockedTiles(labs)).toHaveLength(13);
     expect(labs.roadTiles).toHaveLength(4);
     expect(toLocalOffsetKeys(labs, labs.roadTiles ?? [])).toEqual(["0,0", "1,1", "2,2", "3,3"]);
     expect(validateStampPlan(room, plan.stampPlan)).toEqual([]);
@@ -278,10 +278,13 @@ function createFinalPathBlocked(room: RoomPlanningRoomData, plan: RoomStampPlan)
   }
   if (plan.stamps.labs !== null) {
     const entrance = plan.stamps.labs.anchors.entrance ?? plan.stamps.labs.anchor;
-    blocked[toIndex(entrance.x, entrance.y)] = 0;
+    const entranceTile = toIndex(entrance.x, entrance.y);
     for (const tile of plan.stamps.labs.roadTiles ?? []) {
-      blocked[tile] = 0;
+      if (tile !== entranceTile) {
+        blocked[tile] = 1;
+      }
     }
+    blocked[entranceTile] = 0;
   }
 
   return blocked;

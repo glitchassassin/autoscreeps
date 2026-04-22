@@ -17,6 +17,13 @@ describe("road planning", () => {
   it("plans the required normal-room road paths for a cached stamp plan", () => {
     const testCase = loadBotarena212RoadPlanningFixture().cases[0]!;
     const plan = planRoads(testCase.room, testCase.plan);
+    const labs = testCase.plan.stamps.labs;
+    if (labs === null) {
+      throw new Error("Expected cached normal stamp plan to include labs.");
+    }
+    const entrance = labs.anchors.entrance ?? labs.anchor;
+    const entranceTile = entrance.y * 50 + entrance.x;
+    const nonEntranceLabRoadTiles = (labs.roadTiles ?? []).filter((tile) => tile !== entranceTile);
 
     expect(validateRoadPlan(testCase.room, testCase.plan, plan)).toEqual([]);
     expect(new Set(plan.paths.map((path) => path.kind))).toEqual(new Set([
@@ -29,6 +36,10 @@ describe("road planning", () => {
       "storage-to-source2",
       "storage-to-controller"
     ]));
+    expect(plan.roadTiles).toContain(entranceTile);
+    for (const tile of nonEntranceLabRoadTiles) {
+      expect(plan.roadTiles).not.toContain(tile);
+    }
     expect(plan.roadTiles.length).toBeGreaterThan(0);
     expect(plan.roads).toHaveLength(plan.roadTiles.length);
   });

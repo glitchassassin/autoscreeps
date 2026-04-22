@@ -491,12 +491,13 @@ function createBlockedMask(room: RoomPlanningRoomData, stampPlan: RoomStampPlan)
   }
   if (stampPlan.stamps.labs !== null) {
     const entrance = requireAnchor(stampPlan.stamps.labs, "entrance");
-    blocked[toIndex(entrance.x, entrance.y)] = 0;
+    const entranceTile = toIndex(entrance.x, entrance.y);
     for (const tile of stampPlan.stamps.labs.roadTiles ?? []) {
-      if (isValidIndex(tile)) {
-        blocked[tile] = 0;
+      if (isValidIndex(tile) && tile !== entranceTile) {
+        blocked[tile] = 1;
       }
     }
+    blocked[entranceTile] = 0;
   }
 
   return blocked;

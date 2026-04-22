@@ -1515,6 +1515,14 @@ function labRoadOffsets(): Coord[] {
   ];
 }
 
+function labRoadPathBlockedOffsets(): Coord[] {
+  return [
+    { x: 1, y: 1 },
+    { x: 2, y: 2 },
+    { x: 3, y: 3 }
+  ];
+}
+
 function labStructureOffsets(): Coord[] {
   return [
     { x: 1, y: 0 },
@@ -1573,7 +1581,7 @@ const labTemplate: StampTemplate = {
   label: "labs",
   rotations: [0, 90, 180, 270],
   blockedOffsets: labBlockedOffsets(),
-  pathBlockedOffsets: labStructureOffsets(),
+  pathBlockedOffsets: [...labStructureOffsets(), ...labRoadPathBlockedOffsets()],
   roadOffsets: labRoadOffsets(),
   anchors: {
     entrance: { x: 0, y: 0 }
