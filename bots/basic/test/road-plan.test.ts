@@ -80,6 +80,23 @@ describe("road planning", () => {
     expect(validateRoadPlan(room, stampPlan, plan)).toEqual([]);
     expect(summedPathTiles).toBeGreaterThan(plan.roadTiles.length);
   });
+
+  it("prefers non-controller roads outside the controller reserve while allowing the controller road in", () => {
+    const room = createControllerReserveRoom();
+    const stampPlan = createControllerReserveStampPlan();
+    const controller = room.objects.find((object) => object.type === "controller")!;
+    installTestPathFinder({ [room.roomName]: room.terrain });
+
+    const plan = planRoads(room, stampPlan);
+    const nonControllerReserveTiles = plan.paths
+      .filter((path) => path.kind !== "storage-to-controller")
+      .flatMap((path) => path.tiles.filter((tile) => range(tile, controller) <= 3));
+    const controllerRoad = plan.paths.find((path) => path.kind === "storage-to-controller")!;
+
+    expect(validateRoadPlan(room, stampPlan, plan)).toEqual([]);
+    expect(nonControllerReserveTiles).toEqual([]);
+    expect(controllerRoad.tiles.some((tile) => range(tile, controller) <= 3)).toBe(true);
+  });
 });
 
 function createSyntheticRoom(): RoomPlanningRoomData {
@@ -124,6 +141,48 @@ function createSyntheticStampPlan(): RoomStampPlan {
   };
 }
 
+function createControllerReserveRoom(): RoomPlanningRoomData {
+  return {
+    roomName: "W0N0",
+    terrain: "0".repeat(roomArea),
+    objects: [
+      { id: "controller", roomName: "W0N0", type: "controller", x: 20, y: 25 },
+      { id: "mineral", roomName: "W0N0", type: "mineral", x: 35, y: 20, mineralType: "H" },
+      { id: "source-1", roomName: "W0N0", type: "source", x: 35, y: 25 },
+      { id: "source-2", roomName: "W0N0", type: "source", x: 35, y: 35 }
+    ]
+  };
+}
+
+function createControllerReserveStampPlan(): RoomStampPlan {
+  const hub = createPlacement("hub", "hub", { x: 5, y: 25 }, {
+    storage: { x: 5, y: 25 },
+    terminal: { x: 5, y: 27 },
+    hubCenter: { x: 6, y: 26 }
+  });
+  const pod1 = createPlacement("fastfiller", "pod1", { x: 8, y: 20 }, {
+    container: { x: 8, y: 20 }
+  });
+  const pod2 = createPlacement("fastfiller", "pod2", { x: 8, y: 30 }, {
+    container: { x: 8, y: 30 }
+  });
+  const labs = createPlacement("labs", "labs", { x: 10, y: 35 }, {
+    entrance: { x: 10, y: 35 }
+  });
+
+  return {
+    roomName: "W0N0",
+    policy: "normal",
+    topK: 1,
+    score: [],
+    stamps: {
+      hub,
+      fastfillers: [pod1, pod2],
+      labs
+    }
+  };
+}
+
 function createPlacement(
   kind: StampKind,
   label: string,
@@ -139,4 +198,8 @@ function createPlacement(
     blockedTiles: Object.values(anchors).map((coord) => coord.y * 50 + coord.x),
     score: []
   };
+}
+
+function range(left: RoomStampAnchor, right: RoomStampAnchor): number {
+  return Math.max(Math.abs(left.x - right.x), Math.abs(left.y - right.y));
 }

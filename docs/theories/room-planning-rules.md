@@ -105,6 +105,8 @@ Stamps MUST be selected sequentially so each placement accounts for pathing arou
 
 Primary roads MUST be planned after the hub, fastfiller pods, and lab stamp have been placed. Each subsequent road MUST account for previously planned roads in the pathfinding cost matrix, promoting reuse.
 
+Roads other than `storage -> controller` SHOULD prefer to avoid controller range `3` by applying a high pathfinding cost to those tiles. The `storage -> controller` road MAY enter controller range `3`.
+
 ### Paths
 
 - The planner MUST plan paths for `storage -> pod1 container` and then `storage -> pod2 container`. The planner MUST then reverse the order (`pod2` first) and plan again. The planner MUST keep the plan with the fewest unique road tiles.
@@ -134,6 +136,26 @@ Otherwise:
 - At `RCL7`, the last tile of the planned road from `terminal` to the mineral MUST have a container.
 - An extractor MUST be built on the mineral itself.
 
+## Pre-Mincut Structures
+
+The planner MUST reserve spare extensions and towers before rampart min-cut planning. These reserved structures MUST be included in the defended interior so the min-cut does not cut off valid build space.
+
+### Extensions
+
+Spare extensions SHOULD be populated along roads close to `storage` for easy access to refillers.
+
+- The planner MUST reserve the remaining RCL8 extensions not already supplied by fastfiller pods.
+- The planner MUST prioritize road-adjacent tiles in two groups: roads from `storage` to the two fastfiller pods, then all other planned roads.
+- Within each road group, the planner MUST rank candidates by path distance from `storage` over the planned road network instead of filling one road path at a time.
+- Extension candidates MUST be empty buildable tiles adjacent to the planned road network and outside reserved source, controller, edge, and stamp areas.
+
+### Towers
+
+- The planner MUST reserve tower tiles before rampart min-cut planning.
+- Candidate tiles MUST be empty buildable tiles adjacent to the planned road network and outside reserved source, controller, edge, and stamp areas.
+- Tower reservation SHOULD use the same two road groups as extension reservation.
+- Tower reservation SHOULD prefer tiles with short planned-road path distance from `storage` while spreading towers from each other.
+
 ## Ramparts
 
 - The planner MUST use a weighted min-cut algorithm to separate room exits from the defended interior.
@@ -146,6 +168,7 @@ Otherwise:
 - Controller logistics in `normal` rooms.
 - In `temple` rooms, the hub and upgrader working area.
 - Primary interior roads connecting the structures above.
+- Pre-mincut extensions and towers.
 
 ### Optional Regions
 
@@ -173,34 +196,9 @@ Otherwise:
 - The planner MUST add extra ramparts to structures (other than roads) outside the ramparts.
 - The planner MUST add extra ramparts to structures inside the ramparts but within range `2` of the outermost ring of ramparts.
 
-## Towers
-
-- The planner MUST place towers after ramparts and rampart connector roads are planned.
-- Candidate tiles MUST be empty buildable tiles adjacent to the planned road network, inside the defended footprint, and outside reserved stamps and the `temple` upgrader area.
-- `B` MUST denote the outermost ring of ramparts.
-- For tower tile `t` and rampart tile `b`, the planner MUST compute tower damage using Chebyshev range `r = range(t, b)`:
-  - `600` if `r <= 5`.
-  - `150` if `r >= 20`.
-  - `750 - 30 * r` otherwise.
-- The planner MUST place towers greedily, one at a time.
-- For each candidate tile, the planner MUST compute total damage on every tile in `B` after adding that tower.
-- The planner MUST sort those boundary-damage values ascending and compare candidates lexicographically.
-- The planner MUST choose the candidate with the best lexicographic score:
-  - maximize the worst-covered rampart tile first.
-  - then the second-worst.
-  - then the third-worst.
-  - and so on.
-- Tie-breakers MUST be applied in this order:
-  - higher average damage across all rampart tiles.
-  - better spread from already-placed towers.
-
 ## Remaining Structures
-
-Spare extensions SHOULD be populated along roads close to `storage` for easy access to refillers.
 
 ### Placement
 
-- The planner MUST take the road(s) between `storage` and the two fastfiller pods and fill any adjacent empty tiles with extensions, beginning with the tiles closest to `storage`.
-- If more room is needed, the planner MUST take the other interior road(s) and repeat the process, beginning with the tiles closest to `storage`.
 - The planner MUST repeat the process to select a spot for the `nuker`.
 - The planner MUST repeat the process to select a spot for the `observer`.

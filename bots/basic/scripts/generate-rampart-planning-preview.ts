@@ -112,6 +112,8 @@ function renderPreviewHtml(
   const stampTiles = createStampTileMap(stampPlan);
   const roadTiles = new Set(roadPlan?.roadTiles ?? []);
   const rampartTiles = new Set(rampartPlan?.rampartTiles ?? []);
+  const extensionTiles = new Set(rampartPlan?.preRampartStructures.extensions.map((placement) => placement.tile) ?? []);
+  const towerTiles = new Set(rampartPlan?.preRampartStructures.towers.map((placement) => placement.tile) ?? []);
   const outsideTiles = new Set(rampartPlan?.outsideTiles ?? []);
   const defendedTiles = new Set(rampartPlan?.defendedTiles ?? []);
   const optionalTiles = createOptionalTileMap(rampartPlan);
@@ -136,27 +138,35 @@ function renderPreviewHtml(
         outsideTiles.has(index) ? "outside" : "",
         defendedTiles.has(index) ? "defended" : "",
         roadTiles.has(index) ? "road" : "",
+        extensionTiles.has(index) ? "extension" : "",
+        towerTiles.has(index) ? "tower" : "",
         stampClass ? `stamp stamp-${stampClass}` : "",
         optional ? `optional-${optional}` : "",
         rampartTiles.has(index) ? "rampart" : ""
       ].filter(Boolean).join(" ");
       const label = rampartTiles.has(index)
         ? "R"
-        : objectType
-          ? objectType[0]?.toUpperCase() ?? ""
-          : optional
-            ? optional === "source1" ? "1" : "2"
-            : roadTiles.has(index)
-              ? "."
-              : stampClass
-                ? stampClass[0]?.toUpperCase() ?? ""
-                : "";
+        : towerTiles.has(index)
+          ? "T"
+          : extensionTiles.has(index)
+            ? "E"
+            : objectType
+              ? objectType[0]?.toUpperCase() ?? ""
+              : optional
+                ? optional === "source1" ? "1" : "2"
+                : roadTiles.has(index)
+                  ? "."
+                  : stampClass
+                    ? stampClass[0]?.toUpperCase() ?? ""
+                    : "";
       const title = [
         `${x},${y}`,
         terrainLabel(terrainCode),
         outsideTiles.has(index) ? "outside" : null,
         defendedTiles.has(index) ? "defended" : null,
         rampartTiles.has(index) ? "rampart" : null,
+        towerTiles.has(index) ? "tower" : null,
+        extensionTiles.has(index) ? "extension" : null,
         roadTiles.has(index) ? "road" : null,
         stampClass ? `stamp: ${stampClass}` : null,
         optional ? `optional region: ${optional}` : null,
@@ -241,6 +251,18 @@ function renderPreviewHtml(
       color: #0f172a;
       box-shadow: inset 0 0 0 2px #0f172a;
     }
+    .extension {
+      background: #38bdf8;
+      color: #082f49;
+      font-weight: 700;
+      filter: none;
+    }
+    .tower {
+      background: #facc15;
+      color: #422006;
+      font-weight: 700;
+      filter: none;
+    }
     .stamp-hub { outline: 1px solid rgba(59, 130, 246, 0.95); }
     .stamp-fastfiller { outline: 1px solid rgba(234, 179, 8, 0.95); }
     .stamp-labs { outline: 1px solid rgba(168, 85, 247, 0.95); }
@@ -287,12 +309,16 @@ function renderPreviewHtml(
   <div class="summary">
     <span>policy: ${escapeHtml(stampPlan.policy)}</span>
     <span>ramparts: ${rampartPlan?.rampartTiles.length ?? 0}</span>
+    <span>extensions: ${rampartPlan?.preRampartStructures.extensions.length ?? 0}</span>
+    <span>towers: ${rampartPlan?.preRampartStructures.towers.length ?? 0}</span>
     <span>roads: ${roadPlan?.roadTiles.length ?? 0}</span>
     <span>outside: ${rampartPlan?.outsideTiles.length ?? 0}</span>
     <span>defended: ${rampartPlan?.defendedTiles.length ?? 0}</span>
   </div>
   <div class="legend">
     <span>R/red: rampart cut</span>
+    <span>E: pre-cut extension</span>
+    <span>T: pre-cut tower</span>
     <span>dim: exit-reachable outside</span>
     <span>green outline: defended interior</span>
     <span>white: primary road</span>

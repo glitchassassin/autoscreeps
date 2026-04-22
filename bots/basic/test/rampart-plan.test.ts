@@ -27,6 +27,11 @@ describe("rampart planning", () => {
     expect(rampartPlan.optionalRegions.map((region) => region.key)).toEqual(["source1", "source2"]);
     expect(rampartPlan.score.rampartCount).toBe(rampartPlan.rampartTiles.length);
     expect(rampartPlan.score.totalCost).toBeGreaterThanOrEqual(rampartPlan.score.rampartBaseCost);
+    expect(rampartPlan.preRampartStructures.extensions).toHaveLength(36);
+    expect(rampartPlan.preRampartStructures.towers).toHaveLength(6);
+    for (const tile of rampartPlan.preRampartStructures.structureTiles) {
+      expect(rampartPlan.defendedTiles).toContain(tile);
+    }
   }, 20_000);
 
   it("is deterministic for the same room, stamp, and road inputs", () => {

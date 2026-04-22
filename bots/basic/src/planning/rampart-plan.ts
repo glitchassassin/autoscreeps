@@ -1,5 +1,11 @@
 import { createDijkstraMap, dijkstraUnreachable, type DijkstraMap } from "./dijkstra-map.ts";
 import { createFloodFill } from "./flood-fill.ts";
+import {
+  planPreRampartStructures,
+  validatePreRampartStructurePlan,
+  type PreRampartStructurePlan,
+  type PreRampartStructurePlanOptions
+} from "./pre-rampart-structures.ts";
 import type { RoadPlan, RoadPlanPath, RoadPlanPathKind } from "./road-plan.ts";
 import type { RoomPlanningObject, RoomPlanningRoomData } from "./room-plan.ts";
 import type { RoomStampAnchor, RoomStampPlan, StampPlacement } from "./stamp-placement.ts";
@@ -37,6 +43,7 @@ export type RampartPlan = {
   ramparts: RoomStampAnchor[];
   outsideTiles: number[];
   defendedTiles: number[];
+  preRampartStructures: PreRampartStructurePlan;
   optionalRegions: [RampartOptionalRegionPlan, RampartOptionalRegionPlan];
   score: RampartPlanScore;
 };
@@ -45,11 +52,15 @@ export type RampartPlanOptions = {
   rampartCostScale?: number;
   hubDistanceWeight?: number;
   sourceRegionPenaltyRamparts?: number | [number, number];
+  preRampartStructures?: PreRampartStructurePlan | null;
+  preRampartStructureOptions?: PreRampartStructurePlanOptions;
 };
 
 type RampartPlanConfig = {
   rampartCostScale: number;
   hubDistanceWeight: number;
+  preRampartStructures: PreRampartStructurePlan | null;
+  preRampartStructureOptions: PreRampartStructurePlanOptions;
   sourceRegionPenalties: [number, number];
 };
 
@@ -67,6 +78,7 @@ type RampartPlanningContext = {
   walkable: Uint8Array;
   exits: number[];
   mustDefend: Uint8Array;
+  preRampartStructures: PreRampartStructurePlan;
   optionalRegions: [OptionalRegion, OptionalRegion];
   hubDistanceMap: DijkstraMap;
 };
@@ -117,6 +129,7 @@ export function planRamparts(
     ramparts: rampartTiles.map(fromIndex),
     outsideTiles,
     defendedTiles,
+    preRampartStructures: context.preRampartStructures,
     optionalRegions,
     score
   };
@@ -137,7 +150,11 @@ export function validateRampartPlan(
     errors.push(`Rampart plan policy '${rampartPlan.policy}' does not match stamp policy '${stampPlan.policy}'.`);
   }
 
-  const context = createRampartPlanningContext(room, stampPlan, roadPlan, normalizeOptions(options));
+  const context = createRampartPlanningContext(room, stampPlan, roadPlan, normalizeOptions({
+    ...options,
+    preRampartStructures: rampartPlan.preRampartStructures
+  }));
+  errors.push(...validatePreRampartStructurePlan(room, stampPlan, roadPlan, rampartPlan.preRampartStructures));
   const rampartMask = new Uint8Array(roomArea);
   let previousTile = -1;
 
@@ -294,7 +311,9 @@ function createRampartPlanningContext(
   const hubCenter = stampPlan.stamps.hub.anchors.hubCenter ?? stampPlan.stamps.hub.anchor;
   const hubDistanceMap = createDijkstraMap(room.terrain, [hubCenter]);
   const roadMask = createRoadMask(roadPlan);
-  const mustDefend = createMustDefendMask(room, stampPlan, roadPlan, walkable);
+  const preRampartStructures = config.preRampartStructures
+    ?? planPreRampartStructures(room, stampPlan, roadPlan, config.preRampartStructureOptions);
+  const mustDefend = createMustDefendMask(room, stampPlan, roadPlan, preRampartStructures, walkable);
   const optionalRegions = createOptionalRegions(room, roadPlan, walkable, roadMask, hubDistanceMap, config);
 
   return {
@@ -305,6 +324,7 @@ function createRampartPlanningContext(
     walkable,
     exits,
     mustDefend,
+    preRampartStructures,
     optionalRegions,
     hubDistanceMap
   };
@@ -314,6 +334,7 @@ function createMustDefendMask(
   room: RoomPlanningRoomData,
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
+  preRampartStructures: PreRampartStructurePlan,
   walkable: Uint8Array
 ): Uint8Array {
   const mask = new Uint8Array(roomArea);
@@ -328,6 +349,12 @@ function createMustDefendMask(
 
   for (const kind of getMandatoryRoadKinds(stampPlan.policy)) {
     addPathToMask(mask, walkable, requirePath(roadPlan, kind));
+  }
+
+  for (const placement of preRampartStructures.structures) {
+    if (isValidIndex(placement.tile) && walkable[placement.tile] !== 0) {
+      mask[placement.tile] = 1;
+    }
   }
 
   if (stampPlan.policy === "temple") {
@@ -634,6 +661,8 @@ function normalizeOptions(options: RampartPlanOptions): RampartPlanConfig {
   return {
     rampartCostScale,
     hubDistanceWeight,
+    preRampartStructures: options.preRampartStructures ?? null,
+    preRampartStructureOptions: options.preRampartStructureOptions ?? {},
     sourceRegionPenalties: [
       normalizePenalty(penaltyRamparts[0]!, rampartCostScale, "source1"),
       normalizePenalty(penaltyRamparts[1]!, rampartCostScale, "source2")

@@ -97,6 +97,8 @@ async function main(): Promise<void> {
     process.stdout.write(
       `  ${result.roomName}: ${formatNs(result.averageNs)} avg`
       + ` | ramparts=${result.ramparts}`
+      + ` | extensions=${result.extensions}`
+      + ` | towers=${result.towers}`
       + ` | defended=${result.defendedTiles}`
       + ` | optional=${result.optionalProtected}/2\n`
     );
@@ -210,6 +212,8 @@ function measurePerRoom(cases: BenchmarkCase[], config: BenchmarkConfig, seed: n
     roomName: string;
     averageNs: bigint;
     ramparts: number;
+    extensions: number;
+    towers: number;
     defendedTiles: number;
     optionalProtected: number;
   }>;
@@ -220,6 +224,8 @@ function measurePerRoom(cases: BenchmarkCase[], config: BenchmarkConfig, seed: n
     roomName: string;
     averageNs: bigint;
     ramparts: number;
+    extensions: number;
+    towers: number;
     defendedTiles: number;
     optionalProtected: number;
   }> = [];
@@ -238,6 +244,8 @@ function measurePerRoom(cases: BenchmarkCase[], config: BenchmarkConfig, seed: n
       roomName: testCase.roomName,
       averageNs: duration / BigInt(config.perRoomIterations),
       ramparts: plan.rampartTiles.length,
+      extensions: plan.preRampartStructures.extensions.length,
+      towers: plan.preRampartStructures.towers.length,
       defendedTiles: plan.defendedTiles.length,
       optionalProtected: plan.optionalRegions.filter((region) => region.protected).length
     });
@@ -255,6 +263,8 @@ function updateChecksum(seed: number, plan: RampartPlan): number {
   let checksum = (
     (seed * 33)
     ^ plan.rampartTiles.length
+    ^ (plan.preRampartStructures.extensions.length << 1)
+    ^ (plan.preRampartStructures.towers.length << 2)
     ^ (plan.defendedTiles.length << 3)
     ^ (plan.outsideTiles.length << 7)
     ^ plan.optionalRegions.filter((region) => region.protected).length

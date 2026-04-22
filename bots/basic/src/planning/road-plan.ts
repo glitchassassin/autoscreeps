@@ -7,7 +7,9 @@ const terrainMaskWall = 1;
 const defaultPlainCost = 2;
 const defaultSwampCost = 10;
 const defaultRoadReuseCost = 1;
+const defaultControllerReserveRoadCost = 50;
 const defaultMaxOps = 10_000;
+const controllerReserveRange = 3;
 
 export type RoadPlanPathKind =
   | "storage-to-pod1"
@@ -46,6 +48,7 @@ export type RoadPlanOptions = {
   plainCost?: number;
   swampCost?: number;
   roadReuseCost?: number;
+  controllerReserveRoadCost?: number;
   maxOps?: number;
 };
 
@@ -237,6 +240,7 @@ function createRoadPlanningContext(room: RoomPlanningRoomData, stampPlan: RoomSt
   room: RoomPlanningRoomData;
   stampPlan: RoomStampPlan;
   blocked: Uint8Array;
+  controllerReserveMask: Uint8Array;
   storage: RoadPlanEndpoint;
   terminal: RoadPlanEndpoint;
   controller: RoomPlanningObject;
@@ -253,6 +257,7 @@ function createRoadPlanningContext(room: RoomPlanningRoomData, stampPlan: RoomSt
     room,
     stampPlan,
     blocked: createBlockedMask(room, stampPlan),
+    controllerReserveMask: createControllerReserveMask(controller),
     storage: {
       ...storage,
       label: "storage",
@@ -370,7 +375,12 @@ function searchRoadPath(
   roadMask: Uint8Array,
   request: RoadPathRequest
 ): RoadPlanPath {
-  const matrix = createCostMatrix(context.blocked, roadMask, config.roadReuseCost);
+  const matrix = createCostMatrix(
+    context.blocked,
+    roadMask,
+    request.kind === "storage-to-controller" ? null : context.controllerReserveMask,
+    config
+  );
   matrix.set(request.origin.x, request.origin.y, 0);
   const search = PathFinder.search(
     toRoomPosition(request.origin, context.room.roomName),
@@ -406,7 +416,12 @@ function searchRoadPath(
   };
 }
 
-function createCostMatrix(blocked: Uint8Array, roadMask: Uint8Array, roadReuseCost: number): CostMatrix {
+function createCostMatrix(
+  blocked: Uint8Array,
+  roadMask: Uint8Array,
+  controllerReserveMask: Uint8Array | null,
+  config: RoadPlanConfig
+): CostMatrix {
   const matrix = new PathFinder.CostMatrix();
 
   for (let index = 0; index < roomArea; index += 1) {
@@ -415,8 +430,12 @@ function createCostMatrix(blocked: Uint8Array, roadMask: Uint8Array, roadReuseCo
       matrix.set(coord.x, coord.y, 255);
       continue;
     }
+    if (controllerReserveMask?.[index] !== 0) {
+      matrix.set(coord.x, coord.y, config.controllerReserveRoadCost);
+      continue;
+    }
     if (roadMask[index] !== 0) {
-      matrix.set(coord.x, coord.y, roadReuseCost);
+      matrix.set(coord.x, coord.y, config.roadReuseCost);
     }
   }
 
@@ -492,8 +511,23 @@ function normalizeOptions(options: RoadPlanOptions): RoadPlanConfig {
     plainCost: options.plainCost ?? defaultPlainCost,
     swampCost: options.swampCost ?? defaultSwampCost,
     roadReuseCost: options.roadReuseCost ?? defaultRoadReuseCost,
+    controllerReserveRoadCost: options.controllerReserveRoadCost ?? defaultControllerReserveRoadCost,
     maxOps: options.maxOps ?? defaultMaxOps
   };
+}
+
+function createControllerReserveMask(controller: RoomPlanningObject): Uint8Array {
+  const mask = new Uint8Array(roomArea);
+
+  for (let y = Math.max(0, controller.y - controllerReserveRange); y <= Math.min(roomSize - 1, controller.y + controllerReserveRange); y += 1) {
+    for (let x = Math.max(0, controller.x - controllerReserveRange); x <= Math.min(roomSize - 1, controller.x + controllerReserveRange); x += 1) {
+      if (range({ x, y }, controller) <= controllerReserveRange) {
+        mask[toIndex(x, y)] = 1;
+      }
+    }
+  }
+
+  return mask;
 }
 
 function requireAnchor(stamp: StampPlacement, name: string): RoomStampAnchor {
