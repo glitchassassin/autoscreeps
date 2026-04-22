@@ -24,7 +24,7 @@ describe("rampart planning", () => {
     expect(validateRampartPlan(testCase.room, testCase.plan, roadPlan, rampartPlan)).toEqual([]);
     expect(rampartPlan.rampartTiles.length).toBeGreaterThan(0);
     expect(rampartPlan.ramparts).toHaveLength(rampartPlan.rampartTiles.length);
-    expect(rampartPlan.optionalRegions.map((region) => region.key)).toEqual(["source1", "source2"]);
+    expect(rampartPlan.optionalRegions.map((region) => region.key)).toEqual(["source1", "source2", "controller"]);
     expect(rampartPlan.score.rampartCount).toBe(rampartPlan.rampartTiles.length);
     expect(rampartPlan.score.totalCost).toBeGreaterThanOrEqual(rampartPlan.score.rampartBaseCost);
     expect(rampartPlan.preRampartStructures.extraStructures).toHaveLength(42);
@@ -45,6 +45,23 @@ describe("rampart planning", () => {
     const roadPlan = planRoads(testCase.room, testCase.plan);
 
     expect(planRamparts(testCase.room, testCase.plan, roadPlan)).toEqual(planRamparts(testCase.room, testCase.plan, roadPlan));
+  }, 20_000);
+
+  it("protects controller access while treating the controller road as an optional region", () => {
+    const testCase = loadBotarena212RoadPlanningFixture().cases.find((candidate) => candidate.roomName === "E11N4")!;
+    const roadPlan = planRoads(testCase.room, testCase.plan);
+    const rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan);
+    const controllerPath = roadPlan.paths.find((path) => path.kind === "storage-to-controller")!;
+    const controller = testCase.room.objects.find((object) => object.type === "controller")!;
+    const controllerAccessTiles = collectWalkableRangeTiles(testCase.room, controller, 1);
+
+    expect(validateRampartPlan(testCase.room, testCase.plan, roadPlan, rampartPlan)).toEqual([]);
+    expect(rampartPlan.rampartTiles.some((tile) => controllerPath.roadTiles.includes(tile))).toBe(true);
+    expect(rampartPlan.optionalRegions.find((region) => region.key === "controller")?.tiles)
+      .toEqual([...controllerPath.roadTiles].sort((left, right) => left - right));
+    for (const tile of controllerAccessTiles) {
+      expect(rampartPlan.outsideTiles).not.toContain(tile);
+    }
   }, 20_000);
 
   it("uses independent source penalties to decide whether an optional region is inside", () => {
@@ -185,4 +202,28 @@ function fromIndex(index: number): RoomStampAnchor {
     x: index % roomSize,
     y: Math.floor(index / roomSize)
   };
+}
+
+function collectWalkableRangeTiles(
+  room: RoomPlanningRoomData,
+  center: RoomStampAnchor,
+  rangeLimit: number
+): number[] {
+  const tiles: number[] = [];
+  const blockers = new Set(room.objects
+    .filter((object) => object.type === "controller" || object.type === "source" || object.type === "mineral" || object.type === "deposit")
+    .map((object) => object.y * roomSize + object.x));
+
+  for (let y = Math.max(0, center.y - rangeLimit); y <= Math.min(roomSize - 1, center.y + rangeLimit); y += 1) {
+    for (let x = Math.max(0, center.x - rangeLimit); x <= Math.min(roomSize - 1, center.x + rangeLimit); x += 1) {
+      const tile = y * roomSize + x;
+      if (Math.max(Math.abs(center.x - x), Math.abs(center.y - y)) <= rangeLimit
+        && (room.terrain.charCodeAt(tile) - 48 & 1) === 0
+        && !blockers.has(tile)) {
+        tiles.push(tile);
+      }
+    }
+  }
+
+  return tiles;
 }

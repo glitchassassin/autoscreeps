@@ -155,15 +155,18 @@ Extra-structure slots SHOULD be populated along roads close to `storage` for eas
 ## Ramparts
 
 - The planner MUST use a weighted min-cut algorithm to separate room exits from the defended interior.
+- Mandatory road tiles MAY carry the rampart cut line because roads and ramparts can share a tile.
+- The controller MUST be protected by forcing its walkable range `1` access tiles onto the defended side; those controller-access tiles MAY carry the rampart cut line.
+- Mandatory non-road structures MUST remain on the defended side of the cut.
 
 ### Must Defend
 
 - Hub.
 - Fastfiller pods.
 - Lab stamp in `normal` rooms.
-- Controller logistics in `normal` rooms.
+- Controller access tiles at range `1`.
 - In `temple` rooms, the hub and upgrader working area.
-- Primary interior roads connecting the structures above.
+- Primary interior roads connecting the hub, fastfiller pods, and lab stamp.
 - Pre-mincut access roads.
 - Pre-mincut extra-structure slots.
 
@@ -171,7 +174,9 @@ Extra-structure slots SHOULD be populated along roads close to `storage` for eas
 
 - `source1` region.
 - `source2` region.
+- `controller` region.
 - A source region MUST include the source-adjacent container, link, and road endpoint.
+- The controller region MUST include the planned `storage -> controller` road path.
 
 ### Objective
 
@@ -184,7 +189,7 @@ Extra-structure slots SHOULD be populated along roads close to `storage` for eas
 - Core protection MUST be mandatory and MUST NOT be weighted.
 - Each rampart tile MUST have base cost `1`.
 - Each rampart tile MUST get a small additional cost based on path distance from the hub.
-- `source1` and `source2` MUST be weighted independently as optional benefits.
+- `source1`, `source2`, and `controller` MUST be weighted as optional benefits.
 
 ### Post-Processing
 

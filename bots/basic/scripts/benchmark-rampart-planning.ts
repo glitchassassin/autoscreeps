@@ -120,7 +120,7 @@ async function main(): Promise<void> {
       + ` | accessRoads=${result.accessRoads}`
       + ` | extensionDistance=${result.extensionDistanceTotal}`
       + ` | defended=${result.defendedTiles}`
-      + ` | optional=${result.optionalProtected}/2\n`
+      + ` | optional=${result.optionalProtected}/${result.optionalTotal}\n`
     );
   }
 
@@ -273,6 +273,7 @@ function measurePerRoom(cases: BenchmarkCase[], config: BenchmarkConfig, seed: n
     extensionDistanceMax: number;
     defendedTiles: number;
     optionalProtected: number;
+    optionalTotal: number;
   }>;
   checksum: number;
 } {
@@ -289,6 +290,7 @@ function measurePerRoom(cases: BenchmarkCase[], config: BenchmarkConfig, seed: n
     extensionDistanceMax: number;
     defendedTiles: number;
     optionalProtected: number;
+    optionalTotal: number;
   }> = [];
 
   for (const testCase of cases) {
@@ -313,7 +315,8 @@ function measurePerRoom(cases: BenchmarkCase[], config: BenchmarkConfig, seed: n
       extensionDistanceAverage: extensionDistance.average,
       extensionDistanceMax: extensionDistance.max,
       defendedTiles: plan.defendedTiles.length,
-      optionalProtected: plan.optionalRegions.filter((region) => region.protected).length
+      optionalProtected: plan.optionalRegions.filter((region) => region.protected).length,
+      optionalTotal: plan.optionalRegions.length
     });
   }
 

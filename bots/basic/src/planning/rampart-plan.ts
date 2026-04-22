@@ -17,13 +17,14 @@ const terrainMaskWall = 1;
 const defaultRampartCostScale = 10_000;
 const defaultHubDistanceWeight = 1;
 const defaultSourceRegionPenaltyRamparts = 8;
+const defaultControllerRegionPenaltyRamparts = 8;
 const impossibleCapacity = 1_000_000_000;
 const maxTowers = 6;
 const towerControllerReserveRange = 3;
 const towerSourceReserveRange = 2;
 const towerEdgeReserveRange = 2;
 
-export type RampartOptionalRegionKey = "source1" | "source2";
+export type RampartOptionalRegionKey = "source1" | "source2" | "controller";
 
 export type RampartOptionalRegionPlan = {
   key: RampartOptionalRegionKey;
@@ -63,7 +64,7 @@ export type RampartPlan = {
   extensions: RampartExtensionPlacement[];
   towerTiles: number[];
   towers: RampartTowerPlacement[];
-  optionalRegions: [RampartOptionalRegionPlan, RampartOptionalRegionPlan];
+  optionalRegions: RampartOptionalRegionPlan[];
   score: RampartPlanScore;
 };
 
@@ -71,6 +72,7 @@ export type RampartPlanOptions = {
   rampartCostScale?: number;
   hubDistanceWeight?: number;
   sourceRegionPenaltyRamparts?: number | [number, number];
+  controllerRegionPenaltyRamparts?: number;
   preRampartStructures?: PreRampartStructurePlan | null;
   preRampartStructureOptions?: PreRampartStructurePlanOptions;
 };
@@ -81,6 +83,7 @@ type RampartPlanConfig = {
   preRampartStructures: PreRampartStructurePlan | null;
   preRampartStructureOptions: PreRampartStructurePlanOptions;
   sourceRegionPenalties: [number, number];
+  controllerRegionPenalty: number;
 };
 
 type OptionalRegion = {
@@ -97,8 +100,9 @@ type RampartPlanningContext = {
   walkable: Uint8Array;
   exits: number[];
   mustDefend: Uint8Array;
+  rampartAllowedOnMustDefend: Uint8Array;
   preRampartStructures: PreRampartStructurePlan;
-  optionalRegions: [OptionalRegion, OptionalRegion];
+  optionalRegions: OptionalRegion[];
   hubDistanceMap: DijkstraMap;
 };
 
@@ -173,10 +177,7 @@ export function planRamparts(
   const defendedTiles = collectDefendedTiles(context.walkable, outsideMask, rampartMask);
   const towers = planTowers(context, rampartTiles, defendedTiles);
   const extensions = planExtensions(context.preRampartStructures, towers);
-  const optionalRegions = context.optionalRegions.map((region) => createOptionalRegionPlan(region, outsideMask)) as [
-    RampartOptionalRegionPlan,
-    RampartOptionalRegionPlan
-  ];
+  const optionalRegions = context.optionalRegions.map((region) => createOptionalRegionPlan(region, outsideMask));
   const score = createRampartScore(context, graph, rampartTiles, optionalRegions, result.cutCapacity);
 
   return {
@@ -233,8 +234,8 @@ export function validateRampartPlan(
     if (!isRampartBuildable(context, tile)) {
       errors.push(`Rampart tile ${coord.x},${coord.y} is not buildable for the cut line.`);
     }
-    if (context.mustDefend[tile] !== 0) {
-      errors.push(`Rampart tile ${coord.x},${coord.y} overlaps a mandatory defended tile.`);
+    if (context.mustDefend[tile] !== 0 && context.rampartAllowedOnMustDefend[tile] === 0) {
+      errors.push(`Rampart tile ${coord.x},${coord.y} overlaps a non-rampartable mandatory defended tile.`);
     }
     rampartMask[tile] = 1;
   }
@@ -348,7 +349,10 @@ function addEdge(edges: WeightedMinCutEdge[], cutEdgeToTile: number[], from: num
 }
 
 function getTileCutCost(context: RampartPlanningContext, tile: number): number {
-  if (context.mustDefend[tile] !== 0 || !isRampartBuildable(context, tile)) {
+  if (!isRampartBuildable(context, tile)) {
+    return impossibleCapacity;
+  }
+  if (context.mustDefend[tile] !== 0 && context.rampartAllowedOnMustDefend[tile] === 0) {
     return impossibleCapacity;
   }
 
@@ -378,6 +382,7 @@ function createRampartPlanningContext(
   const preRampartStructures = config.preRampartStructures
     ?? planPreRampartStructures(room, stampPlan, roadPlan, config.preRampartStructureOptions);
   const mustDefend = createMustDefendMask(room, stampPlan, roadPlan, preRampartStructures, walkable);
+  const rampartAllowedOnMustDefend = createRampartAllowedOnMustDefendMask(room, stampPlan, roadPlan, preRampartStructures, walkable);
   const optionalRegions = createOptionalRegions(room, roadPlan, walkable, roadMask, hubDistanceMap, config);
 
   return {
@@ -388,6 +393,7 @@ function createRampartPlanningContext(
     walkable,
     exits,
     mustDefend,
+    rampartAllowedOnMustDefend,
     preRampartStructures,
     optionalRegions,
     hubDistanceMap
@@ -410,6 +416,8 @@ function createMustDefendMask(
   if (stampPlan.policy === "normal" && stampPlan.stamps.labs !== null) {
     addStampToMask(mask, walkable, stampPlan.stamps.labs);
   }
+
+  addControllerRangeToMask(mask, walkable, requireObject(room, "controller"), 1);
 
   for (const kind of getMandatoryRoadKinds(stampPlan.policy)) {
     addPathToMask(mask, walkable, requirePath(roadPlan, kind));
@@ -442,12 +450,51 @@ function createMustDefendMask(
   return mask;
 }
 
+function createRampartAllowedOnMustDefendMask(
+  room: RoomPlanningRoomData,
+  stampPlan: RoomStampPlan,
+  roadPlan: RoadPlan,
+  preRampartStructures: PreRampartStructurePlan,
+  walkable: Uint8Array
+): Uint8Array {
+  const mask = new Uint8Array(roomArea);
+
+  addControllerRangeToMask(mask, walkable, requireObject(room, "controller"), 1);
+
+  for (const kind of getMandatoryRoadKinds(stampPlan.policy)) {
+    addPathToMask(mask, walkable, requirePath(roadPlan, kind));
+  }
+
+  for (const tile of preRampartStructures.accessRoadTiles) {
+    if (isValidIndex(tile) && walkable[tile] !== 0) {
+      mask[tile] = 1;
+    }
+  }
+
+  return mask;
+}
+
+function addControllerRangeToMask(
+  mask: Uint8Array,
+  walkable: Uint8Array,
+  controller: RoomPlanningObject,
+  rangeLimit: number
+): void {
+  for (let y = Math.max(0, controller.y - rangeLimit); y <= Math.min(roomSize - 1, controller.y + rangeLimit); y += 1) {
+    for (let x = Math.max(0, controller.x - rangeLimit); x <= Math.min(roomSize - 1, controller.x + rangeLimit); x += 1) {
+      const tile = toIndex(x, y);
+      if (walkable[tile] !== 0 && range({ x, y }, controller) <= rangeLimit) {
+        mask[tile] = 1;
+      }
+    }
+  }
+}
+
 function getMandatoryRoadKinds(policy: RoomStampPlan["policy"]): RoadPlanPathKind[] {
   return [
     "storage-to-pod1",
     "storage-to-pod2",
-    ...(policy === "normal" ? ["terminal-to-labs" as const] : []),
-    "storage-to-controller"
+    ...(policy === "normal" ? ["terminal-to-labs" as const] : [])
   ];
 }
 
@@ -474,10 +521,10 @@ function createOptionalRegions(
   roadMask: Uint8Array,
   hubDistanceMap: DijkstraMap,
   config: RampartPlanConfig
-): [OptionalRegion, OptionalRegion] {
+): OptionalRegion[] {
   const sources = getSources(room);
 
-  return sources.map((source, index) => {
+  const sourceRegions: OptionalRegion[] = sources.map((source, index) => {
     const path = requirePath(roadPlan, index === 0 ? "storage-to-source1" : "storage-to-source2");
     const endpointTile = path.roadTiles.at(-1);
     if (endpointTile === undefined) {
@@ -500,11 +547,41 @@ function createOptionalRegions(
     }
 
     return {
-      key: index === 0 ? "source1" : "source2",
+      key: index === 0 ? "source1" as const : "source2" as const,
       tiles: [...tiles].sort((left, right) => left - right),
       penalty: config.sourceRegionPenalties[index]!
     };
-  }) as [OptionalRegion, OptionalRegion];
+  });
+
+  return [
+    ...sourceRegions,
+    createControllerRegion(room, roadPlan, walkable, config)
+  ];
+}
+
+function createControllerRegion(
+  room: RoomPlanningRoomData,
+  roadPlan: RoadPlan,
+  walkable: Uint8Array,
+  config: RampartPlanConfig
+): OptionalRegion {
+  const controller = requireObject(room, "controller");
+  const path = requirePath(roadPlan, "storage-to-controller");
+  const endpointTile = path.roadTiles.at(-1);
+  if (endpointTile === undefined) {
+    throw new Error("storage-to-controller path has no controller endpoint tile.");
+  }
+
+  const endpoint = fromIndex(endpointTile);
+  if (range(endpoint, controller) > 3) {
+    throw new Error(`storage-to-controller endpoint ${endpoint.x},${endpoint.y} is not in range 3 of the controller.`);
+  }
+
+  return {
+    key: "controller",
+    tiles: path.roadTiles.filter((tile) => isValidIndex(tile) && walkable[tile] !== 0).sort(compareNumbers),
+    penalty: config.controllerRegionPenalty
+  };
 }
 
 function chooseSourceLinkTile(
@@ -543,7 +620,7 @@ function createRampartScore(
   context: RampartPlanningContext,
   graph: RoomCutGraph,
   rampartTiles: number[],
-  optionalRegions: [RampartOptionalRegionPlan, RampartOptionalRegionPlan],
+  optionalRegions: RampartOptionalRegionPlan[],
   totalCost: number
 ): RampartPlanScore {
   let rampartDistanceCost = 0;
@@ -990,11 +1067,12 @@ function addExitIfWalkable(exits: number[], walkable: Uint8Array, x: number, y: 
 
 function isRampartBuildable(context: RampartPlanningContext, tile: number): boolean {
   const coord = fromIndex(tile);
+  const edgeOffset = context.mustDefend[tile] !== 0 && context.rampartAllowedOnMustDefend[tile] !== 0 ? 0 : 1;
   return context.walkable[tile] !== 0
-    && coord.x > 1
-    && coord.y > 1
-    && coord.x < roomSize - 2
-    && coord.y < roomSize - 2;
+    && coord.x > edgeOffset
+    && coord.y > edgeOffset
+    && coord.x < roomSize - 1 - edgeOffset
+    && coord.y < roomSize - 1 - edgeOffset;
 }
 
 function requirePath(roadPlan: RoadPlan, kind: RoadPlanPathKind): RoadPlanPath {
@@ -1038,6 +1116,11 @@ function normalizeOptions(options: RampartPlanOptions): RampartPlanConfig {
     hubDistanceWeight,
     preRampartStructures: options.preRampartStructures ?? null,
     preRampartStructureOptions: options.preRampartStructureOptions ?? {},
+    controllerRegionPenalty: normalizePenalty(
+      options.controllerRegionPenaltyRamparts ?? defaultControllerRegionPenaltyRamparts,
+      rampartCostScale,
+      "controller"
+    ),
     sourceRegionPenalties: [
       normalizePenalty(penaltyRamparts[0]!, rampartCostScale, "source1"),
       normalizePenalty(penaltyRamparts[1]!, rampartCostScale, "source2")
@@ -1047,7 +1130,7 @@ function normalizeOptions(options: RampartPlanOptions): RampartPlanConfig {
 
 function normalizePenalty(value: number, rampartCostScale: number, label: string): number {
   if (!Number.isFinite(value) || value < 0) {
-    throw new Error(`${label} sourceRegionPenaltyRamparts must be a finite non-negative number, received ${value}.`);
+    throw new Error(`${label} optional region penalty must be a finite non-negative number, received ${value}.`);
   }
   return Math.round(value * rampartCostScale);
 }
