@@ -27,6 +27,8 @@ export type StampPlacement = {
   anchor: RoomStampAnchor;
   anchors: Record<string, RoomStampAnchor>;
   blockedTiles: number[];
+  pathBlockedTiles?: number[];
+  roadTiles?: number[];
   score: number[];
 };
 
@@ -99,6 +101,8 @@ type StampTemplate = {
   label: string;
   rotations: readonly StampRotation[];
   blockedOffsets: Coord[];
+  pathBlockedOffsets?: Coord[];
+  roadOffsets?: Coord[];
   anchors: Record<string, Coord>;
 };
 
@@ -751,7 +755,7 @@ function scoreLabAccess(
   }
 
   const entrance = labs.anchors.entrance ?? labs.anchor;
-  const accessGoals = getPathGoals(features, state, entrance, features.reservedPathMasks.default);
+  const accessGoals = getDirectPathGoals(features, state, entrance, features.reservedPathMasks.default);
   if (accessGoals.length === 0) {
     return null;
   }
@@ -954,6 +958,9 @@ function placeStamp(state: PlacementState, placement: StampPlacement): Placement
 
   for (const tile of placement.blockedTiles) {
     occupied[tile] = 1;
+  }
+
+  for (const tile of getStampPathBlockedTiles(placement)) {
     pathBlocked[tile] = 1;
   }
 
@@ -980,24 +987,11 @@ function fitsStamp(features: RoomFeatures, state: PlacementState, placement: Sta
 }
 
 function projectStamp(template: StampTemplate, anchor: Coord, rotation: StampRotation, score: number[]): Candidate {
-  const blockedTiles: number[] = [];
-  const seenTiles = new Set<number>();
-
-  for (const offset of template.blockedOffsets) {
-    const rotated = rotateOffset(offset, rotation);
-    const x = anchor.x + rotated.x;
-    const y = anchor.y + rotated.y;
-    if (!isInRoom(x, y)) {
-      blockedTiles.push(-1);
-      continue;
-    }
-
-    const tile = toIndex(x, y);
-    if (!seenTiles.has(tile)) {
-      seenTiles.add(tile);
-      blockedTiles.push(tile);
-    }
-  }
+  const blockedTiles = projectOffsets(template.blockedOffsets, anchor, rotation);
+  const pathBlockedTiles = template.pathBlockedOffsets
+    ? projectOffsets(template.pathBlockedOffsets, anchor, rotation)
+    : undefined;
+  const roadTiles = template.roadOffsets ? projectOffsets(template.roadOffsets, anchor, rotation) : undefined;
 
   const anchors: Record<string, RoomStampAnchor> = {};
   for (const [name, offset] of Object.entries(template.anchors)) {
@@ -1015,8 +1009,33 @@ function projectStamp(template: StampTemplate, anchor: Coord, rotation: StampRot
     anchor,
     anchors,
     blockedTiles,
+    pathBlockedTiles,
+    roadTiles,
     score
   };
+}
+
+function projectOffsets(offsets: Coord[], anchor: Coord, rotation: StampRotation): number[] {
+  const tiles: number[] = [];
+  const seenTiles = new Set<number>();
+
+  for (const offset of offsets) {
+    const rotated = rotateOffset(offset, rotation);
+    const x = anchor.x + rotated.x;
+    const y = anchor.y + rotated.y;
+    if (!isInRoom(x, y)) {
+      tiles.push(-1);
+      continue;
+    }
+
+    const tile = toIndex(x, y);
+    if (!seenTiles.has(tile)) {
+      seenTiles.add(tile);
+      tiles.push(tile);
+    }
+  }
+
+  return tiles;
 }
 
 function rotateOffset(offset: Coord, rotation: StampRotation): Coord {
@@ -1167,7 +1186,7 @@ function countConnectedTiles(mask: Uint8Array, seeds: Coord[]): number {
 
 function hasOpenNeighborAfterPlacement(features: RoomFeatures, state: PlacementState, placement: StampPlacement, coord: Coord): boolean {
   const blocked = new Uint8Array(state.pathBlocked);
-  for (const tile of placement.blockedTiles) {
+  for (const tile of getStampPathBlockedTiles(placement)) {
     if (tile >= 0) {
       blocked[tile] = 1;
     }
@@ -1193,6 +1212,17 @@ function getPathGoals(features: RoomFeatures, state: PlacementState, target: Coo
     && state.pathBlocked[toIndex(coord.x, coord.y)] === 0
     && reservedPathMask[toIndex(coord.x, coord.y)] === 0
   ));
+}
+
+function getDirectPathGoals(features: RoomFeatures, state: PlacementState, target: Coord, reservedPathMask: Uint8Array): Coord[] {
+  if (
+    isWalkableTerrain(features.terrain, target.x, target.y)
+    && state.pathBlocked[toIndex(target.x, target.y)] === 0
+    && reservedPathMask[toIndex(target.x, target.y)] === 0
+  ) {
+    return [target];
+  }
+  return getPathGoals(features, state, target, reservedPathMask);
 }
 
 function minDistance(map: DijkstraMap, goals: Coord[]): number {
@@ -1476,6 +1506,34 @@ function fastfillerOffsets(): Coord[] {
   return [...offsets.values()];
 }
 
+function labRoadOffsets(): Coord[] {
+  return [
+    { x: 0, y: 0 },
+    { x: 1, y: 1 },
+    { x: 2, y: 2 },
+    { x: 3, y: 3 }
+  ];
+}
+
+function labStructureOffsets(): Coord[] {
+  return [
+    { x: 1, y: 0 },
+    { x: 2, y: 0 },
+    { x: 0, y: 1 },
+    { x: 2, y: 1 },
+    { x: 3, y: 1 },
+    { x: 0, y: 2 },
+    { x: 1, y: 2 },
+    { x: 3, y: 2 },
+    { x: 1, y: 3 },
+    { x: 2, y: 3 }
+  ];
+}
+
+function labBlockedOffsets(): Coord[] {
+  return [...labRoadOffsets(), ...labStructureOffsets()];
+}
+
 const normalHubTemplate: StampTemplate = {
   kind: "hub",
   label: "hub-normal",
@@ -1514,8 +1572,14 @@ const labTemplate: StampTemplate = {
   kind: "labs",
   label: "labs",
   rotations: [0, 90, 180, 270],
-  blockedOffsets: rectangleOffsets(4, 4),
+  blockedOffsets: labBlockedOffsets(),
+  pathBlockedOffsets: labStructureOffsets(),
+  roadOffsets: labRoadOffsets(),
   anchors: {
     entrance: { x: 0, y: 0 }
   }
 };
+
+export function getStampPathBlockedTiles(stamp: StampPlacement): number[] {
+  return stamp.pathBlockedTiles ?? stamp.blockedTiles;
+}

@@ -24,6 +24,7 @@
     "preview:stamp-placement": "node scripts/generate-stamp-placement-preview.ts",
     "preview:road-planning": "node scripts/generate-road-planning-preview.ts",
     "preview:rampart-planning": "node scripts/generate-rampart-planning-preview.ts",
+    "preview:structure-planning": "node scripts/generate-structure-planning-preview.ts",
     "preview:flood-fill": "node scripts/generate-flood-fill-preview.ts",
     "watch:pserver": "vite build --watch --mode pserver",
     "test": "vitest run",

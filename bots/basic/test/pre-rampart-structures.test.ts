@@ -24,7 +24,9 @@ describe("pre-rampart structure planning", () => {
     expect(validatePreRampartStructurePlan(testCase.room, testCase.plan, roadPlan, plan)).toEqual([]);
     expect(plan.extensionCount).toBe(36);
     expect(plan.towerCount).toBe(6);
-    expect(plan.extraStructures).toHaveLength(42);
+    expect(plan.nukerCount).toBe(1);
+    expect(plan.observerCount).toBe(1);
+    expect(plan.extraStructures).toHaveLength(44);
     expect(plan.structureTiles).toEqual([...plan.structureTiles].sort((left, right) => left - right));
   });
 
@@ -32,7 +34,7 @@ describe("pre-rampart structure planning", () => {
     const room = createRoadDistanceRoom();
     const stampPlan = createRoadDistanceStampPlan();
     const roadPlan = createRoadDistanceRoadPlan();
-    const plan = planPreRampartStructures(room, stampPlan, roadPlan, { extensionCount: 1, towerCount: 0, growAccessRoads: false });
+    const plan = planPreRampartStructures(room, stampPlan, roadPlan, { extensionCount: 1, towerCount: 0, nukerCount: 0, observerCount: 0, growAccessRoads: false });
 
     expect(validatePreRampartStructurePlan(room, stampPlan, roadPlan, plan)).toEqual([]);
     expect(plan.extraStructures).toHaveLength(1);

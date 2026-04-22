@@ -11,6 +11,8 @@ const edgeReserveRange = 2;
 const maxExtensions = 60;
 const fastfillerExtensionsPerPod = 12;
 const maxTowers = 6;
+const maxNukers = 1;
+const maxObservers = 1;
 const unreachableRoadDistance = 1_000_000;
 const defaultMaxAccessRoadTiles = 24;
 const defaultAccessRoadCost = 4;
@@ -33,6 +35,8 @@ export type PreRampartStructurePlan = {
   policy: RoomStampPlan["policy"];
   extensionCount: number;
   towerCount: number;
+  nukerCount: number;
+  observerCount: number;
   accessRoadTiles: number[];
   accessRoads: RoomStampAnchor[];
   extraStructures: PreRampartStructurePlacement[];
@@ -42,6 +46,8 @@ export type PreRampartStructurePlan = {
 export type PreRampartStructurePlanOptions = {
   extensionCount?: number;
   towerCount?: number;
+  nukerCount?: number;
+  observerCount?: number;
   growAccessRoads?: boolean;
   maxAccessRoadTiles?: number;
   accessRoadCost?: number;
@@ -72,6 +78,8 @@ type Candidate = RoomStampAnchor & {
 type PreRampartStructurePlanConfig = {
   extensionCount: number;
   towerCount: number;
+  nukerCount: number;
+  observerCount: number;
   growAccessRoads: boolean;
   maxAccessRoadTiles: number;
   accessRoadCost: number;
@@ -90,9 +98,11 @@ export function planPreRampartStructures(
 ): PreRampartStructurePlan {
   const config = normalizeOptions(options, stampPlan);
   const context = createStructurePlanningContext(room, stampPlan, roadPlan);
-  const structureCount = config.extensionCount + config.towerCount;
+  const structureCount = config.extensionCount + config.towerCount + config.nukerCount + config.observerCount;
   validateTargetCount(config.extensionCount, "extensionCount");
   validateTargetCount(config.towerCount, "towerCount");
+  validateTargetCount(config.nukerCount, "nukerCount");
+  validateTargetCount(config.observerCount, "observerCount");
   validateTargetCount(config.maxAccessRoadTiles, "maxAccessRoadTiles");
   validateTargetCount(config.accessRoadCost, "accessRoadCost");
 
@@ -109,6 +119,8 @@ export function planPreRampartStructures(
     policy: stampPlan.policy,
     extensionCount: config.extensionCount,
     towerCount: config.towerCount,
+    nukerCount: config.nukerCount,
+    observerCount: config.observerCount,
     accessRoadTiles: [...context.accessRoadTiles],
     accessRoads: context.accessRoadTiles.map(fromIndex),
     extraStructures,
@@ -569,6 +581,8 @@ function normalizeOptions(options: PreRampartStructurePlanOptions, stampPlan: Ro
   return {
     extensionCount: options.extensionCount ?? Math.max(maxExtensions - stampPlan.stamps.fastfillers.length * fastfillerExtensionsPerPod, 0),
     towerCount: options.towerCount ?? maxTowers,
+    nukerCount: options.nukerCount ?? maxNukers,
+    observerCount: options.observerCount ?? maxObservers,
     growAccessRoads,
     maxAccessRoadTiles,
     accessRoadCost

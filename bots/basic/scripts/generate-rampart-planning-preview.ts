@@ -128,10 +128,13 @@ function renderPreviewHtml(
   const visiblePreRampartStructures = rampartPlan?.preRampartStructures ?? preRampartStructures;
   const stampTiles = createStampTileMap(stampPlan);
   const accessRoadTiles = new Set(visiblePreRampartStructures?.accessRoadTiles ?? []);
-  const roadTiles = new Set([...(roadPlan?.roadTiles ?? []), ...accessRoadTiles]);
+  const postRampartRoadTiles = new Set(rampartPlan?.postRampartRoadTiles ?? []);
+  const roadTiles = new Set([...(roadPlan?.roadTiles ?? []), ...accessRoadTiles, ...postRampartRoadTiles]);
   const rampartTiles = new Set(rampartPlan?.rampartTiles ?? []);
   const extensionTiles = new Set(rampartPlan?.extensions.map((placement) => placement.tile) ?? []);
   const towerTiles = new Set(rampartPlan?.towerTiles ?? []);
+  const nukerTiles = new Set(rampartPlan?.nukerTile === null || rampartPlan?.nukerTile === undefined ? [] : [rampartPlan.nukerTile]);
+  const observerTiles = new Set(rampartPlan?.observerTile === null || rampartPlan?.observerTile === undefined ? [] : [rampartPlan.observerTile]);
   const extraStructureTiles = new Set(visiblePreRampartStructures?.extraStructures.map((placement) => placement.tile) ?? []);
   const outsideTiles = new Set(rampartPlan?.outsideTiles ?? []);
   const defendedTiles = new Set(rampartPlan?.defendedTiles ?? []);
@@ -157,9 +160,12 @@ function renderPreviewHtml(
         outsideTiles.has(index) ? "outside" : "",
         defendedTiles.has(index) ? "defended" : "",
         roadTiles.has(index) ? "road" : "",
+        postRampartRoadTiles.has(index) ? "post-road" : "",
         extraStructureTiles.has(index) ? "extra-structure" : "",
         extensionTiles.has(index) ? "extension" : "",
         towerTiles.has(index) ? "tower" : "",
+        nukerTiles.has(index) ? "nuker" : "",
+        observerTiles.has(index) ? "observer" : "",
         stampClass ? `stamp stamp-${stampClass}` : "",
         optional ? `optional-${optional}` : "",
         rampartTiles.has(index) ? "rampart" : ""
@@ -168,6 +174,10 @@ function renderPreviewHtml(
         ? "R"
         : towerTiles.has(index)
           ? "T"
+          : nukerTiles.has(index)
+            ? "N"
+            : observerTiles.has(index)
+              ? "O"
           : extensionTiles.has(index)
             ? "E"
             : extraStructureTiles.has(index)
@@ -188,9 +198,12 @@ function renderPreviewHtml(
         defendedTiles.has(index) ? "defended" : null,
         rampartTiles.has(index) ? "rampart" : null,
         towerTiles.has(index) ? "tower" : null,
+        nukerTiles.has(index) ? "nuker" : null,
+        observerTiles.has(index) ? "observer" : null,
         extensionTiles.has(index) ? "extension" : null,
         extraStructureTiles.has(index) ? "extra-structure slot" : null,
         accessRoadTiles.has(index) ? "access road" : null,
+        postRampartRoadTiles.has(index) ? "post-rampart road" : null,
         roadTiles.has(index) ? "road" : null,
         stampClass ? `stamp: ${stampClass}` : null,
         optional ? `optional region: ${optional}` : null,
@@ -275,9 +288,24 @@ function renderPreviewHtml(
       color: #0f172a;
       box-shadow: inset 0 0 0 2px #0f172a;
     }
+    .post-road {
+      box-shadow: inset 0 0 0 2px #f97316;
+    }
     .extension {
       background: #38bdf8;
       color: #082f49;
+      font-weight: 700;
+      filter: none;
+    }
+    .nuker {
+      background: #fb7185;
+      color: #4c0519;
+      font-weight: 700;
+      filter: none;
+    }
+    .observer {
+      background: #34d399;
+      color: #022c22;
       font-weight: 700;
       filter: none;
     }
@@ -342,7 +370,10 @@ function renderPreviewHtml(
     <span>extra slots: ${visiblePreRampartStructures?.extraStructures.length ?? 0}</span>
     <span>extensions: ${rampartPlan?.extensions.length ?? 0}</span>
     <span>towers: ${rampartPlan?.towers.length ?? 0}</span>
+    <span>nuker: ${rampartPlan?.nuker ? 1 : 0}</span>
+    <span>observer: ${rampartPlan?.observer ? 1 : 0}</span>
     <span>access roads: ${visiblePreRampartStructures?.accessRoadTiles.length ?? 0}</span>
+    <span>post roads: ${rampartPlan?.postRampartRoadTiles.length ?? 0}</span>
     <span>roads: ${roadPlan?.roadTiles.length ?? 0}</span>
     <span>outside: ${rampartPlan?.outsideTiles.length ?? 0}</span>
     <span>defended: ${rampartPlan?.defendedTiles.length ?? 0}</span>
@@ -352,7 +383,9 @@ function renderPreviewHtml(
     <span>X: pre-cut extra-structure slot</span>
     <span>E: assigned extension</span>
     <span>T: tower coverage placement</span>
+    <span>N/O: nuker / observer</span>
     <span>extra white dots: access roads</span>
+    <span>orange outline: post-rampart road</span>
     <span>dim: exit-reachable outside</span>
     <span>green outline: defended interior</span>
     <span>white: primary road</span>

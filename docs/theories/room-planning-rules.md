@@ -83,6 +83,17 @@ The fastfiller pods are minimal extension stamps with a shared container and spa
 ## Labs
 
 - The planner MUST use a standard `4x4` lab stamp.
+- The lab stamp entrance MUST be the top-left tile.
+- The lab stamp MUST reserve a road diagonal from the entrance corner to the opposite corner.
+- The other two corners MUST be empty.
+- Every other lab stamp tile MUST contain a lab:
+
+```text
+RLL.
+LRLL
+LLRL
+.LLR
+```
 
 ### Placement
 

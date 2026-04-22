@@ -27,9 +27,19 @@ describe("rampart planning", () => {
     expect(rampartPlan.optionalRegions.map((region) => region.key)).toEqual(["source1", "source2", "controller"]);
     expect(rampartPlan.score.rampartCount).toBe(rampartPlan.rampartTiles.length);
     expect(rampartPlan.score.totalCost).toBeGreaterThanOrEqual(rampartPlan.score.rampartBaseCost);
-    expect(rampartPlan.preRampartStructures.extraStructures).toHaveLength(42);
+    expect(rampartPlan.cutRampartTiles.length).toBeGreaterThan(0);
+    expect(rampartPlan.rampartTiles).toEqual([...new Set([...rampartPlan.cutRampartTiles, ...rampartPlan.extraRampartTiles])].sort((left, right) => left - right));
+    expect(rampartPlan.postRampartRoadTiles).toEqual([...rampartPlan.postRampartRoadTiles].sort((left, right) => left - right));
+    for (const tile of rampartPlan.rampartTiles) {
+      expect(rampartPlan.postRampartRoadTiles).toContain(tile);
+    }
+    expect(rampartPlan.preRampartStructures.extraStructures).toHaveLength(44);
     expect(rampartPlan.extensions).toHaveLength(36);
     expect(rampartPlan.towers).toHaveLength(6);
+    expect(rampartPlan.nuker).not.toBeNull();
+    expect(rampartPlan.observer).not.toBeNull();
+    expect(rampartPlan.nukerTile).toBe(rampartPlan.nuker?.tile);
+    expect(rampartPlan.observerTile).toBe(rampartPlan.observer?.tile);
     expect(rampartPlan.extensionTiles).toEqual([...rampartPlan.extensionTiles].sort((left, right) => left - right));
     expect(rampartPlan.towerTiles).toEqual([...rampartPlan.towerTiles].sort((left, right) => left - right));
     for (const tile of rampartPlan.preRampartStructures.accessRoadTiles) {
@@ -46,6 +56,18 @@ describe("rampart planning", () => {
 
     expect(planRamparts(testCase.room, testCase.plan, roadPlan)).toEqual(planRamparts(testCase.room, testCase.plan, roadPlan));
   }, 20_000);
+
+  it("allocates all six towers for every cached road-plannable normal layout", () => {
+    const fixture = loadBotarena212RoadPlanningFixture();
+
+    for (const testCase of fixture.cases) {
+      const roadPlan = planRoads(testCase.room, testCase.plan);
+      const rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan);
+
+      expect(validateRampartPlan(testCase.room, testCase.plan, roadPlan, rampartPlan), testCase.roomName).toEqual([]);
+      expect(rampartPlan.towers, testCase.roomName).toHaveLength(6);
+    }
+  }, 30_000);
 
   it("protects controller access while treating the controller road as an optional region", () => {
     const testCase = loadBotarena212RoadPlanningFixture().cases.find((candidate) => candidate.roomName === "E11N4")!;
@@ -64,22 +86,23 @@ describe("rampart planning", () => {
     }
   }, 20_000);
 
-  it("uses independent source penalties to decide whether an optional region is inside", () => {
+  it("post-processes outside source endpoints with local structure ramparts", () => {
     const room = createCorridorRoom();
     const stampPlan = createCorridorStampPlan();
     const roadPlan = createCorridorRoadPlan();
     const protectedSourceEndpoint = 25 * roomSize + 15;
-    const noExtraStructures = { extensionCount: 0, towerCount: 0 };
+    const noExtraStructures = { extensionCount: 0, towerCount: 0, nukerCount: 0, observerCount: 0 };
 
     const withoutPenalty = planRamparts(room, stampPlan, roadPlan, { sourceRegionPenaltyRamparts: [0, 0], preRampartStructureOptions: noExtraStructures });
     const withPenalty = planRamparts(room, stampPlan, roadPlan, { sourceRegionPenaltyRamparts: [0, 1], preRampartStructureOptions: noExtraStructures });
 
     expect(validateRampartPlan(room, stampPlan, roadPlan, withoutPenalty, { sourceRegionPenaltyRamparts: [0, 0], preRampartStructureOptions: noExtraStructures })).toEqual([]);
     expect(validateRampartPlan(room, stampPlan, roadPlan, withPenalty, { sourceRegionPenaltyRamparts: [0, 1], preRampartStructureOptions: noExtraStructures })).toEqual([]);
-    expect(withoutPenalty.optionalRegions[1].protected).toBe(false);
+    expect(withoutPenalty.optionalRegions[1].protected).toBe(true);
     expect(withPenalty.optionalRegions[1].protected).toBe(true);
-    expect(withoutPenalty.outsideTiles).toContain(protectedSourceEndpoint);
+    expect(withoutPenalty.outsideTiles).not.toContain(protectedSourceEndpoint);
     expect(withPenalty.outsideTiles).not.toContain(protectedSourceEndpoint);
+    expect(withoutPenalty.extraRampartTiles).toContain(protectedSourceEndpoint);
   });
 });
 

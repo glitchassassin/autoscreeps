@@ -1,5 +1,5 @@
 import type { RoomPlanningObject, RoomPlanningRoomData } from "./room-plan.ts";
-import type { RoomStampAnchor, RoomStampPlan, StampPlacement } from "./stamp-placement.ts";
+import { getStampPathBlockedTiles, type RoomStampAnchor, type RoomStampPlan, type StampPlacement } from "./stamp-placement.ts";
 
 const roomSize = 50;
 const roomArea = roomSize * roomSize;
@@ -296,7 +296,7 @@ function createLabRequest(kind: RoadPlanPathKind, origin: RoadPlanEndpoint, labs
     target: {
       ...requireAnchor(labs, "entrance"),
       label: "lab entrance",
-      range: 1
+      range: 0
     }
   };
 }
@@ -478,7 +478,7 @@ function createBlockedMask(room: RoomPlanningRoomData, stampPlan: RoomStampPlan)
     ...(stampPlan.stamps.labs ? [stampPlan.stamps.labs] : [])
   ];
   for (const stamp of stamps) {
-    for (const tile of stamp.blockedTiles) {
+    for (const tile of getStampPathBlockedTiles(stamp)) {
       if (isValidIndex(tile)) {
         blocked[tile] = 1;
       }
@@ -488,6 +488,15 @@ function createBlockedMask(room: RoomPlanningRoomData, stampPlan: RoomStampPlan)
   for (const pod of stampPlan.stamps.fastfillers) {
     const container = requireAnchor(pod, "container");
     blocked[toIndex(container.x, container.y)] = 0;
+  }
+  if (stampPlan.stamps.labs !== null) {
+    const entrance = requireAnchor(stampPlan.stamps.labs, "entrance");
+    blocked[toIndex(entrance.x, entrance.y)] = 0;
+    for (const tile of stampPlan.stamps.labs.roadTiles ?? []) {
+      if (isValidIndex(tile)) {
+        blocked[tile] = 0;
+      }
+    }
   }
 
   return blocked;

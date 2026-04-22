@@ -61,13 +61,17 @@ describe("road planning", () => {
 
   it("documents cached stamp layouts that are not road-plannable", () => {
     const allStampCases = loadBotarena212NormalStampPlanFixture();
-    const byName = new Map(allStampCases.cases.map((testCase) => [testCase.roomName, testCase]));
+    const unplannableRooms: string[] = [];
 
-    for (const roomName of botarena212RoadUnplannableNormalRooms) {
-      const testCase = byName.get(roomName);
-      expect(testCase, roomName).toBeDefined();
-      expect(() => planRoads(testCase!.room, testCase!.plan), roomName).toThrow();
+    for (const testCase of allStampCases.cases) {
+      try {
+        planRoads(testCase.room, testCase.plan);
+      } catch {
+        unplannableRooms.push(testCase.roomName);
+      }
     }
+
+    expect(unplannableRooms.sort()).toEqual([...botarena212RoadUnplannableNormalRooms].sort());
   });
 
   it("promotes reuse by making existing planned roads cheaper than new plain tiles", () => {

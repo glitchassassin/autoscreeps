@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { createDijkstraMap, dijkstraUnreachable } from "../src/planning/dijkstra-map";
 import { planRoom, type RoomPlanningRoomData } from "../src/planning/room-plan";
-import { createStampPlacementDebug, type RoomStampAnchor, type RoomStampPlan, validateStampPlan } from "../src/planning/stamp-placement";
+import {
+  createStampPlacementDebug,
+  getStampPathBlockedTiles,
+  type RoomStampAnchor,
+  type RoomStampPlan,
+  type StampPlacement,
+  validateStampPlan
+} from "../src/planning/stamp-placement";
 import { loadBotarena212RoomPlanningFixture } from "./helpers/room-planning-fixture";
 
 const roomSize = 50;
@@ -72,7 +79,15 @@ describe("room planning", () => {
       expect(pod.anchors.container).toEqual(pod.anchor);
       expect(pod.blockedTiles).toHaveLength(17);
     }
-    expect(plan.stampPlan.stamps.labs?.kind).toBe("labs");
+    const labs = plan.stampPlan.stamps.labs;
+    expect(labs?.kind).toBe("labs");
+    if (labs === null) {
+      throw new Error("Expected normal room plan to include labs.");
+    }
+    expect(labs.blockedTiles).toHaveLength(14);
+    expect(getStampPathBlockedTiles(labs)).toHaveLength(10);
+    expect(labs.roadTiles).toHaveLength(4);
+    expect(toLocalOffsetKeys(labs, labs.roadTiles ?? [])).toEqual(["0,0", "1,1", "2,2", "3,3"]);
     expect(validateStampPlan(room, plan.stampPlan)).toEqual([]);
     expect(getReservedStampTileViolations(room, plan.stampPlan)).toEqual([]);
   });
@@ -225,7 +240,7 @@ function computeFinalLabDistance(room: RoomPlanningRoomData, plan: RoomStampPlan
 
   const storageGoals = getPathGoals(room.terrain, blocked, reservedPathMasks.default, storage);
   const terminalGoals = getPathGoals(room.terrain, blocked, reservedPathMasks.default, terminal);
-  const labGoals = getPathGoals(room.terrain, blocked, reservedPathMasks.default, entrance);
+  const labGoals = getDirectPathGoals(room.terrain, blocked, reservedPathMasks.default, entrance);
   if (storageGoals.length === 0 || terminalGoals.length === 0 || labGoals.length === 0) {
     return dijkstraUnreachable;
   }
@@ -253,13 +268,20 @@ function createFinalPathBlocked(room: RoomPlanningRoomData, plan: RoomStampPlan)
 
   const stamps = [plan.stamps.hub, ...plan.stamps.fastfillers, ...(plan.stamps.labs ? [plan.stamps.labs] : [])];
   for (const stamp of stamps) {
-    for (const tile of stamp.blockedTiles) {
+    for (const tile of getStampPathBlockedTiles(stamp)) {
       blocked[tile] = 1;
     }
   }
 
   for (const pod of plan.stamps.fastfillers) {
     blocked[toIndex(pod.anchor.x, pod.anchor.y)] = 0;
+  }
+  if (plan.stamps.labs !== null) {
+    const entrance = plan.stamps.labs.anchors.entrance ?? plan.stamps.labs.anchor;
+    blocked[toIndex(entrance.x, entrance.y)] = 0;
+    for (const tile of plan.stamps.labs.roadTiles ?? []) {
+      blocked[tile] = 0;
+    }
   }
 
   return blocked;
@@ -366,6 +388,17 @@ function getPathGoals(terrain: string, blocked: Uint8Array, reservedPathMask: Ui
   ));
 }
 
+function getDirectPathGoals(terrain: string, blocked: Uint8Array, reservedPathMask: Uint8Array, target: RoomStampAnchor): RoomStampAnchor[] {
+  if (
+    isWalkableTerrain(terrain, target.x, target.y)
+    && blocked[toIndex(target.x, target.y)] === 0
+    && reservedPathMask[toIndex(target.x, target.y)] === 0
+  ) {
+    return [target];
+  }
+  return getPathGoals(terrain, blocked, reservedPathMask, target);
+}
+
 function createCostMatrix(blocked: Uint8Array, reservedPathMask: Uint8Array): Pick<PathFinder["CostMatrix"], "get"> {
   return {
     get(x: number, y: number): number {
@@ -410,6 +443,30 @@ function isNaturalBlocker(type: string): boolean {
 function isReservedEdgeTile(coord: RoomStampAnchor): boolean {
   return coord.x <= edgeStampReserveRange || coord.y <= edgeStampReserveRange
     || coord.x >= roomSize - 1 - edgeStampReserveRange || coord.y >= roomSize - 1 - edgeStampReserveRange;
+}
+
+function toLocalOffsetKeys(stamp: StampPlacement, tiles: number[]): string[] {
+  return tiles
+    .map(fromIndex)
+    .map((coord) => inverseRotateOffset({
+      x: coord.x - stamp.anchor.x,
+      y: coord.y - stamp.anchor.y
+    }, stamp.rotation))
+    .map((coord) => `${coord.x},${coord.y}`)
+    .sort();
+}
+
+function inverseRotateOffset(offset: RoomStampAnchor, rotation: StampPlacement["rotation"]): RoomStampAnchor {
+  switch (rotation) {
+    case 0:
+      return offset;
+    case 90:
+      return { x: offset.y, y: -offset.x };
+    case 180:
+      return { x: -offset.x, y: -offset.y };
+    case 270:
+      return { x: -offset.y, y: offset.x };
+  }
 }
 
 function isWalkableTerrain(terrain: string, x: number, y: number): boolean {

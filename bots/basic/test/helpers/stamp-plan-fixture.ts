@@ -17,11 +17,7 @@ export type CachedStampPlanFixture = {
   terrainByRoom: Map<string, string>;
 };
 
-export const botarena212RoadUnplannableNormalRooms = [
-  "E19N7",
-  "E4N2",
-  "E7N4"
-] as const;
+export const botarena212RoadUnplannableNormalRooms = [] as const;
 
 type RawStampPlanFixture = {
   schemaVersion: number;
