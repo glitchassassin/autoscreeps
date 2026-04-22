@@ -233,9 +233,13 @@ function renderPreviewHtml(
       border: 1px solid #2f343c;
     }
     .tile {
+      appearance: none;
       position: relative;
       width: 16px;
       height: 16px;
+      margin: 0;
+      padding: 0;
+      border: 0;
       overflow: hidden;
       box-sizing: border-box;
       font-size: 8px;
