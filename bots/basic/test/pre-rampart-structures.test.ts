@@ -16,15 +16,15 @@ describe("pre-rampart structure planning", () => {
     installTestPathFinder(loadBotarena212NormalStampPlanFixture().terrainByRoom);
   });
 
-  it("reserves spare extensions and towers adjacent to the cached road network", () => {
+  it("reserves extra-structure slots adjacent to the cached road network", () => {
     const testCase = loadBotarena212RoadPlanningFixture().cases[0]!;
     const roadPlan = planRoads(testCase.room, testCase.plan);
     const plan = planPreRampartStructures(testCase.room, testCase.plan, roadPlan);
 
     expect(validatePreRampartStructurePlan(testCase.room, testCase.plan, roadPlan, plan)).toEqual([]);
-    expect(plan.extensions).toHaveLength(36);
-    expect(plan.towers).toHaveLength(6);
-    expect(plan.structures).toHaveLength(42);
+    expect(plan.extensionCount).toBe(36);
+    expect(plan.towerCount).toBe(6);
+    expect(plan.extraStructures).toHaveLength(42);
     expect(plan.structureTiles).toEqual([...plan.structureTiles].sort((left, right) => left - right));
   });
 
@@ -32,11 +32,11 @@ describe("pre-rampart structure planning", () => {
     const room = createRoadDistanceRoom();
     const stampPlan = createRoadDistanceStampPlan();
     const roadPlan = createRoadDistanceRoadPlan();
-    const plan = planPreRampartStructures(room, stampPlan, roadPlan, { extensionCount: 1, towerCount: 0 });
+    const plan = planPreRampartStructures(room, stampPlan, roadPlan, { extensionCount: 1, towerCount: 0, growAccessRoads: false });
 
     expect(validatePreRampartStructurePlan(room, stampPlan, roadPlan, plan)).toEqual([]);
-    expect(plan.extensions).toHaveLength(1);
-    expect(plan.extensions[0]).toMatchObject({ x: 15, y: 9 });
+    expect(plan.extraStructures).toHaveLength(1);
+    expect(plan.extraStructures[0]).toMatchObject({ x: 15, y: 9 });
   });
 });
 

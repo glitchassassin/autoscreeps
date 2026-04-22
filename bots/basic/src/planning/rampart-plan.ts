@@ -18,6 +18,10 @@ const defaultRampartCostScale = 10_000;
 const defaultHubDistanceWeight = 1;
 const defaultSourceRegionPenaltyRamparts = 8;
 const impossibleCapacity = 1_000_000_000;
+const maxTowers = 6;
+const towerControllerReserveRange = 3;
+const towerSourceReserveRange = 2;
+const towerEdgeReserveRange = 2;
 
 export type RampartOptionalRegionKey = "source1" | "source2";
 
@@ -36,6 +40,17 @@ export type RampartPlanScore = {
   totalCost: number;
 };
 
+export type RampartTowerPlacement = RoomStampAnchor & {
+  tile: number;
+  minDamage: number;
+  averageDamage: number;
+};
+
+export type RampartExtensionPlacement = RoomStampAnchor & {
+  tile: number;
+  score: number[];
+};
+
 export type RampartPlan = {
   roomName: string;
   policy: RoomStampPlan["policy"];
@@ -44,6 +59,10 @@ export type RampartPlan = {
   outsideTiles: number[];
   defendedTiles: number[];
   preRampartStructures: PreRampartStructurePlan;
+  extensionTiles: number[];
+  extensions: RampartExtensionPlacement[];
+  towerTiles: number[];
+  towers: RampartTowerPlacement[];
   optionalRegions: [RampartOptionalRegionPlan, RampartOptionalRegionPlan];
   score: RampartPlanScore;
 };
@@ -92,15 +111,25 @@ type RoomCutGraph = {
   tileCutCosts: Uint32Array;
 };
 
+type TowerCandidate = RoomStampAnchor & {
+  tile: number;
+  coverage: Int32Array;
+  sortedCoverage: number[];
+  totalCoverage: number;
+  spread: number;
+  hubDistance: number;
+};
+
 export function planRamparts(
   room: RoomPlanningRoomData,
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
   options: RampartPlanOptions = {}
 ): RampartPlan {
-  const context = createRampartPlanningContext(room, stampPlan, roadPlan, normalizeOptions(options));
-  const graph = buildRoomCutGraph(context);
-  const result = solveWeightedMinCut({
+  let config = normalizeOptions(options);
+  let context = createRampartPlanningContext(room, stampPlan, roadPlan, config);
+  let graph = buildRoomCutGraph(context);
+  let result = solveWeightedMinCut({
     nodeCount: graph.nodeCount,
     source: graph.source,
     sink: graph.sink,
@@ -108,7 +137,33 @@ export function planRamparts(
   });
 
   if (result.maxFlow >= impossibleCapacity / 2) {
-    throw new Error(`No finite rampart cut found for room '${room.roomName}'.`);
+    const growAccessRoads = config.preRampartStructureOptions.growAccessRoads
+      ?? config.preRampartStructureOptions.growExtensionRoads;
+    const canRetryWithoutExtensionRoadGrowth = config.preRampartStructures === null
+      && growAccessRoads !== false;
+    if (!canRetryWithoutExtensionRoadGrowth) {
+      throw new Error(`No finite rampart cut found for room '${room.roomName}'.`);
+    }
+
+    config = {
+      ...config,
+      preRampartStructureOptions: {
+        ...config.preRampartStructureOptions,
+        growAccessRoads: false,
+        growExtensionRoads: false
+      }
+    };
+    context = createRampartPlanningContext(room, stampPlan, roadPlan, config);
+    graph = buildRoomCutGraph(context);
+    result = solveWeightedMinCut({
+      nodeCount: graph.nodeCount,
+      source: graph.source,
+      sink: graph.sink,
+      edges: graph.edges
+    });
+    if (result.maxFlow >= impossibleCapacity / 2) {
+      throw new Error(`No finite rampart cut found for room '${room.roomName}'.`);
+    }
   }
 
   const rampartTiles = collectRampartTiles(result.cutEdgeIndexes, graph.cutEdgeToTile);
@@ -116,6 +171,8 @@ export function planRamparts(
   const outsideMask = createOutsideMask(context.walkable, context.exits, rampartMask);
   const outsideTiles = collectMaskTiles(outsideMask);
   const defendedTiles = collectDefendedTiles(context.walkable, outsideMask, rampartMask);
+  const towers = planTowers(context, rampartTiles, defendedTiles);
+  const extensions = planExtensions(context.preRampartStructures, towers);
   const optionalRegions = context.optionalRegions.map((region) => createOptionalRegionPlan(region, outsideMask)) as [
     RampartOptionalRegionPlan,
     RampartOptionalRegionPlan
@@ -130,6 +187,10 @@ export function planRamparts(
     outsideTiles,
     defendedTiles,
     preRampartStructures: context.preRampartStructures,
+    extensionTiles: extensions.map((extension) => extension.tile).sort(compareNumbers),
+    extensions,
+    towerTiles: towers.map((tower) => tower.tile).sort(compareNumbers),
+    towers,
     optionalRegions,
     score
   };
@@ -185,6 +246,9 @@ export function validateRampartPlan(
       errors.push(`Mandatory defended tile ${coord.x},${coord.y} is reachable from an exit.`);
     }
   }
+
+  errors.push(...validateTowerPlan(context, rampartPlan, rampartMask, outsideMask));
+  errors.push(...validateExtensionPlan(rampartPlan));
 
   const optionalByKey = new Map(rampartPlan.optionalRegions.map((region) => [region.key, region]));
   for (const region of context.optionalRegions) {
@@ -351,7 +415,13 @@ function createMustDefendMask(
     addPathToMask(mask, walkable, requirePath(roadPlan, kind));
   }
 
-  for (const placement of preRampartStructures.structures) {
+  for (const tile of preRampartStructures.accessRoadTiles) {
+    if (isValidIndex(tile) && walkable[tile] !== 0) {
+      mask[tile] = 1;
+    }
+  }
+
+  for (const placement of preRampartStructures.extraStructures) {
     if (isValidIndex(placement.tile) && walkable[placement.tile] !== 0) {
       mask[placement.tile] = 1;
     }
@@ -562,6 +632,311 @@ function collectDefendedTiles(walkable: Uint8Array, outsideMask: Uint8Array, ram
   return tiles;
 }
 
+function planExtensions(
+  preRampartStructures: PreRampartStructurePlan,
+  towers: RampartTowerPlacement[]
+): RampartExtensionPlacement[] {
+  const towerTiles = new Set(towers.map((tower) => tower.tile));
+  const extensions: RampartExtensionPlacement[] = [];
+
+  for (const slot of preRampartStructures.extraStructures) {
+    if (extensions.length >= preRampartStructures.extensionCount) {
+      break;
+    }
+    if (towerTiles.has(slot.tile)) {
+      continue;
+    }
+
+    extensions.push({
+      x: slot.x,
+      y: slot.y,
+      tile: slot.tile,
+      score: slot.score
+    });
+  }
+
+  return extensions;
+}
+
+function planTowers(context: RampartPlanningContext, rampartTiles: number[], defendedTiles: number[]): RampartTowerPlacement[] {
+  if (rampartTiles.length === 0) {
+    return [];
+  }
+
+  const roadMask = createTowerRoadMask(context.roadPlan, context.preRampartStructures);
+  const blocked = createTowerBlockedMask(context, rampartTiles, roadMask);
+  const defendedMask = createTileMask(defendedTiles);
+  const coverage = new Int32Array(rampartTiles.length);
+  const towers: RampartTowerPlacement[] = [];
+  const candidateTiles = context.preRampartStructures.extraStructures.map((structure) => structure.tile);
+  const targetTowers = Math.min(maxTowers, context.preRampartStructures.towerCount);
+
+  while (towers.length < targetTowers) {
+    let best: TowerCandidate | null = null;
+    for (const tile of candidateTiles) {
+      if (!isTowerCandidateTile(context, tile, defendedMask, roadMask, blocked)) {
+        continue;
+      }
+
+      const candidate = createTowerCandidate(context, tile, rampartTiles, coverage, towers);
+      if (best === null || isBetterTowerCandidate(candidate, best)) {
+        best = candidate;
+      }
+    }
+
+    if (best === null) {
+      break;
+    }
+
+    coverage.set(best.coverage);
+    blocked[best.tile] = 1;
+    towers.push({
+      x: best.x,
+      y: best.y,
+      tile: best.tile,
+      minDamage: best.sortedCoverage[0] ?? 0,
+      averageDamage: best.totalCoverage / rampartTiles.length
+    });
+  }
+
+  return towers;
+}
+
+function createTowerCandidate(
+  context: RampartPlanningContext,
+  tile: number,
+  rampartTiles: number[],
+  currentCoverage: Int32Array,
+  towers: RampartTowerPlacement[]
+): TowerCandidate {
+  const coord = fromIndex(tile);
+  const coverage = new Int32Array(rampartTiles.length);
+  let totalCoverage = 0;
+  for (let index = 0; index < rampartTiles.length; index += 1) {
+    const damage = currentCoverage[index]! + getTowerDamage(range(coord, fromIndex(rampartTiles[index]!)));
+    coverage[index] = damage;
+    totalCoverage += damage;
+  }
+  const sortedCoverage = Array.from(coverage).sort((left, right) => left - right);
+  const spread = towers.length === 0
+    ? roomSize
+    : Math.min(...towers.map((tower) => range(coord, tower)));
+  const hubDistance = context.hubDistanceMap.get(coord.x, coord.y);
+
+  return {
+    ...coord,
+    tile,
+    coverage,
+    sortedCoverage,
+    totalCoverage,
+    spread,
+    hubDistance: hubDistance === dijkstraUnreachable ? Number.MAX_SAFE_INTEGER : hubDistance
+  };
+}
+
+function isBetterTowerCandidate(left: TowerCandidate, right: TowerCandidate): boolean {
+  const coverageLength = Math.max(left.sortedCoverage.length, right.sortedCoverage.length);
+  for (let index = 0; index < coverageLength; index += 1) {
+    const leftDamage = left.sortedCoverage[index] ?? 0;
+    const rightDamage = right.sortedCoverage[index] ?? 0;
+    if (leftDamage !== rightDamage) {
+      return leftDamage > rightDamage;
+    }
+  }
+
+  if (left.totalCoverage !== right.totalCoverage) {
+    return left.totalCoverage > right.totalCoverage;
+  }
+  if (left.spread !== right.spread) {
+    return left.spread > right.spread;
+  }
+  if (left.hubDistance !== right.hubDistance) {
+    return left.hubDistance < right.hubDistance;
+  }
+  if (left.y !== right.y) {
+    return left.y < right.y;
+  }
+  return left.x < right.x;
+}
+
+function getTowerDamage(distance: number): number {
+  if (distance <= 5) {
+    return 600;
+  }
+  if (distance >= 20) {
+    return 150;
+  }
+  return 750 - 30 * distance;
+}
+
+function isTowerCandidateTile(
+  context: RampartPlanningContext,
+  tile: number,
+  defendedMask: Uint8Array,
+  roadMask: Uint8Array,
+  blocked: Uint8Array
+): boolean {
+  if (defendedMask[tile] === 0 || blocked[tile] !== 0) {
+    return false;
+  }
+
+  const coord = fromIndex(tile);
+  if (
+    coord.x <= towerEdgeReserveRange
+    || coord.y <= towerEdgeReserveRange
+    || coord.x >= roomSize - 1 - towerEdgeReserveRange
+    || coord.y >= roomSize - 1 - towerEdgeReserveRange
+  ) {
+    return false;
+  }
+  if (neighbors(coord).every((neighbor) => roadMask[toIndex(neighbor.x, neighbor.y)] === 0)) {
+    return false;
+  }
+
+  const controller = requireObject(context.room, "controller");
+  if (range(coord, controller) <= towerControllerReserveRange) {
+    return false;
+  }
+  return getSources(context.room).every((source) => range(coord, source) > towerSourceReserveRange);
+}
+
+function createTowerRoadMask(roadPlan: RoadPlan, preRampartStructures: PreRampartStructurePlan): Uint8Array {
+  const mask = createRoadMask(roadPlan);
+  for (const tile of preRampartStructures.accessRoadTiles) {
+    if (isValidIndex(tile)) {
+      mask[tile] = 1;
+    }
+  }
+  return mask;
+}
+
+function createTowerBlockedMask(context: RampartPlanningContext, rampartTiles: number[], roadMask: Uint8Array): Uint8Array {
+  const blocked = new Uint8Array(roomArea);
+
+  for (let tile = 0; tile < roomArea; tile += 1) {
+    if (context.walkable[tile] === 0 || roadMask[tile] !== 0) {
+      blocked[tile] = 1;
+    }
+  }
+
+  for (const stamp of getStamps(context.stampPlan)) {
+    for (const tile of stamp.blockedTiles) {
+      if (isValidIndex(tile)) {
+        blocked[tile] = 1;
+      }
+    }
+  }
+
+  for (const tile of rampartTiles) {
+    if (isValidIndex(tile)) {
+      blocked[tile] = 1;
+    }
+  }
+
+  return blocked;
+}
+
+function validateTowerPlan(
+  context: RampartPlanningContext,
+  rampartPlan: RampartPlan,
+  rampartMask: Uint8Array,
+  outsideMask: Uint8Array
+): string[] {
+  const errors: string[] = [];
+  const towerLimit = Math.min(maxTowers, rampartPlan.preRampartStructures.towerCount);
+  if (rampartPlan.towers.length > towerLimit) {
+    errors.push(`Rampart plan has ${rampartPlan.towers.length} towers, maximum is ${towerLimit}.`);
+  }
+
+  const roadMask = createTowerRoadMask(context.roadPlan, rampartPlan.preRampartStructures);
+  const blocked = createTowerBlockedMask(context, rampartPlan.rampartTiles, roadMask);
+  const defendedTiles = collectDefendedTiles(context.walkable, outsideMask, rampartMask);
+  const defendedMask = createTileMask(defendedTiles);
+  const extraStructureTiles = new Set(rampartPlan.preRampartStructures.extraStructures.map((structure) => structure.tile));
+  const expectedTowerTiles = rampartPlan.towers.map((tower) => tower.tile).sort(compareNumbers);
+  if (rampartPlan.towerTiles.join(",") !== expectedTowerTiles.join(",")) {
+    errors.push("Tower tiles must match sorted tower placements.");
+  }
+
+  const seen = new Set<number>();
+  const coverage = new Int32Array(rampartPlan.rampartTiles.length);
+  for (const tower of rampartPlan.towers) {
+    if (tower.tile !== toIndex(tower.x, tower.y)) {
+      errors.push(`Tower at ${tower.x},${tower.y} has mismatched tile index ${tower.tile}.`);
+    }
+    if (seen.has(tower.tile)) {
+      errors.push(`Multiple towers occupy ${tower.x},${tower.y}.`);
+    }
+    seen.add(tower.tile);
+
+    if (!extraStructureTiles.has(tower.tile)) {
+      errors.push(`Tower at ${tower.x},${tower.y} does not occupy a planned extra-structure slot.`);
+    }
+    if (!isTowerCandidateTile(context, tower.tile, defendedMask, roadMask, blocked)) {
+      errors.push(`Tower at ${tower.x},${tower.y} is not a valid defended tower candidate.`);
+    }
+    blocked[tower.tile] = 1;
+
+    let minDamage = Number.POSITIVE_INFINITY;
+    let totalDamage = 0;
+    for (let index = 0; index < rampartPlan.rampartTiles.length; index += 1) {
+      const damage = coverage[index]! + getTowerDamage(range(tower, fromIndex(rampartPlan.rampartTiles[index]!)));
+      coverage[index] = damage;
+      minDamage = Math.min(minDamage, damage);
+      totalDamage += damage;
+    }
+
+    if (rampartPlan.rampartTiles.length === 0) {
+      errors.push(`Tower at ${tower.x},${tower.y} has no ramparts to cover.`);
+      continue;
+    }
+
+    const averageDamage = totalDamage / rampartPlan.rampartTiles.length;
+    if (tower.minDamage !== minDamage) {
+      errors.push(`Tower at ${tower.x},${tower.y} has min damage ${tower.minDamage}, expected ${minDamage}.`);
+    }
+    if (Math.abs(tower.averageDamage - averageDamage) > 0.001) {
+      errors.push(`Tower at ${tower.x},${tower.y} has average damage ${tower.averageDamage}, expected ${averageDamage}.`);
+    }
+  }
+
+  return errors;
+}
+
+function validateExtensionPlan(rampartPlan: RampartPlan): string[] {
+  const errors: string[] = [];
+  if (rampartPlan.extensions.length !== rampartPlan.preRampartStructures.extensionCount) {
+    errors.push(`Rampart plan has ${rampartPlan.extensions.length} extensions, expected ${rampartPlan.preRampartStructures.extensionCount}.`);
+  }
+
+  const extraStructureTiles = new Set(rampartPlan.preRampartStructures.extraStructures.map((structure) => structure.tile));
+  const towerTiles = new Set(rampartPlan.towers.map((tower) => tower.tile));
+  const expectedExtensionTiles = rampartPlan.extensions.map((extension) => extension.tile).sort(compareNumbers);
+  if (rampartPlan.extensionTiles.join(",") !== expectedExtensionTiles.join(",")) {
+    errors.push("Extension tiles must match sorted extension placements.");
+  }
+
+  const seen = new Set<number>();
+  for (const extension of rampartPlan.extensions) {
+    if (extension.tile !== toIndex(extension.x, extension.y)) {
+      errors.push(`Extension at ${extension.x},${extension.y} has mismatched tile index ${extension.tile}.`);
+    }
+    if (seen.has(extension.tile)) {
+      errors.push(`Multiple extensions occupy ${extension.x},${extension.y}.`);
+    }
+    seen.add(extension.tile);
+
+    if (!extraStructureTiles.has(extension.tile)) {
+      errors.push(`Extension at ${extension.x},${extension.y} does not occupy a planned extra-structure slot.`);
+    }
+    if (towerTiles.has(extension.tile)) {
+      errors.push(`Extension at ${extension.x},${extension.y} overlaps a tower.`);
+    }
+  }
+
+  return errors;
+}
+
 function createRoadMask(roadPlan: RoadPlan): Uint8Array {
   const mask = new Uint8Array(roomArea);
   for (const tile of roadPlan.roadTiles) {
@@ -739,6 +1114,10 @@ function compareObjects(left: RoomPlanningObject, right: RoomPlanningObject): nu
   return left.id.localeCompare(right.id);
 }
 
+function compareNumbers(left: number, right: number): number {
+  return left - right;
+}
+
 function compareScore(left: number[], right: number[]): number {
   const length = Math.max(left.length, right.length);
   for (let index = 0; index < length; index += 1) {
@@ -749,6 +1128,14 @@ function compareScore(left: number[], right: number[]): number {
     }
   }
   return 0;
+}
+
+function getStamps(stampPlan: RoomStampPlan): StampPlacement[] {
+  return [
+    stampPlan.stamps.hub,
+    ...stampPlan.stamps.fastfillers,
+    ...(stampPlan.stamps.labs ? [stampPlan.stamps.labs] : [])
+  ];
 }
 
 function range(left: RoomStampAnchor, right: RoomStampAnchor): number {

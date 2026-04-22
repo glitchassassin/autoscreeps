@@ -13,6 +13,11 @@ type BenchmarkCase = {
   roadPlan: RoadPlan;
 };
 
+type PlanningFailure = {
+  roomName: string;
+  message: string;
+};
+
 type BenchmarkConfig = {
   warmupSweeps: number;
   samples: number;
@@ -50,8 +55,14 @@ async function main(): Promise<void> {
   if (cases.length === 0) {
     throw new Error("No benchmark rooms selected.");
   }
+  const failures = collectPlanningFailures(cases);
+  const failedRooms = new Set(failures.map((failure) => failure.roomName));
+  const benchmarkCases = cases.filter((testCase) => !failedRooms.has(testCase.roomName));
+  if (benchmarkCases.length === 0) {
+    throw new Error("No selected benchmark rooms produced a rampart plan.");
+  }
 
-  process.stdout.write(`Rampart-planning benchmark rooms: ${cases.length}\n`);
+  process.stdout.write(`Rampart-planning benchmark rooms: ${benchmarkCases.length}/${cases.length}\n`);
   process.stdout.write("Inputs: cached stamp fixtures + precomputed road plans\n");
   process.stdout.write(`Warmup sweeps: ${config.warmupSweeps}\n`);
   process.stdout.write(`Samples: ${config.samples}\n`);
@@ -61,7 +72,7 @@ async function main(): Promise<void> {
 
   let checksum = 0;
   for (let sweep = 0; sweep < config.warmupSweeps; sweep += 1) {
-    checksum = runSweep(cases, checksum);
+    checksum = runSweep(benchmarkCases, checksum);
   }
 
   const sampleDurationsNs: bigint[] = [];
@@ -69,13 +80,13 @@ async function main(): Promise<void> {
     maybeCollectGarbage(config.gcBetweenSamples);
     const start = process.hrtime.bigint();
     for (let iteration = 0; iteration < config.iterationsPerSample; iteration += 1) {
-      checksum = runSweep(cases, checksum);
+      checksum = runSweep(benchmarkCases, checksum);
     }
     sampleDurationsNs.push(process.hrtime.bigint() - start);
   }
 
   const sweepStats = summarizeNs(sampleDurationsNs.map((duration) => duration / BigInt(config.iterationsPerSample)));
-  const roomStats = summarizeNs(sampleDurationsNs.map((duration) => duration / BigInt(config.iterationsPerSample * cases.length)));
+  const roomStats = summarizeNs(sampleDurationsNs.map((duration) => duration / BigInt(config.iterationsPerSample * benchmarkCases.length)));
 
   process.stdout.write("Full sweep timing\n");
   process.stdout.write(`  min:    ${formatNs(sweepStats.min)}\n`);
@@ -89,8 +100,15 @@ async function main(): Promise<void> {
   process.stdout.write(`  p95:    ${formatNs(roomStats.p95)}\n`);
   process.stdout.write(`  max:    ${formatNs(roomStats.max)}\n\n`);
 
-  const perRoomResults = measurePerRoom(cases, config, checksum);
+  const perRoomResults = measurePerRoom(benchmarkCases, config, checksum);
   checksum = perRoomResults.checksum;
+  const extensionDistance = summarizeExtensionDistance(perRoomResults.results);
+
+  process.stdout.write("Extension placement distance\n");
+  process.stdout.write(`  total: ${extensionDistance.total}\n`);
+  process.stdout.write(`  avg:   ${formatNumber(extensionDistance.average)}\n`);
+  process.stdout.write(`  max:   ${extensionDistance.max}\n`);
+  process.stdout.write(`  access roads: ${extensionDistance.accessRoads}\n\n`);
 
   process.stdout.write(`Slowest rooms (${Math.min(config.topRooms, perRoomResults.results.length)})\n`);
   for (const result of perRoomResults.results.slice(0, config.topRooms)) {
@@ -99,9 +117,29 @@ async function main(): Promise<void> {
       + ` | ramparts=${result.ramparts}`
       + ` | extensions=${result.extensions}`
       + ` | towers=${result.towers}`
+      + ` | accessRoads=${result.accessRoads}`
+      + ` | extensionDistance=${result.extensionDistanceTotal}`
       + ` | defended=${result.defendedTiles}`
       + ` | optional=${result.optionalProtected}/2\n`
     );
+  }
+
+  process.stdout.write(`\nWorst extension-distance rooms (${Math.min(config.topRooms, perRoomResults.results.length)})\n`);
+  for (const result of [...perRoomResults.results].sort(compareExtensionDistanceResults).slice(0, config.topRooms)) {
+    process.stdout.write(
+      `  ${result.roomName}: total=${result.extensionDistanceTotal}`
+      + ` | avg=${formatNumber(result.extensionDistanceAverage)}`
+      + ` | max=${result.extensionDistanceMax}`
+      + ` | accessRoads=${result.accessRoads}`
+      + ` | ramparts=${result.ramparts}\n`
+    );
+  }
+
+  if (failures.length > 0) {
+    process.stdout.write(`\nSkipped rooms (${failures.length})\n`);
+    for (const failure of failures.slice(0, config.topRooms)) {
+      process.stdout.write(`  ${failure.roomName}: ${failure.message}\n`);
+    }
   }
 
   process.stdout.write(`\nChecksum: ${checksum}\n`);
@@ -184,6 +222,21 @@ function loadBenchmarkCases(cases: CachedStampPlanCase[], requestedRoomNames: st
   }));
 }
 
+function collectPlanningFailures(cases: BenchmarkCase[]): PlanningFailure[] {
+  const failures: PlanningFailure[] = [];
+  for (const testCase of cases) {
+    try {
+      planRamparts(testCase.room, testCase.stampPlan, testCase.roadPlan);
+    } catch (error) {
+      failures.push({
+        roomName: testCase.roomName,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+  return failures;
+}
+
 function selectCases(cases: CachedStampPlanCase[], requestedRoomNames: string[]): CachedStampPlanCase[] {
   if (requestedRoomNames.length === 0) {
     return cases;
@@ -214,6 +267,10 @@ function measurePerRoom(cases: BenchmarkCase[], config: BenchmarkConfig, seed: n
     ramparts: number;
     extensions: number;
     towers: number;
+    accessRoads: number;
+    extensionDistanceTotal: number;
+    extensionDistanceAverage: number;
+    extensionDistanceMax: number;
     defendedTiles: number;
     optionalProtected: number;
   }>;
@@ -226,6 +283,10 @@ function measurePerRoom(cases: BenchmarkCase[], config: BenchmarkConfig, seed: n
     ramparts: number;
     extensions: number;
     towers: number;
+    accessRoads: number;
+    extensionDistanceTotal: number;
+    extensionDistanceAverage: number;
+    extensionDistanceMax: number;
     defendedTiles: number;
     optionalProtected: number;
   }> = [];
@@ -240,12 +301,17 @@ function measurePerRoom(cases: BenchmarkCase[], config: BenchmarkConfig, seed: n
       checksum = runSingleCase(testCase, checksum);
     }
     const duration = process.hrtime.bigint() - start;
+    const extensionDistance = summarizePlanExtensionDistance(plan);
     results.push({
       roomName: testCase.roomName,
       averageNs: duration / BigInt(config.perRoomIterations),
       ramparts: plan.rampartTiles.length,
-      extensions: plan.preRampartStructures.extensions.length,
-      towers: plan.preRampartStructures.towers.length,
+      extensions: plan.extensions.length,
+      towers: plan.towers.length,
+      accessRoads: plan.preRampartStructures.accessRoadTiles.length,
+      extensionDistanceTotal: extensionDistance.total,
+      extensionDistanceAverage: extensionDistance.average,
+      extensionDistanceMax: extensionDistance.max,
       defendedTiles: plan.defendedTiles.length,
       optionalProtected: plan.optionalRegions.filter((region) => region.protected).length
     });
@@ -263,8 +329,9 @@ function updateChecksum(seed: number, plan: RampartPlan): number {
   let checksum = (
     (seed * 33)
     ^ plan.rampartTiles.length
-    ^ (plan.preRampartStructures.extensions.length << 1)
-    ^ (plan.preRampartStructures.towers.length << 2)
+    ^ (plan.extensions.length << 1)
+    ^ (plan.towers.length << 2)
+    ^ (plan.preRampartStructures.accessRoadTiles.length << 4)
     ^ (plan.defendedTiles.length << 3)
     ^ (plan.outsideTiles.length << 7)
     ^ plan.optionalRegions.filter((region) => region.protected).length
@@ -275,6 +342,42 @@ function updateChecksum(seed: number, plan: RampartPlan): number {
   }
 
   return checksum;
+}
+
+function summarizePlanExtensionDistance(plan: RampartPlan): { total: number; average: number; max: number } {
+  const distances = plan.extensions.map((extension) => extension.score[1] ?? 0);
+  const total = distances.reduce((sum, distance) => sum + distance, 0);
+  return {
+    total,
+    average: distances.length === 0 ? 0 : total / distances.length,
+    max: distances.length === 0 ? 0 : Math.max(...distances)
+  };
+}
+
+function summarizeExtensionDistance(results: Array<{
+  extensions: number;
+  accessRoads: number;
+  extensionDistanceTotal: number;
+  extensionDistanceMax: number;
+}>): { total: number; average: number; max: number; accessRoads: number } {
+  const extensionCount = results.reduce((total, result) => total + result.extensions, 0);
+  const total = results.reduce((sum, result) => sum + result.extensionDistanceTotal, 0);
+  return {
+    total,
+    average: extensionCount === 0 ? 0 : total / extensionCount,
+    max: Math.max(...results.map((result) => result.extensionDistanceMax)),
+    accessRoads: results.reduce((sum, result) => sum + result.accessRoads, 0)
+  };
+}
+
+function compareExtensionDistanceResults(
+  left: { roomName: string; extensionDistanceTotal: number },
+  right: { roomName: string; extensionDistanceTotal: number }
+): number {
+  if (left.extensionDistanceTotal !== right.extensionDistanceTotal) {
+    return right.extensionDistanceTotal - left.extensionDistanceTotal;
+  }
+  return left.roomName.localeCompare(right.roomName);
 }
 
 function maybeCollectGarbage(enabled: boolean): void {
@@ -321,6 +424,10 @@ function formatDecimal(value: bigint, divisor: bigint): string {
   const whole = value / divisor;
   const tenths = value % divisor * 10n / divisor;
   return `${whole}.${tenths}`;
+}
+
+function formatNumber(value: number): string {
+  return value.toFixed(2);
 }
 
 function splitFlag(arg: string): [string, string | null] {

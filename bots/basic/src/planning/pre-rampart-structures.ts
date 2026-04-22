@@ -12,12 +12,15 @@ const maxExtensions = 60;
 const fastfillerExtensionsPerPod = 12;
 const maxTowers = 6;
 const unreachableRoadDistance = 1_000_000;
+const defaultMaxAccessRoadTiles = 24;
+const defaultAccessRoadCost = 4;
+const accessRoadGroupIndex = 1;
 const structureRoadGroups: RoadPlanPathKind[][] = [
   ["storage-to-pod1", "storage-to-pod2"],
   ["terminal-to-labs", "storage-to-controller", "terminal-to-mineral", "storage-to-source1", "storage-to-source2"]
 ];
 
-export type PreRampartStructureKind = "extension" | "tower";
+export type PreRampartStructureKind = "extra-structure";
 
 export type PreRampartStructurePlacement = RoomStampAnchor & {
   kind: PreRampartStructureKind;
@@ -28,15 +31,23 @@ export type PreRampartStructurePlacement = RoomStampAnchor & {
 export type PreRampartStructurePlan = {
   roomName: string;
   policy: RoomStampPlan["policy"];
-  extensions: PreRampartStructurePlacement[];
-  towers: PreRampartStructurePlacement[];
-  structures: PreRampartStructurePlacement[];
+  extensionCount: number;
+  towerCount: number;
+  accessRoadTiles: number[];
+  accessRoads: RoomStampAnchor[];
+  extraStructures: PreRampartStructurePlacement[];
   structureTiles: number[];
 };
 
 export type PreRampartStructurePlanOptions = {
   extensionCount?: number;
   towerCount?: number;
+  growAccessRoads?: boolean;
+  maxAccessRoadTiles?: number;
+  accessRoadCost?: number;
+  growExtensionRoads?: boolean;
+  maxExtensionRoadTiles?: number;
+  extensionRoadCost?: number;
 };
 
 type StructurePlanningContext = {
@@ -46,14 +57,29 @@ type StructurePlanningContext = {
   controller: RoomPlanningObject;
   sources: [RoomPlanningObject, RoomPlanningObject];
   storage: RoomStampAnchor;
+  baseBlocked: Uint8Array;
   blocked: Uint8Array;
   roadMask: Uint8Array;
   roadDistances: Int32Array;
+  accessRoadTiles: number[];
 };
 
 type Candidate = RoomStampAnchor & {
   tile: number;
   score: number[];
+};
+
+type PreRampartStructurePlanConfig = {
+  extensionCount: number;
+  towerCount: number;
+  growAccessRoads: boolean;
+  maxAccessRoadTiles: number;
+  accessRoadCost: number;
+};
+
+type ExtensionAllocationScore = {
+  totalDistance: number;
+  selectedCount: number;
 };
 
 export function planPreRampartStructures(
@@ -62,27 +88,31 @@ export function planPreRampartStructures(
   roadPlan: RoadPlan,
   options: PreRampartStructurePlanOptions = {}
 ): PreRampartStructurePlan {
+  const config = normalizeOptions(options, stampPlan);
   const context = createStructurePlanningContext(room, stampPlan, roadPlan);
-  const extensionCount = options.extensionCount ?? Math.max(maxExtensions - stampPlan.stamps.fastfillers.length * fastfillerExtensionsPerPod, 0);
-  const towerCount = options.towerCount ?? maxTowers;
-  validateTargetCount(extensionCount, "extensionCount");
-  validateTargetCount(towerCount, "towerCount");
+  const structureCount = config.extensionCount + config.towerCount;
+  validateTargetCount(config.extensionCount, "extensionCount");
+  validateTargetCount(config.towerCount, "towerCount");
+  validateTargetCount(config.maxAccessRoadTiles, "maxAccessRoadTiles");
+  validateTargetCount(config.accessRoadCost, "accessRoadCost");
 
-  const extensions = placeExtensions(context, extensionCount);
-  for (const extension of extensions) {
-    context.blocked[extension.tile] = 1;
+  if (config.growAccessRoads && structureCount > 0 && config.maxAccessRoadTiles > 0) {
+    growAccessRoads(context, structureCount, config);
   }
-
-  const towers = placeTowers(context, towerCount);
-  const structures = [...extensions, ...towers].sort(comparePlacementsByTile);
+  const extraStructures = placeExtraStructures(context, structureCount);
+  for (const structure of extraStructures) {
+    context.blocked[structure.tile] = 1;
+  }
 
   return {
     roomName: room.roomName,
     policy: stampPlan.policy,
-    extensions,
-    towers,
-    structures,
-    structureTiles: structures.map((placement) => placement.tile)
+    extensionCount: config.extensionCount,
+    towerCount: config.towerCount,
+    accessRoadTiles: [...context.accessRoadTiles],
+    accessRoads: context.accessRoadTiles.map(fromIndex),
+    extraStructures,
+    structureTiles: extraStructures.map((placement) => placement.tile).sort(compareNumbers)
   };
 }
 
@@ -101,8 +131,34 @@ export function validatePreRampartStructurePlan(
   }
 
   const context = createStructurePlanningContext(room, stampPlan, roadPlan);
+  const seenRoads = new Set<number>();
+  for (const tile of plan.accessRoadTiles) {
+    if (!isValidIndex(tile)) {
+      errors.push(`Access road tile index ${tile} is outside the room.`);
+      continue;
+    }
+    if (seenRoads.has(tile)) {
+      errors.push("Access road tiles must be unique.");
+    }
+    seenRoads.add(tile);
+
+    const coord = fromIndex(tile);
+    if (!isBuildableAccessRoadTile(context, coord.x, coord.y)) {
+      errors.push(`Access road tile ${coord.x},${coord.y} is not buildable.`);
+    }
+    if (!isAdjacentToRoad(context.roadMask, coord.x, coord.y)) {
+      errors.push(`Access road tile ${coord.x},${coord.y} is not connected to the planned road network.`);
+    }
+    addAccessRoadTile(context, tile);
+  }
+
+  const expectedRoads = plan.accessRoadTiles.map(fromIndex);
+  if (plan.accessRoads.length !== expectedRoads.length || plan.accessRoads.some((road, index) => road.x !== expectedRoads[index]!.x || road.y !== expectedRoads[index]!.y)) {
+    errors.push("Access road coordinates must match access road tiles.");
+  }
+
   const seen = new Set<number>();
-  for (const placement of plan.structures) {
+  for (const placement of plan.extraStructures) {
     if (placement.tile !== toIndex(placement.x, placement.y)) {
       errors.push(`${placement.kind} at ${placement.x},${placement.y} has mismatched tile index ${placement.tile}.`);
     }
@@ -120,7 +176,7 @@ export function validatePreRampartStructurePlan(
     context.blocked[placement.tile] = 1;
   }
 
-  const expectedTiles = [...plan.structures].sort(comparePlacementsByTile).map((placement) => placement.tile);
+  const expectedTiles = [...plan.extraStructures].sort(comparePlacementsByTile).map((placement) => placement.tile);
   if (plan.structureTiles.join(",") !== expectedTiles.join(",")) {
     errors.push("Pre-rampart structure tiles must match sorted structure placements.");
   }
@@ -128,7 +184,7 @@ export function validatePreRampartStructurePlan(
   return errors;
 }
 
-function placeExtensions(context: StructurePlanningContext, targetCount: number): PreRampartStructurePlacement[] {
+function placeExtraStructures(context: StructurePlanningContext, targetCount: number): PreRampartStructurePlacement[] {
   const candidates = collectRoadAdjacentCandidates(context, structureRoadGroups);
   const placements: PreRampartStructurePlacement[] = [];
 
@@ -139,7 +195,7 @@ function placeExtensions(context: StructurePlanningContext, targetCount: number)
     if (context.blocked[candidate.tile] !== 0) {
       continue;
     }
-    const placement = createPlacement("extension", candidate);
+    const placement = createPlacement("extra-structure", candidate);
     placements.push(placement);
     context.blocked[placement.tile] = 1;
   }
@@ -147,32 +203,32 @@ function placeExtensions(context: StructurePlanningContext, targetCount: number)
   return placements;
 }
 
-function placeTowers(context: StructurePlanningContext, targetCount: number): PreRampartStructurePlacement[] {
-  const candidates = collectRoadAdjacentCandidates(context, structureRoadGroups);
-  const placements: PreRampartStructurePlacement[] = [];
+function growAccessRoads(
+  context: StructurePlanningContext,
+  targetCount: number,
+  config: PreRampartStructurePlanConfig
+): void {
+  let currentScore = scoreExtraStructureAllocation(context, targetCount);
 
-  while (placements.length < targetCount) {
-    let best: Candidate | null = null;
-    for (const candidate of candidates) {
-      if (context.blocked[candidate.tile] !== 0) {
+  while (context.accessRoadTiles.length < config.maxAccessRoadTiles) {
+    const currentAdjustedScore = currentScore.totalDistance + context.accessRoadTiles.length * config.accessRoadCost;
+    let best: { tile: number; adjustedScore: number; allocationScore: ExtensionAllocationScore } | null = null;
+
+    for (const tile of collectAccessRoadFrontier(context)) {
+      addAccessRoadTile(context, tile);
+      const allocationScore = scoreExtraStructureAllocation(context, targetCount);
+      const adjustedScore = allocationScore.totalDistance + context.accessRoadTiles.length * config.accessRoadCost;
+      removeLastAccessRoadTile(context);
+
+      if (adjustedScore >= currentAdjustedScore) {
         continue;
       }
-
-      const spread = placements.length === 0
-        ? 0
-        : Math.min(...placements.map((placement) => range(candidate, placement)));
-      const score = [
-        candidate.score[0] ?? 0,
-        -spread,
-        candidate.score[1] ?? unreachableRoadDistance,
-        candidate.y,
-        candidate.x
-      ];
-      if (best === null || compareScore(score, best.score) < 0) {
-        best = {
-          ...candidate,
-          score
-        };
+      if (
+        best === null
+        || adjustedScore < best.adjustedScore
+        || (adjustedScore === best.adjustedScore && tile < best.tile)
+      ) {
+        best = { tile, adjustedScore, allocationScore };
       }
     }
 
@@ -180,12 +236,52 @@ function placeTowers(context: StructurePlanningContext, targetCount: number): Pr
       break;
     }
 
-    const placement = createPlacement("tower", best);
-    placements.push(placement);
-    context.blocked[placement.tile] = 1;
+    addAccessRoadTile(context, best.tile);
+    currentScore = best.allocationScore;
+  }
+}
+
+function scoreExtraStructureAllocation(context: StructurePlanningContext, targetCount: number): ExtensionAllocationScore {
+  const candidates = collectRoadAdjacentCandidates(context, structureRoadGroups);
+  let totalDistance = 0;
+  let selectedCount = 0;
+
+  for (const candidate of candidates) {
+    if (selectedCount >= targetCount) {
+      break;
+    }
+    totalDistance += candidate.score[1] ?? unreachableRoadDistance;
+    selectedCount += 1;
   }
 
-  return placements;
+  return {
+    totalDistance: totalDistance + (targetCount - selectedCount) * unreachableRoadDistance,
+    selectedCount
+  };
+}
+
+function collectAccessRoadFrontier(context: StructurePlanningContext): number[] {
+  const frontier = new Set<number>();
+
+  for (let tile = 0; tile < roomArea; tile += 1) {
+    if (context.roadMask[tile] === 0) {
+      continue;
+    }
+    for (const coord of neighbors(fromIndex(tile))) {
+      if (isBuildableAccessRoadTile(context, coord.x, coord.y)) {
+        frontier.add(toIndex(coord.x, coord.y));
+      }
+    }
+  }
+
+  return [...frontier].sort((left, right) => {
+    const leftDistance = getRoadConnectionDistance(context, left);
+    const rightDistance = getRoadConnectionDistance(context, right);
+    if (leftDistance !== rightDistance) {
+      return leftDistance - rightDistance;
+    }
+    return left - right;
+  });
 }
 
 function collectRoadAdjacentCandidates(context: StructurePlanningContext, groups: RoadPlanPathKind[][]): Candidate[] {
@@ -201,6 +297,7 @@ function collectRoadAdjacentCandidates(context: StructurePlanningContext, groups
       collectPathAdjacentCandidates(context, path, groupIndex, bestByTile);
     }
   }
+  collectRoadTileAdjacentCandidates(context, context.accessRoadTiles, accessRoadGroupIndex, bestByTile);
 
   return [...bestByTile.values()].sort(compareCandidates);
 }
@@ -211,7 +308,16 @@ function collectPathAdjacentCandidates(
   groupIndex: number,
   bestByTile: Map<number, Candidate>
 ): void {
-  for (const roadTile of path.roadTiles) {
+  collectRoadTileAdjacentCandidates(context, path.roadTiles, groupIndex, bestByTile);
+}
+
+function collectRoadTileAdjacentCandidates(
+  context: StructurePlanningContext,
+  roadTiles: number[],
+  groupIndex: number,
+  bestByTile: Map<number, Candidate>
+): void {
+  for (const roadTile of roadTiles) {
     if (!isValidIndex(roadTile)) {
       continue;
     }
@@ -246,30 +352,31 @@ function createStructurePlanningContext(room: RoomPlanningRoomData, stampPlan: R
   const controller = requireObject(room, "controller");
   const sources = getSources(room);
   const storage = stampPlan.stamps.hub.anchors.storage ?? stampPlan.stamps.hub.anchor;
-  const blocked = new Uint8Array(roomArea);
+  const baseBlocked = new Uint8Array(roomArea);
   const roadMask = new Uint8Array(roomArea);
 
   for (let tile = 0; tile < roomArea; tile += 1) {
     const coord = fromIndex(tile);
     if (!isWalkableTerrain(room.terrain, coord.x, coord.y)) {
-      blocked[tile] = 1;
+      baseBlocked[tile] = 1;
     }
   }
 
   for (const object of room.objects) {
     if (isNaturalBlocker(object) && isInRoom(object.x, object.y)) {
-      blocked[toIndex(object.x, object.y)] = 1;
+      baseBlocked[toIndex(object.x, object.y)] = 1;
     }
   }
 
   for (const stamp of getStamps(stampPlan)) {
     for (const tile of stamp.blockedTiles) {
       if (isValidIndex(tile)) {
-        blocked[tile] = 1;
+        baseBlocked[tile] = 1;
       }
     }
   }
 
+  const blocked = new Uint8Array(baseBlocked);
   for (const tile of roadPlan.roadTiles) {
     if (isValidIndex(tile)) {
       blocked[tile] = 1;
@@ -285,10 +392,29 @@ function createStructurePlanningContext(room: RoomPlanningRoomData, stampPlan: R
     controller,
     sources,
     storage,
+    baseBlocked,
     blocked,
     roadMask,
-    roadDistances
+    roadDistances,
+    accessRoadTiles: []
   };
+}
+
+function addAccessRoadTile(context: StructurePlanningContext, tile: number): void {
+  context.accessRoadTiles.push(tile);
+  context.roadMask[tile] = 1;
+  context.blocked[tile] = 1;
+  context.roadDistances = createRoadDistanceMap(context.storage, context.roadMask);
+}
+
+function removeLastAccessRoadTile(context: StructurePlanningContext): void {
+  const tile = context.accessRoadTiles.pop();
+  if (tile === undefined) {
+    return;
+  }
+  context.roadMask[tile] = 0;
+  context.blocked[tile] = context.baseBlocked[tile]!;
+  context.roadDistances = createRoadDistanceMap(context.storage, context.roadMask);
 }
 
 function createRoadDistanceMap(storage: RoomStampAnchor, roadMask: Uint8Array): Int32Array {
@@ -350,6 +476,34 @@ function isBuildableStructureTile(context: StructurePlanningContext, x: number, 
     && context.sources.every((source) => range(coord, source) > sourceReserveRange);
 }
 
+function isBuildableAccessRoadTile(context: StructurePlanningContext, x: number, y: number): boolean {
+  if (!isInRoom(x, y)) {
+    return false;
+  }
+  const tile = toIndex(x, y);
+  if (context.baseBlocked[tile] !== 0 || context.roadMask[tile] !== 0) {
+    return false;
+  }
+  if (x <= edgeReserveRange || y <= edgeReserveRange || x >= roomSize - 1 - edgeReserveRange || y >= roomSize - 1 - edgeReserveRange) {
+    return false;
+  }
+
+  const coord = { x, y };
+  return range(coord, context.controller) > controllerReserveRange
+    && context.sources.every((source) => range(coord, source) > sourceReserveRange);
+}
+
+function getRoadConnectionDistance(context: StructurePlanningContext, tile: number): number {
+  let best = unreachableRoadDistance;
+  for (const coord of neighbors(fromIndex(tile))) {
+    const distance = context.roadDistances[toIndex(coord.x, coord.y)]!;
+    if (distance >= 0) {
+      best = Math.min(best, distance + 1);
+    }
+  }
+  return best;
+}
+
 function isAdjacentToRoad(roadMask: Uint8Array, x: number, y: number): boolean {
   return neighbors({ x, y }).some((coord) => roadMask[toIndex(coord.x, coord.y)] !== 0);
 }
@@ -407,6 +561,20 @@ function validateTargetCount(value: number, label: string): void {
   }
 }
 
+function normalizeOptions(options: PreRampartStructurePlanOptions, stampPlan: RoomStampPlan): PreRampartStructurePlanConfig {
+  const growAccessRoads = options.growAccessRoads ?? options.growExtensionRoads ?? true;
+  const maxAccessRoadTiles = options.maxAccessRoadTiles ?? options.maxExtensionRoadTiles ?? defaultMaxAccessRoadTiles;
+  const accessRoadCost = options.accessRoadCost ?? options.extensionRoadCost ?? defaultAccessRoadCost;
+
+  return {
+    extensionCount: options.extensionCount ?? Math.max(maxExtensions - stampPlan.stamps.fastfillers.length * fastfillerExtensionsPerPod, 0),
+    towerCount: options.towerCount ?? maxTowers,
+    growAccessRoads,
+    maxAccessRoadTiles,
+    accessRoadCost
+  };
+}
+
 function validateTerrain(terrain: string): void {
   if (terrain.length !== roomArea) {
     throw new Error(`Expected terrain string length ${roomArea}, received ${terrain.length}.`);
@@ -460,6 +628,10 @@ function compareScore(left: number[], right: number[]): number {
 
 function comparePlacementsByTile(left: PreRampartStructurePlacement, right: PreRampartStructurePlacement): number {
   return left.tile - right.tile;
+}
+
+function compareNumbers(left: number, right: number): number {
+  return left - right;
 }
 
 function compareObjects(left: RoomPlanningObject, right: RoomPlanningObject): number {

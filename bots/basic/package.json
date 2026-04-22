@@ -15,6 +15,7 @@
     "benchmark:road-planning": "node --expose-gc scripts/benchmark-road-planning.ts",
     "benchmark:rampart-planning": "node --expose-gc scripts/benchmark-rampart-planning.ts",
     "benchmark:flood-fill": "node --expose-gc scripts/benchmark-flood-fill.ts",
+    "score:pre-rampart-extensions": "node scripts/score-pre-rampart-extensions.ts",
     "generate:road-planning-fixtures": "node scripts/generate-road-planning-fixtures.ts",
     "watch": "vite build --watch",
     "push:pserver": "vite build --mode pserver",

@@ -1,6 +1,11 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  planPreRampartStructures,
+  validatePreRampartStructurePlan,
+  type PreRampartStructurePlan
+} from "../src/planning/pre-rampart-structures.ts";
 import { planRamparts, validateRampartPlan, type RampartPlan } from "../src/planning/rampart-plan.ts";
 import { planRoads, validateRoadPlan, type RoadPlan } from "../src/planning/road-plan.ts";
 import type { RoomPlanningRoomData } from "../src/planning/room-plan.ts";
@@ -36,18 +41,28 @@ async function main(): Promise<void> {
   mkdirSync(previewDir, { recursive: true });
 
   for (const testCase of cases) {
-    let html: string;
+    const errors: string[] = [];
+    let roadPlan: RoadPlan | null = null;
+    let preRampartStructures: PreRampartStructurePlan | null = null;
+    let rampartPlan: RampartPlan | null = null;
+
     try {
-      const roadPlan = planRoads(testCase.room, testCase.plan);
-      const roadErrors = validateRoadPlan(testCase.room, testCase.plan, roadPlan);
-      const rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan);
-      const rampartErrors = validateRampartPlan(testCase.room, testCase.plan, roadPlan, rampartPlan);
-      html = renderPreviewHtml(testCase.room, testCase.plan, roadPlan, rampartPlan, [...roadErrors, ...rampartErrors]);
+      roadPlan = planRoads(testCase.room, testCase.plan);
+      errors.push(...validateRoadPlan(testCase.room, testCase.plan, roadPlan));
+      preRampartStructures = planPreRampartStructures(testCase.room, testCase.plan, roadPlan);
+      errors.push(...validatePreRampartStructurePlan(testCase.room, testCase.plan, roadPlan, preRampartStructures));
+
+      try {
+        rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan);
+        errors.push(...validateRampartPlan(testCase.room, testCase.plan, roadPlan, rampartPlan));
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      html = renderPreviewHtml(testCase.room, testCase.plan, null, null, [message]);
+      errors.push(error instanceof Error ? error.message : String(error));
     }
 
+    const html = renderPreviewHtml(testCase.room, testCase.plan, roadPlan, preRampartStructures, rampartPlan, errors);
     const roomPath = path.join(previewDir, `${testCase.roomName}-normal.html`);
     writeFileSync(roomPath, html, "utf8");
     writeFileSync(path.join(previewDir, "latest.html"), html, "utf8");
@@ -106,14 +121,18 @@ function renderPreviewHtml(
   room: RoomPlanningRoomData,
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan | null,
+  preRampartStructures: PreRampartStructurePlan | null,
   rampartPlan: RampartPlan | null,
   errors: string[]
 ): string {
+  const visiblePreRampartStructures = rampartPlan?.preRampartStructures ?? preRampartStructures;
   const stampTiles = createStampTileMap(stampPlan);
-  const roadTiles = new Set(roadPlan?.roadTiles ?? []);
+  const accessRoadTiles = new Set(visiblePreRampartStructures?.accessRoadTiles ?? []);
+  const roadTiles = new Set([...(roadPlan?.roadTiles ?? []), ...accessRoadTiles]);
   const rampartTiles = new Set(rampartPlan?.rampartTiles ?? []);
-  const extensionTiles = new Set(rampartPlan?.preRampartStructures.extensions.map((placement) => placement.tile) ?? []);
-  const towerTiles = new Set(rampartPlan?.preRampartStructures.towers.map((placement) => placement.tile) ?? []);
+  const extensionTiles = new Set(rampartPlan?.extensions.map((placement) => placement.tile) ?? []);
+  const towerTiles = new Set(rampartPlan?.towerTiles ?? []);
+  const extraStructureTiles = new Set(visiblePreRampartStructures?.extraStructures.map((placement) => placement.tile) ?? []);
   const outsideTiles = new Set(rampartPlan?.outsideTiles ?? []);
   const defendedTiles = new Set(rampartPlan?.defendedTiles ?? []);
   const optionalTiles = createOptionalTileMap(rampartPlan);
@@ -138,6 +157,7 @@ function renderPreviewHtml(
         outsideTiles.has(index) ? "outside" : "",
         defendedTiles.has(index) ? "defended" : "",
         roadTiles.has(index) ? "road" : "",
+        extraStructureTiles.has(index) ? "extra-structure" : "",
         extensionTiles.has(index) ? "extension" : "",
         towerTiles.has(index) ? "tower" : "",
         stampClass ? `stamp stamp-${stampClass}` : "",
@@ -150,15 +170,17 @@ function renderPreviewHtml(
           ? "T"
           : extensionTiles.has(index)
             ? "E"
-            : objectType
-              ? objectType[0]?.toUpperCase() ?? ""
-              : optional
-                ? optional === "source1" ? "1" : "2"
-                : roadTiles.has(index)
-                  ? "."
-                  : stampClass
-                    ? stampClass[0]?.toUpperCase() ?? ""
-                    : "";
+            : extraStructureTiles.has(index)
+              ? "X"
+              : objectType
+                ? objectType[0]?.toUpperCase() ?? ""
+                : optional
+                  ? optional === "source1" ? "1" : "2"
+                  : roadTiles.has(index)
+                    ? "."
+                    : stampClass
+                      ? stampClass[0]?.toUpperCase() ?? ""
+                      : "";
       const title = [
         `${x},${y}`,
         terrainLabel(terrainCode),
@@ -167,6 +189,8 @@ function renderPreviewHtml(
         rampartTiles.has(index) ? "rampart" : null,
         towerTiles.has(index) ? "tower" : null,
         extensionTiles.has(index) ? "extension" : null,
+        extraStructureTiles.has(index) ? "extra-structure slot" : null,
+        accessRoadTiles.has(index) ? "access road" : null,
         roadTiles.has(index) ? "road" : null,
         stampClass ? `stamp: ${stampClass}` : null,
         optional ? `optional region: ${optional}` : null,
@@ -257,6 +281,12 @@ function renderPreviewHtml(
       font-weight: 700;
       filter: none;
     }
+    .extra-structure {
+      background: #67e8f9;
+      color: #083344;
+      font-weight: 700;
+      filter: none;
+    }
     .tower {
       background: #facc15;
       color: #422006;
@@ -309,16 +339,20 @@ function renderPreviewHtml(
   <div class="summary">
     <span>policy: ${escapeHtml(stampPlan.policy)}</span>
     <span>ramparts: ${rampartPlan?.rampartTiles.length ?? 0}</span>
-    <span>extensions: ${rampartPlan?.preRampartStructures.extensions.length ?? 0}</span>
-    <span>towers: ${rampartPlan?.preRampartStructures.towers.length ?? 0}</span>
+    <span>extra slots: ${visiblePreRampartStructures?.extraStructures.length ?? 0}</span>
+    <span>extensions: ${rampartPlan?.extensions.length ?? 0}</span>
+    <span>towers: ${rampartPlan?.towers.length ?? 0}</span>
+    <span>access roads: ${visiblePreRampartStructures?.accessRoadTiles.length ?? 0}</span>
     <span>roads: ${roadPlan?.roadTiles.length ?? 0}</span>
     <span>outside: ${rampartPlan?.outsideTiles.length ?? 0}</span>
     <span>defended: ${rampartPlan?.defendedTiles.length ?? 0}</span>
   </div>
   <div class="legend">
     <span>R/red: rampart cut</span>
-    <span>E: pre-cut extension</span>
-    <span>T: pre-cut tower</span>
+    <span>X: pre-cut extra-structure slot</span>
+    <span>E: assigned extension</span>
+    <span>T: tower coverage placement</span>
+    <span>extra white dots: access roads</span>
     <span>dim: exit-reachable outside</span>
     <span>green outline: defended interior</span>
     <span>white: primary road</span>
