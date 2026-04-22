@@ -144,11 +144,19 @@ type Candidate = StampPlacement & {
   sourceDetours?: [number, number];
   storageDistance?: number;
   labDistance?: number;
+  labStorageDistance?: number;
+  labTerminalDistance?: number;
 };
 
 type FastfillerScore = {
   storageDistance: number;
   sourceDetours: [number, number];
+};
+
+type LabScore = {
+  storageDistance: number;
+  terminalDistance: number;
+  totalDistance: number;
 };
 
 type SearchResult = {
@@ -544,7 +552,7 @@ function generateFastfillerCandidates(features: RoomFeatures, state: PlacementSt
 
 function generateLabCandidates(features: RoomFeatures, state: PlacementState, hub: StampPlacement, topK: number): Candidate[] {
   const paths = createPathContext(features, state, hub);
-  if (paths.terminalDistanceMap === null) {
+  if (paths.storageDistanceMap === null || paths.terminalDistanceMap === null) {
     return [];
   }
 
@@ -559,13 +567,12 @@ function generateLabCandidates(features: RoomFeatures, state: PlacementState, hu
         }
 
         const entrance = candidate.anchors.entrance ?? candidate.anchor;
-        const labDistance = paths.terminalDistanceMap.get(entrance.x, entrance.y);
-        if (labDistance === dijkstraUnreachable) {
+        const labScore = createDirectLabScore(paths, entrance);
+        if (labScore === null) {
           continue;
         }
 
-        candidate.labDistance = labDistance;
-        candidate.score = [-labDistance, -candidate.anchor.y, -candidate.anchor.x];
+        assignLabScore(candidate, labScore);
         preliminary.push(candidate);
       }
     }
@@ -580,13 +587,12 @@ function generateLabCandidates(features: RoomFeatures, state: PlacementState, hu
     for (; evaluated < limit; evaluated += 1) {
       const candidate = preliminary[evaluated]!;
       const candidateState = placeStamp(state, candidate);
-      const labDistance = scoreLabCandidate(features, candidateState, hub, candidate);
-      if (labDistance === null) {
+      const labScore = scoreLabCandidate(features, candidateState, hub, candidate);
+      if (labScore === null) {
         continue;
       }
 
-      candidate.labDistance = labDistance;
-      candidate.score = [-labDistance, -candidate.anchor.y, -candidate.anchor.x];
+      assignLabScore(candidate, labScore);
       exactCandidates.push(candidate);
     }
     if (exactCandidates.length >= topK || limit === preliminary.length) {
@@ -615,8 +621,11 @@ function scoreCompleteLayout(
     pod1Score?.sourceDetours ?? [dijkstraUnreachable, dijkstraUnreachable],
     pod2Score?.sourceDetours ?? [dijkstraUnreachable, dijkstraUnreachable]
   );
+  const labScore = policy === "normal" && labs !== null
+    ? scoreLabAccess(features, finalState, paths.storageDistanceMap, paths.terminalDistanceMap, labs)
+    : null;
   const labDistance = policy === "normal" && labs !== null
-    ? scoreLabDistance(features, finalState, paths.terminalDistanceMap, labs) ?? dijkstraUnreachable
+    ? labScore?.totalDistance ?? dijkstraUnreachable
     : 0;
 
   return [
@@ -707,12 +716,37 @@ function scorePodSourceAssignment(first: [number, number], second: [number, numb
   return Math.min(first[0] + second[1], first[1] + second[0]);
 }
 
-function scoreLabCandidate(features: RoomFeatures, state: PlacementState, hub: StampPlacement, labs: Candidate): number | null {
-  return scoreLabDistance(features, state, createTerminalDistanceMap(features, state, hub), labs);
+function scoreLabCandidate(features: RoomFeatures, state: PlacementState, hub: StampPlacement, labs: Candidate): LabScore | null {
+  const paths = createPathContext(features, state, hub);
+  return scoreLabAccess(features, state, paths.storageDistanceMap, paths.terminalDistanceMap, labs);
 }
 
-function scoreLabDistance(features: RoomFeatures, state: PlacementState, terminalDistanceMap: DijkstraMap | null, labs: Candidate): number | null {
-  if (terminalDistanceMap === null) {
+function createDirectLabScore(paths: PathContext, entrance: RoomStampAnchor): LabScore | null {
+  if (paths.storageDistanceMap === null || paths.terminalDistanceMap === null) {
+    return null;
+  }
+
+  const storageDistance = paths.storageDistanceMap.get(entrance.x, entrance.y);
+  const terminalDistance = paths.terminalDistanceMap.get(entrance.x, entrance.y);
+  if (storageDistance === dijkstraUnreachable || terminalDistance === dijkstraUnreachable) {
+    return null;
+  }
+
+  return {
+    storageDistance,
+    terminalDistance,
+    totalDistance: storageDistance + terminalDistance
+  };
+}
+
+function scoreLabAccess(
+  features: RoomFeatures,
+  state: PlacementState,
+  storageDistanceMap: DijkstraMap | null,
+  terminalDistanceMap: DijkstraMap | null,
+  labs: Candidate
+): LabScore | null {
+  if (storageDistanceMap === null || terminalDistanceMap === null) {
     return null;
   }
 
@@ -722,8 +756,30 @@ function scoreLabDistance(features: RoomFeatures, state: PlacementState, termina
     return null;
   }
 
-  const labDistance = minDistance(terminalDistanceMap, accessGoals);
-  return labDistance === dijkstraUnreachable ? null : labDistance;
+  const storageDistance = minDistance(storageDistanceMap, accessGoals);
+  const terminalDistance = minDistance(terminalDistanceMap, accessGoals);
+  if (storageDistance === dijkstraUnreachable || terminalDistance === dijkstraUnreachable) {
+    return null;
+  }
+
+  return {
+    storageDistance,
+    terminalDistance,
+    totalDistance: storageDistance + terminalDistance
+  };
+}
+
+function assignLabScore(candidate: Candidate, labScore: LabScore): void {
+  candidate.labDistance = labScore.totalDistance;
+  candidate.labStorageDistance = labScore.storageDistance;
+  candidate.labTerminalDistance = labScore.terminalDistance;
+  candidate.score = [
+    -labScore.totalDistance,
+    -labScore.terminalDistance,
+    -labScore.storageDistance,
+    -candidate.anchor.y,
+    -candidate.anchor.x
+  ];
 }
 
 function scoreNormalHub(features: RoomFeatures, candidate: StampPlacement): number[] {

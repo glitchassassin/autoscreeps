@@ -494,7 +494,7 @@ function getMandatoryRoadKinds(policy: RoomStampPlan["policy"]): RoadPlanPathKin
   return [
     "storage-to-pod1",
     "storage-to-pod2",
-    ...(policy === "normal" ? ["terminal-to-labs" as const] : [])
+    ...(policy === "normal" ? ["terminal-to-labs" as const, "storage-to-labs" as const] : [])
   ];
 }
 

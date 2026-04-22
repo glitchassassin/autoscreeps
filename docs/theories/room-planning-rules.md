@@ -86,7 +86,7 @@ The fastfiller pods are minimal extension stamps with a shared container and spa
 
 ### Placement
 
-- The scorer SHOULD minimize the distance from the entrance to `terminal`.
+- The scorer SHOULD minimize the combined distance from the entrance to `terminal` and `storage`.
 
 ## Stamps
 
@@ -110,7 +110,7 @@ Roads other than `storage -> controller` SHOULD prefer to avoid controller range
 ### Paths
 
 - The planner MUST plan paths for `storage -> pod1 container` and then `storage -> pod2 container`. The planner MUST then reverse the order (`pod2` first) and plan again. The planner MUST keep the plan with the fewest unique road tiles.
-- In `normal` rooms, the planner MUST plan a path for `terminal -> lab entrance`.
+- In `normal` rooms, the planner MUST plan paths for `terminal -> lab entrance` and `storage -> lab entrance`. The planner MUST then reverse the order and keep the plan with the fewest unique road tiles.
 - The planner MUST plan a path for `terminal -> mineral`, targeting any tile in range `1` of the mineral.
 - The planner MUST plan paths for `storage -> source1` and `storage -> source2`, targeting any tile in range `1` of the source. The planner MUST then reverse the order (`source2` first) and plan again. The planner MUST keep the plan with the fewest unique road tiles.
 - The planner MUST plan `storage -> controller`, targeting any tile in range `3` of the controller.
@@ -166,7 +166,7 @@ Extra-structure slots SHOULD be populated along roads close to `storage` for eas
 - Lab stamp in `normal` rooms.
 - Controller access tiles at range `1`.
 - In `temple` rooms, the hub and upgrader working area.
-- Primary interior roads connecting the hub, fastfiller pods, and lab stamp.
+- Primary interior roads connecting the hub, fastfiller pods, and lab stamp, including both `terminal -> labs` and `storage -> labs`.
 - Pre-mincut access roads.
 - Pre-mincut extra-structure slots.
 

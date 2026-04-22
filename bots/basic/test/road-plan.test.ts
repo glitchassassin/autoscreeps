@@ -22,6 +22,7 @@ describe("road planning", () => {
     expect(new Set(plan.paths.map((path) => path.kind))).toEqual(new Set([
       "storage-to-pod1",
       "storage-to-pod2",
+      "storage-to-labs",
       "terminal-to-labs",
       "terminal-to-mineral",
       "storage-to-source1",

@@ -17,7 +17,7 @@ const defaultAccessRoadCost = 4;
 const accessRoadGroupIndex = 1;
 const structureRoadGroups: RoadPlanPathKind[][] = [
   ["storage-to-pod1", "storage-to-pod2"],
-  ["terminal-to-labs", "storage-to-controller", "terminal-to-mineral", "storage-to-source1", "storage-to-source2"]
+  ["terminal-to-labs", "storage-to-labs", "storage-to-controller", "terminal-to-mineral", "storage-to-source1", "storage-to-source2"]
 ];
 
 export type PreRampartStructureKind = "extra-structure";

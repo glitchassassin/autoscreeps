@@ -14,6 +14,7 @@ const controllerReserveRange = 3;
 export type RoadPlanPathKind =
   | "storage-to-pod1"
   | "storage-to-pod2"
+  | "storage-to-labs"
   | "terminal-to-labs"
   | "terminal-to-mineral"
   | "storage-to-source1"
@@ -97,15 +98,13 @@ export function planRoads(room: RoomPlanningRoomData, stampPlan: RoomStampPlan, 
       throw new Error("Normal road planning requires a lab stamp.");
     }
 
-    state = planSequentialPath(context, config, state, {
-      kind: "terminal-to-labs",
-      origin: context.terminal,
-      target: {
-        ...requireAnchor(stampPlan.stamps.labs, "entrance"),
-        label: "lab entrance",
-        range: 1
-      }
-    });
+    state = chooseShortestRoadGroup(context, config, state, [
+      createLabRequest("terminal-to-labs", context.terminal, stampPlan.stamps.labs),
+      createLabRequest("storage-to-labs", context.storage, stampPlan.stamps.labs)
+    ], [
+      createLabRequest("storage-to-labs", context.storage, stampPlan.stamps.labs),
+      createLabRequest("terminal-to-labs", context.terminal, stampPlan.stamps.labs)
+    ]);
   }
 
   state = planSequentialPath(context, config, state, {
@@ -229,8 +228,11 @@ export function validateRoadPlan(room: RoomPlanningRoomData, stampPlan: RoomStam
   if (stampPlan.policy === "normal" && !pathKinds.has("terminal-to-labs")) {
     errors.push("Normal road plans must include a terminal-to-labs path.");
   }
-  if (stampPlan.policy === "temple" && pathKinds.has("terminal-to-labs")) {
-    errors.push("Temple road plans must not include a terminal-to-labs path.");
+  if (stampPlan.policy === "normal" && !pathKinds.has("storage-to-labs")) {
+    errors.push("Normal road plans must include a storage-to-labs path.");
+  }
+  if (stampPlan.policy === "temple" && (pathKinds.has("terminal-to-labs") || pathKinds.has("storage-to-labs"))) {
+    errors.push("Temple road plans must not include lab paths.");
   }
 
   return errors;
@@ -283,6 +285,18 @@ function createPodRequest(kind: RoadPlanPathKind, storage: RoadPlanEndpoint, pod
       ...container,
       label: `pod${podNumber} container`,
       range: 0
+    }
+  };
+}
+
+function createLabRequest(kind: RoadPlanPathKind, origin: RoadPlanEndpoint, labs: StampPlacement): RoadPathRequest {
+  return {
+    kind,
+    origin,
+    target: {
+      ...requireAnchor(labs, "entrance"),
+      label: "lab entrance",
+      range: 1
     }
   };
 }

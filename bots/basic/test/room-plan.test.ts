@@ -77,7 +77,7 @@ describe("room planning", () => {
     expect(getReservedStampTileViolations(room, plan.stampPlan)).toEqual([]);
   });
 
-  it("scores fastfiller distances against final stamp and reserved path masks", () => {
+  it("scores final path distances against final stamp and reserved path masks", () => {
     const fixture = loadBotarena212RoomPlanningFixture();
     const roomName = fixture.candidateRooms[0]!;
     const room = fixture.map.getRoom(roomName);
@@ -91,12 +91,15 @@ describe("room planning", () => {
       map: fixture.map
     });
     const exactMetrics = computeFinalFastfillerMetrics(room, plan.stampPlan);
+    const exactLabDistance = computeFinalLabDistance(room, plan.stampPlan);
     const storageScoreIndex = plan.stampPlan.stamps.hub.score.length;
 
     expect(exactMetrics.storageDistance).not.toBe(dijkstraUnreachable);
     expect(exactMetrics.sourceDetour).not.toBe(dijkstraUnreachable);
+    expect(exactLabDistance).not.toBe(dijkstraUnreachable);
     expect(plan.stampPlan.score[storageScoreIndex]).toBe(-exactMetrics.storageDistance);
     expect(plan.stampPlan.score[storageScoreIndex + 1]).toBe(-exactMetrics.sourceDetour);
+    expect(plan.stampPlan.score[storageScoreIndex + 2]).toBe(-exactLabDistance);
   });
 
   it("builds debug phases for visualizing the selected branch", () => {
@@ -202,6 +205,42 @@ function computeFinalFastfillerMetrics(room: RoomPlanningRoomData, plan: RoomSta
   );
 
   return { storageDistance, sourceDetour };
+}
+
+function computeFinalLabDistance(room: RoomPlanningRoomData, plan: RoomStampPlan): number {
+  if (plan.stamps.labs === null) {
+    return 0;
+  }
+
+  const blocked = createFinalPathBlocked(room, plan);
+  const controller = getRoomObject(room, "controller");
+  const sources = getRoomSources(room);
+  const reservedPathMasks = createReservedPathMasks(controller, sources);
+  const storage = plan.stamps.hub.anchors.storage ?? plan.stamps.hub.anchor;
+  const terminal = plan.stamps.hub.anchors.terminal;
+  const entrance = plan.stamps.labs.anchors.entrance ?? plan.stamps.labs.anchor;
+  if (terminal === undefined) {
+    return dijkstraUnreachable;
+  }
+
+  const storageGoals = getPathGoals(room.terrain, blocked, reservedPathMasks.default, storage);
+  const terminalGoals = getPathGoals(room.terrain, blocked, reservedPathMasks.default, terminal);
+  const labGoals = getPathGoals(room.terrain, blocked, reservedPathMasks.default, entrance);
+  if (storageGoals.length === 0 || terminalGoals.length === 0 || labGoals.length === 0) {
+    return dijkstraUnreachable;
+  }
+
+  const storageDistanceMap = createDijkstraMap(room.terrain, storageGoals, {
+    costMatrix: createCostMatrix(blocked, reservedPathMasks.default)
+  });
+  const terminalDistanceMap = createDijkstraMap(room.terrain, terminalGoals, {
+    costMatrix: createCostMatrix(blocked, reservedPathMasks.default)
+  });
+  const storageDistance = minDistance(storageDistanceMap, labGoals);
+  const terminalDistance = minDistance(terminalDistanceMap, labGoals);
+  return storageDistance === dijkstraUnreachable || terminalDistance === dijkstraUnreachable
+    ? dijkstraUnreachable
+    : storageDistance + terminalDistance;
 }
 
 function createFinalPathBlocked(room: RoomPlanningRoomData, plan: RoomStampPlan): Uint8Array {

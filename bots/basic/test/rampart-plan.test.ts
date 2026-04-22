@@ -136,6 +136,7 @@ function createCorridorRoadPlan(): RoadPlan {
     createPath("storage-to-pod1", roomName, { x: 30, y: 25 }, { x: 31, y: 25 }, [{ x: 31, y: 25 }]),
     createPath("storage-to-pod2", roomName, { x: 30, y: 25 }, { x: 32, y: 25 }, [{ x: 32, y: 25 }]),
     createPath("terminal-to-labs", roomName, { x: 30, y: 25 }, { x: 33, y: 25 }, [{ x: 33, y: 25 }]),
+    createPath("storage-to-labs", roomName, { x: 30, y: 25 }, { x: 33, y: 25 }, [{ x: 33, y: 25 }]),
     createPath("terminal-to-mineral", roomName, { x: 30, y: 25 }, { x: 20, y: 24 }, [{ x: 20, y: 25 }]),
     createPath("storage-to-source1", roomName, { x: 30, y: 25 }, { x: 5, y: 24 }, [{ x: 5, y: 25 }]),
     createPath("storage-to-source2", roomName, { x: 30, y: 25 }, { x: 15, y: 24 }, [{ x: 15, y: 25 }]),
