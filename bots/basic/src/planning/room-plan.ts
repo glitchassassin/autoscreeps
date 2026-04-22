@@ -1,3 +1,5 @@
+import { planRoomStamps, type RoomStampPlan } from "./stamp-placement.ts";
+
 export type RoomPlanningPolicy = "normal" | "temple";
 
 export type RoomPlanningObject = {
@@ -29,12 +31,18 @@ export type RoomPlanRequest = {
 export type RoomPlan = {
   roomName: string;
   policy: RoomPlanningPolicy;
+  stampPlan: RoomStampPlan;
 };
 
 export function planRoom(request: RoomPlanRequest): RoomPlan {
-  if (request.map.getRoom(request.roomName) === null) {
+  const room = request.map.getRoom(request.roomName);
+  if (room === null) {
     throw new Error(`Room '${request.roomName}' is not available for planning.`);
   }
 
-  throw new Error("Room planning not implemented yet.");
+  return {
+    roomName: request.roomName,
+    policy: request.policy,
+    stampPlan: planRoomStamps(room, request.policy)
+  };
 }
