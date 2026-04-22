@@ -14,6 +14,10 @@ These repositories are cloned under `references/` for local source inspection.
 - `references/screepsmod-mongo` - MongoDB and Redis storage mod for private servers
 - `references/screepsmod-admin-utils` - admin utilities mod for private servers
 
+## Operations
+
+- use conventional commits
+
 ## Experimental Thinking
 
 1. Avoid guesswork. If you are thinking "Probably..." or "Maybe..." this is a sign you need more data. Decide what data you need to achieve certainty, collect it, and then try again. Decisions should be data-driven.
