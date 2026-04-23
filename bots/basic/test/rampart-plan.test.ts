@@ -9,7 +9,6 @@ import { loadBotarena212NormalStampPlanFixture, loadBotarena212RoadPlanningFixtu
 import { installTestPathFinder } from "./helpers/test-pathfinder";
 
 const roomSize = 50;
-const rampartUnplannableNormalRooms = new Set(["E18N6"]);
 const roomArea = roomSize * roomSize;
 
 describe("rampart planning", () => {
@@ -70,7 +69,7 @@ describe("rampart planning", () => {
 
     expect(validateRampartPlan(testCase.room, testCase.plan, roadPlan, sourceSinkPlan, rampartPlan)).toEqual([]);
     expect(rampartPlan.expansionPlan.extraStructures.length).toBeGreaterThanOrEqual(requiredCount);
-    expect(rampartPlan.expansionPlan.accessRoadTiles).not.toEqual(rampartPlan.preRampartStructures.accessRoadTiles);
+    expect(rampartPlan.preRampartStructures).toEqual(rampartPlan.expansionPlan);
     const rampartSet = new Set(rampartPlan.rampartTiles);
     const assignedExtraTiles = new Set([
       ...rampartPlan.towers.map((tower) => tower.tile),
@@ -94,13 +93,33 @@ describe("rampart planning", () => {
     }
   }, 20_000);
 
+  it("recomputes the cut after final expansion slots drop orphaned candidates", () => {
+    const testCase = loadBotarena212RoadPlanningFixture().cases.find((candidate) => candidate.roomName === "E18N6")!;
+    const roadPlan = planRoads(testCase.room, testCase.plan);
+    const sourceSinkPlan = planSourceSinkStructures(testCase.room, testCase.plan, roadPlan);
+    const rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan, sourceSinkPlan);
+    const orphanedPocket = new Set([
+      2 * roomSize + 27,
+      2 * roomSize + 28,
+      2 * roomSize + 29,
+      2 * roomSize + 30,
+      3 * roomSize + 28,
+      3 * roomSize + 30,
+      4 * roomSize + 29,
+      4 * roomSize + 30
+    ]);
+
+    expect(validateRampartPlan(testCase.room, testCase.plan, roadPlan, sourceSinkPlan, rampartPlan)).toEqual([]);
+    for (const tile of orphanedPocket) {
+      expect(rampartPlan.rampartTiles, `${testCase.roomName}:${tile}`).not.toContain(tile);
+    }
+    expect(rampartPlan.preRampartStructures.extraStructures.some((structure) => structure.x === 29 && structure.y === 3)).toBe(false);
+  }, 20_000);
+
   it("allocates all six towers for every cached road-plannable normal layout", () => {
     const fixture = loadBotarena212RoadPlanningFixture();
 
     for (const testCase of fixture.cases) {
-      if (rampartUnplannableNormalRooms.has(testCase.roomName)) {
-        continue;
-      }
       const roadPlan = planRoads(testCase.room, testCase.plan);
       const sourceSinkPlan = planSourceSinkStructures(testCase.room, testCase.plan, roadPlan);
       const rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan, sourceSinkPlan);

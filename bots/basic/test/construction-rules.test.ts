@@ -23,15 +23,39 @@ describe("construction rules", () => {
   it("requires non-road non-container structures near edges to face walled border tiles", () => {
     const openExitTerrain = createTerrain();
     const walledBorderTerrain = createTerrain([
+      { x: 0, y: 8 },
       { x: 0, y: 9 },
       { x: 0, y: 10 },
-      { x: 0, y: 11 }
+      { x: 0, y: 11 },
+      { x: 0, y: 12 }
     ]);
 
     expect(isConstructionSiteTerrainAllowed(openExitTerrain, "extension", 1, 10)).toBe(false);
     expect(isConstructionSiteTerrainAllowed(openExitTerrain, "rampart", 1, 10)).toBe(false);
     expect(isConstructionSiteTerrainAllowed(walledBorderTerrain, "extension", 1, 10)).toBe(true);
     expect(isConstructionSiteTerrainAllowed(walledBorderTerrain, "rampart", 1, 10)).toBe(true);
+  });
+
+  it("reserves range two from open exits for base structures while allowing cut structures", () => {
+    const terrain = createTerrain();
+
+    expect(isConstructionSiteTerrainAllowed(terrain, "extension", 10, 2)).toBe(false);
+    expect(isConstructionSiteTerrainAllowed(terrain, "rampart", 10, 2)).toBe(true);
+    expect(isConstructionSiteTerrainAllowed(terrain, "road", 10, 2)).toBe(true);
+    expect(isConstructionSiteTerrainAllowed(terrain, "container", 10, 2)).toBe(true);
+  });
+
+  it("allows range two near walled room edges", () => {
+    const terrain = createTerrain([
+      { x: 8, y: 0 },
+      { x: 9, y: 0 },
+      { x: 10, y: 0 },
+      { x: 11, y: 0 },
+      { x: 12, y: 0 }
+    ]);
+
+    expect(isConstructionSiteTerrainAllowed(terrain, "extension", 10, 2)).toBe(true);
+    expect(isConstructionSiteTerrainAllowed(terrain, "rampart", 10, 2)).toBe(true);
   });
 
   it("keeps road planning passable even though Screeps can construct roads on walls", () => {

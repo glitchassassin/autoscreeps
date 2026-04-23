@@ -1,5 +1,6 @@
 const roomSize = 50;
 const terrainMaskWall = 1;
+const openExitReserveRange = 2;
 
 export type ConstructionSiteStructureType =
   | "spawn"
@@ -26,6 +27,10 @@ export function isConstructionSiteTerrainAllowed(
   y: number
 ): boolean {
   if (!isConstructionSiteCoordinate(x, y)) {
+    return false;
+  }
+
+  if (requiresOpenExitRangeReserve(structureType) && isWithinRangeOfOpenExit(terrain, x, y, openExitReserveRange)) {
     return false;
   }
 
@@ -56,6 +61,42 @@ function requiresWalledExitAdjacency(structureType: ConstructionSiteStructureTyp
   return structureType !== "road"
     && structureType !== "container"
     && (x === 1 || x === roomSize - 2 || y === 1 || y === roomSize - 2);
+}
+
+function requiresOpenExitRangeReserve(structureType: ConstructionSiteStructureType): boolean {
+  return structureType !== "road" && structureType !== "container" && structureType !== "rampart" && structureType !== "constructedWall";
+}
+
+function isWithinRangeOfOpenExit(terrain: string, x: number, y: number, rangeLimit: number): boolean {
+  if (y <= rangeLimit) {
+    for (let exitX = Math.max(0, x - rangeLimit); exitX <= Math.min(roomSize - 1, x + rangeLimit); exitX += 1) {
+      if (!isWallTerrain(terrain, exitX, 0)) {
+        return true;
+      }
+    }
+  }
+  if (y >= roomSize - 1 - rangeLimit) {
+    for (let exitX = Math.max(0, x - rangeLimit); exitX <= Math.min(roomSize - 1, x + rangeLimit); exitX += 1) {
+      if (!isWallTerrain(terrain, exitX, roomSize - 1)) {
+        return true;
+      }
+    }
+  }
+  if (x <= rangeLimit) {
+    for (let exitY = Math.max(0, y - rangeLimit); exitY <= Math.min(roomSize - 1, y + rangeLimit); exitY += 1) {
+      if (!isWallTerrain(terrain, 0, exitY)) {
+        return true;
+      }
+    }
+  }
+  if (x >= roomSize - 1 - rangeLimit) {
+    for (let exitY = Math.max(0, y - rangeLimit); exitY <= Math.min(roomSize - 1, y + rangeLimit); exitY += 1) {
+      if (!isWallTerrain(terrain, roomSize - 1, exitY)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function hasWalledExitAdjacency(terrain: string, x: number, y: number): boolean {

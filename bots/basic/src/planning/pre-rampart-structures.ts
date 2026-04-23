@@ -170,6 +170,7 @@ export function validatePreRampartStructurePlan(
   }, stampPlan);
   const context = createStructurePlanningContext(room, stampPlan, roadPlan, sourceSinkPlan, config);
   const seenRoads = new Set<number>();
+  const accessRoadTileSet = new Set<number>();
   for (const tile of plan.accessRoadTiles) {
     if (!isValidIndex(tile)) {
       errors.push(`Access road tile index ${tile} is outside the room.`);
@@ -179,12 +180,18 @@ export function validatePreRampartStructurePlan(
       errors.push("Access road tiles must be unique.");
     }
     seenRoads.add(tile);
+    accessRoadTileSet.add(tile);
 
     const coord = fromIndex(tile);
     if (!isBuildableAccessRoadTile(context, coord.x, coord.y)) {
       errors.push(`Access road tile ${coord.x},${coord.y} is not buildable.`);
     }
-    if (!isAdjacentToRoad(context.roadMask, coord.x, coord.y)) {
+  }
+
+  const reachableAccessRoadTiles = collectReachableAccessRoadTiles(context.roadMask, accessRoadTileSet);
+  for (const tile of accessRoadTileSet) {
+    if (!reachableAccessRoadTiles.has(tile)) {
+      const coord = fromIndex(tile);
       errors.push(`Access road tile ${coord.x},${coord.y} is not connected to the planned road network.`);
     }
     addAccessRoadTile(context, tile);
@@ -582,6 +589,33 @@ function getRoadConnectionDistance(context: StructurePlanningContext, tile: numb
 
 function isAdjacentToRoad(roadMask: Uint8Array, x: number, y: number): boolean {
   return neighbors({ x, y }).some((coord) => roadMask[toIndex(coord.x, coord.y)] !== 0);
+}
+
+function collectReachableAccessRoadTiles(roadMask: Uint8Array, accessRoadTiles: Set<number>): Set<number> {
+  const reachable = new Set<number>();
+  const queue: number[] = [];
+
+  for (const tile of accessRoadTiles) {
+    const coord = fromIndex(tile);
+    if (isAdjacentToRoad(roadMask, coord.x, coord.y)) {
+      reachable.add(tile);
+      queue.push(tile);
+    }
+  }
+
+  while (queue.length > 0) {
+    const tile = queue.shift()!;
+    for (const coord of neighbors(fromIndex(tile))) {
+      const neighborTile = toIndex(coord.x, coord.y);
+      if (!accessRoadTiles.has(neighborTile) || reachable.has(neighborTile)) {
+        continue;
+      }
+      reachable.add(neighborTile);
+      queue.push(neighborTile);
+    }
+  }
+
+  return reachable;
 }
 
 function createPlacement(kind: PreRampartStructureKind, candidate: Candidate): PreRampartStructurePlacement {

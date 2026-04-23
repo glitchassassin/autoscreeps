@@ -98,7 +98,7 @@ describe("room planning visualization", () => {
     expect([3, 5, 8]).toContain(visualization.plan.stampPlan.topK);
   }, 20_000);
 
-  it("returns completed stages when rampart planning fails", () => {
+  it("plans E18N6 through ramparts with open-exit-adjacent structure reserves", () => {
     const fixture = loadBotarena212RoomPlanningFixture();
     const room = fixture.map.getRoom("E18N6");
     if (room === null) {
@@ -109,11 +109,12 @@ describe("room planning visualization", () => {
 
     expect(visualization.plan.roadPlan).toBeDefined();
     expect(visualization.plan.sourceSinkPlan).toBeDefined();
-    expect(visualization.plan.rampartPlan).toBeUndefined();
-    expect(visualization.plan.structurePlan).toBeUndefined();
-    expect(visualization.steps.find((step) => step.id === "ramparts")?.status).toBe("error");
-    expect(visualization.steps.find((step) => step.id === "towers")?.status).toBe("skipped");
-    expect(visualization.validations.some((message) => message.includes("No finite rampart cut found"))).toBe(true);
+    expect(visualization.plan.rampartPlan).toBeDefined();
+    expect(visualization.plan.structurePlan).toBeDefined();
+    expect(visualization.steps.find((step) => step.id === "ramparts")?.status).toBe("complete");
+    expect(visualization.steps.find((step) => step.id === "towers")?.status).toBe("complete");
+    expect(visualization.validations).toEqual([]);
+    expect(visualization.plan.rampartPlan?.rampartTiles.length).toBeGreaterThan(0);
   }, 20_000);
 });
 
