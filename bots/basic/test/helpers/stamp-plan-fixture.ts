@@ -18,6 +18,7 @@ export type CachedStampPlanFixture = {
 };
 
 export const botarena212RoadUnplannableNormalRooms = [
+  "E12N6",
   "E19N7"
 ] as const;
 

@@ -86,7 +86,7 @@ describe("structure planning", () => {
     expect(validateRoomStructurePlan(testCase.room, plan.stampPlan, plan.roadPlan, plan.sourceSinkPlan, plan.rampartPlan, plan.structurePlan)).toEqual([]);
   }, 20_000);
 
-  it("handles zero-length mineral roads when the terminal already touches the mineral", () => {
+  it("handles zero-length mineral roads when resolving source/sink endpoints", () => {
     const testCase = loadBotarena212RoadPlanningFixture().cases.find((candidate) => candidate.roomName === "E11N9");
     if (!testCase) {
       throw new Error("Expected cached room E11N9.");
@@ -94,10 +94,23 @@ describe("structure planning", () => {
 
     const roadPlan = planRoads(testCase.room, testCase.plan);
     const mineralPath = roadPlan.paths.find((path) => path.kind === "terminal-to-mineral");
-    const sourceSinkPlan = planSourceSinkStructures(testCase.room, testCase.plan, roadPlan);
+    const zeroLengthRoadPlan: RoadPlan = {
+      ...roadPlan,
+      roadTiles: roadPlan.roadTiles.filter((tile) => !(mineralPath?.roadTiles ?? []).includes(tile)),
+      roads: roadPlan.roads.filter((coord) => !(mineralPath?.roadTiles ?? []).includes(coord.y * roomSize + coord.x)),
+      paths: roadPlan.paths.map((path) => path.kind === "terminal-to-mineral"
+        ? { ...path, tiles: [], roadTiles: [] }
+        : path)
+    };
+    const sourceSinkPlan = planSourceSinkStructures(testCase.room, testCase.plan, zeroLengthRoadPlan);
+    const mineralContainer = sourceSinkPlan.structures.find((structure) => structure.label === "mineral-container");
 
-    expect(mineralPath?.tiles).toEqual([]);
-    expect(validateSourceSinkStructurePlan(testCase.room, testCase.plan, roadPlan, sourceSinkPlan)).toEqual([]);
+    expect(mineralPath?.tiles.length).toBeGreaterThan(0);
+    expect(mineralContainer).toMatchObject({
+      x: mineralPath?.origin.x,
+      y: mineralPath?.origin.y
+    });
+    expect(validateSourceSinkStructurePlan(testCase.room, testCase.plan, zeroLengthRoadPlan, sourceSinkPlan)).toEqual([]);
   });
 
   it("rejects controller link placement on already planned road tiles", () => {

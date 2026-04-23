@@ -73,7 +73,7 @@ describe("road planning", () => {
     const allStampCases = loadBotarena212NormalStampPlanFixture();
     const roadCases = loadBotarena212RoadPlanningFixture();
 
-    expect(allStampCases.skippedRooms).toEqual(["E13N6", "E14N7", "E15N2", "E15N3", "E2N5", "E8N9"]);
+    expect(allStampCases.skippedRooms).toEqual([]);
     expect(allStampCases.cases.length - roadCases.cases.length).toBe(botarena212RoadUnplannableNormalRooms.length);
   });
 

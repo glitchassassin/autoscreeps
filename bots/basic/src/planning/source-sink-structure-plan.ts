@@ -1,3 +1,4 @@
+import { isConstructionSiteTerrainAllowed } from "./construction-rules.ts";
 import type { RoadPlan } from "./road-plan.ts";
 import type { RoomPlanningRoomData } from "./room-plan.ts";
 import {
@@ -10,7 +11,6 @@ import type { RoomStampPlan } from "./stamp-placement.ts";
 
 const roomSize = 50;
 const roomArea = roomSize * roomSize;
-const terrainMaskWall = 1;
 
 export type SourceSinkStructurePlan = {
   roomName: string;
@@ -72,8 +72,8 @@ export function validateSourceSinkStructurePlan(
     }
     seenTypeTiles.add(key);
 
-    if (structure.type !== "extractor" && !isWalkableTerrain(room.terrain, structure.x, structure.y)) {
-      errors.push(`${structure.type} at ${structure.x},${structure.y} is on unwalkable terrain.`);
+    if (!isConstructionSiteTerrainAllowed(room.terrain, structure.type, structure.x, structure.y)) {
+      errors.push(`${structure.type} at ${structure.x},${structure.y} is not buildable terrain.`);
     }
   }
 
@@ -142,10 +142,6 @@ function structureKey(placement: PlannedStructurePlacement): string {
 
 function compareNumbers(left: number, right: number): number {
   return left - right;
-}
-
-function isWalkableTerrain(terrain: string, x: number, y: number): boolean {
-  return isInRoom(x, y) && (terrain.charCodeAt(toIndex(x, y)) - 48 & terrainMaskWall) === 0;
 }
 
 function isValidIndex(index: number): boolean {

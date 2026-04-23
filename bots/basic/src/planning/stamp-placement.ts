@@ -1,16 +1,21 @@
 import { createDijkstraMap, dijkstraUnreachable, type DijkstraMap } from "./dijkstra-map.ts";
 import { createTerrainDistanceTransform } from "./distance-transform.ts";
+import {
+  isConstructionSiteCoordinate,
+  isConstructionSiteTerrainAllowed,
+  isRoadPlanningTerrain,
+  isWalkableTerrain,
+  type ConstructionSiteStructureType
+} from "./construction-rules.ts";
 import type { RoomPlanningObject, RoomPlanningPolicy, RoomPlanningRoomData } from "./room-plan.ts";
 
 const roomSize = 50;
 const roomArea = roomSize * roomSize;
-const terrainMaskWall = 1;
 const defaultTopK = 3;
 const fallbackTopKs = [3, 5, 8] as const;
 const exactCandidateWindowMultiplier = 24;
 const controllerStampReserveRange = 3;
 const sourceStampReserveRange = 2;
-const edgeStampReserveRange = 2;
 
 export type StampKind = "hub" | "fastfiller" | "labs";
 export type StampRotation = 0 | 90 | 180 | 270;
@@ -356,7 +361,7 @@ export function validateStampPlan(room: RoomPlanningRoomData, plan: RoomStampPla
   for (const stamp of stamps) {
     for (const tile of stamp.blockedTiles) {
       const coord = fromIndex(tile);
-      if (!isBuildableStampTerrain(room.terrain, coord.x, coord.y)) {
+      if (!isValidIndex(tile) || !isRoadPlanningTerrain(room.terrain, coord.x, coord.y)) {
         errors.push(`${stamp.label} blocks unbuildable tile ${coord.x},${coord.y}.`);
       }
       if (isReservedStampTileForRoom(room, coord.x, coord.y)) {
@@ -366,6 +371,15 @@ export function validateStampPlan(room: RoomPlanningRoomData, plan: RoomStampPla
         errors.push(`${stamp.label} overlaps occupied tile ${coord.x},${coord.y}.`);
       }
       occupied[tile] = 1;
+    }
+    for (const constructionTile of getStampConstructionTiles(stamp)) {
+      const coord = fromIndex(constructionTile.tile);
+      if (
+        !isValidIndex(constructionTile.tile)
+        || !isConstructionSiteTerrainAllowed(room.terrain, constructionTile.type, coord.x, coord.y)
+      ) {
+        errors.push(`${stamp.label} ${constructionTile.type} is not buildable at ${coord.x},${coord.y}.`);
+      }
     }
   }
 
@@ -988,7 +1002,16 @@ function placeStamp(state: PlacementState, placement: StampPlacement): Placement
 function fitsStamp(features: RoomFeatures, state: PlacementState, placement: StampPlacement): boolean {
   for (const tile of placement.blockedTiles) {
     const { x, y } = fromIndex(tile);
-    if (!isBuildableStampTile(features, x, y) || state.occupied[tile] !== 0) {
+    if (!isValidIndex(tile) || !isRoadPlanningTerrain(features.terrain, x, y) || isReservedStampTileForFeatures(features, x, y) || state.occupied[tile] !== 0) {
+      return false;
+    }
+  }
+  for (const constructionTile of getStampConstructionTiles(placement)) {
+    const { x, y } = fromIndex(constructionTile.tile);
+    if (
+      !isValidIndex(constructionTile.tile)
+      || !isConstructionSiteTerrainAllowed(features.terrain, constructionTile.type, x, y)
+    ) {
       return false;
     }
   }
@@ -1312,20 +1335,9 @@ function isNaturalBlocker(object: RoomPlanningObject): boolean {
   return object.type === "controller" || object.type === "source" || object.type === "mineral" || object.type === "deposit";
 }
 
-function isBuildableStampTile(features: RoomFeatures, x: number, y: number): boolean {
-  return isBuildableStampTerrain(features.terrain, x, y) && !isReservedStampTileForFeatures(features, x, y);
-}
-
-function isBuildableStampTerrain(terrain: string, x: number, y: number): boolean {
-  return x > 0 && x < roomSize - 1 && y > 0 && y < roomSize - 1 && isWalkableTerrain(terrain, x, y);
-}
-
 function isReservedStampTileForFeatures(features: RoomFeatures, x: number, y: number): boolean {
   if (!isInRoom(x, y)) {
     return false;
-  }
-  if (isEdgeReservedStampTile(x, y)) {
-    return true;
   }
 
   const coord = { x, y };
@@ -1336,9 +1348,6 @@ function isReservedStampTileForFeatures(features: RoomFeatures, x: number, y: nu
 function isReservedStampTileForRoom(room: RoomPlanningRoomData, x: number, y: number): boolean {
   if (!isInRoom(x, y)) {
     return false;
-  }
-  if (isEdgeReservedStampTile(x, y)) {
-    return true;
   }
 
   const coord = { x, y };
@@ -1388,11 +1397,11 @@ function isReservedPathTile(
   if (exemption?.kind === "source" && range(coord, sources[exemption.index]!) <= sourceStampReserveRange) {
     return false;
   }
-  if (exemption?.kind === "edge" && isEdgeReservedStampTile(x, y)) {
+  if (exemption?.kind === "edge" && !isConstructionSiteCoordinate(x, y)) {
     return false;
   }
 
-  if (isEdgeReservedStampTile(x, y)) {
+  if (!isConstructionSiteCoordinate(x, y)) {
     return true;
   }
 
@@ -1404,15 +1413,6 @@ function isReservedPathTile(
     range(coord, source) <= sourceStampReserveRange
     && !(exemption?.kind === "source" && exemption.index === index)
   ));
-}
-
-function isEdgeReservedStampTile(x: number, y: number): boolean {
-  return x <= edgeStampReserveRange || y <= edgeStampReserveRange
-    || x >= roomSize - 1 - edgeStampReserveRange || y >= roomSize - 1 - edgeStampReserveRange;
-}
-
-function isWalkableTerrain(terrain: string, x: number, y: number): boolean {
-  return isInRoom(x, y) && (terrain.charCodeAt(toIndex(x, y)) - 48 & terrainMaskWall) === 0;
 }
 
 function neighbors(coord: Coord): Coord[] {
@@ -1448,6 +1448,10 @@ function range(left: Coord, right: Coord): number {
 
 function isInRoom(x: number, y: number): boolean {
   return Number.isInteger(x) && Number.isInteger(y) && x >= 0 && x < roomSize && y >= 0 && y < roomSize;
+}
+
+function isValidIndex(index: number): boolean {
+  return Number.isInteger(index) && index >= 0 && index < roomArea;
 }
 
 function toIndex(x: number, y: number): number {
@@ -1584,6 +1588,87 @@ function labStructureOffsets(): Coord[] {
 
 function labBlockedOffsets(): Coord[] {
   return [...labRoadOffsets(), ...labStructureOffsets()];
+}
+
+type StampConstructionOffset = {
+  type: ConstructionSiteStructureType;
+  offset: Coord;
+};
+
+type StampConstructionTile = {
+  type: ConstructionSiteStructureType;
+  tile: number;
+};
+
+function getStampConstructionTiles(stamp: StampPlacement): StampConstructionTile[] {
+  return getStampConstructionOffsets(stamp).map((spec) => {
+    const offset = rotateOffset(spec.offset, stamp.rotation);
+    return {
+      type: spec.type,
+      tile: toIndex(stamp.anchor.x + offset.x, stamp.anchor.y + offset.y)
+    };
+  });
+}
+
+function getStampConstructionOffsets(stamp: StampPlacement): StampConstructionOffset[] {
+  switch (stamp.kind) {
+    case "hub":
+      return stamp.label === "hub-temple" ? templeHubConstructionOffsets() : normalHubConstructionOffsets();
+    case "fastfiller":
+      return fastfillerConstructionOffsets();
+    case "labs":
+      return [
+        ...labRoadOffsets().map((offset) => ({ type: "road" as const, offset })),
+        ...labStructureOffsets().map((offset) => ({ type: "lab" as const, offset }))
+      ];
+  }
+}
+
+function normalHubConstructionOffsets(): StampConstructionOffset[] {
+  return [
+    { type: "storage", offset: { x: 0, y: 0 } },
+    { type: "link", offset: { x: 1, y: 0 } },
+    { type: "terminal", offset: { x: 2, y: 0 } },
+    { type: "factory", offset: { x: 0, y: 1 } },
+    { type: "powerSpawn", offset: { x: 0, y: 2 } },
+    { type: "spawn", offset: { x: 1, y: 2 } }
+  ];
+}
+
+function templeHubConstructionOffsets(): StampConstructionOffset[] {
+  return [
+    ...normalHubConstructionOffsets(),
+    { type: "lab", offset: { x: 2, y: 2 } },
+    { type: "lab", offset: { x: 3, y: 2 } },
+    { type: "lab", offset: { x: 3, y: 1 } }
+  ];
+}
+
+function fastfillerConstructionOffsets(): StampConstructionOffset[] {
+  const fillerOffsets = new Set(["-1,1", "1,-1"]);
+  const containerOffset = { x: 0, y: 0 };
+  const spawnOffset = { x: -1, y: 0 };
+  const linkOffset = { x: 1, y: 0 };
+  const offsets: StampConstructionOffset[] = [
+    { type: "container", offset: containerOffset },
+    { type: "spawn", offset: spawnOffset },
+    { type: "link", offset: linkOffset }
+  ];
+
+  for (const offset of fastfillerOffsets()) {
+    const key = `${offset.x},${offset.y}`;
+    if (
+      key === `${containerOffset.x},${containerOffset.y}`
+      || key === `${spawnOffset.x},${spawnOffset.y}`
+      || key === `${linkOffset.x},${linkOffset.y}`
+      || fillerOffsets.has(key)
+    ) {
+      continue;
+    }
+    offsets.push({ type: "extension", offset });
+  }
+
+  return offsets;
 }
 
 const normalHubTemplate: StampTemplate = {

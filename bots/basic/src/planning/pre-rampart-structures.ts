@@ -1,14 +1,13 @@
 import type { RoadPlan, RoadPlanPath, RoadPlanPathKind } from "./road-plan.ts";
+import { isConstructionSiteTerrainAllowed, isRoadPlanningTerrain } from "./construction-rules.ts";
 import type { RoomPlanningObject, RoomPlanningRoomData } from "./room-plan.ts";
 import type { SourceSinkStructurePlan } from "./source-sink-structure-plan.ts";
 import type { RoomStampAnchor, RoomStampPlan, StampPlacement } from "./stamp-placement.ts";
 
 const roomSize = 50;
 const roomArea = roomSize * roomSize;
-const terrainMaskWall = 1;
 const controllerReserveRange = 3;
 const sourceReserveRange = 2;
-const edgeReserveRange = 2;
 const maxExtensions = 60;
 const fastfillerExtensionsPerPod = 12;
 const maxTowers = 6;
@@ -410,7 +409,7 @@ function createStructurePlanningContext(
 
   for (let tile = 0; tile < roomArea; tile += 1) {
     const coord = fromIndex(tile);
-    if (!isWalkableTerrain(room.terrain, coord.x, coord.y)) {
+    if (!isRoadPlanningTerrain(room.terrain, coord.x, coord.y)) {
       baseBlocked[tile] = 1;
     }
   }
@@ -541,7 +540,7 @@ function isBuildableStructureTile(context: StructurePlanningContext, x: number, 
   if (context.blocked[tile] !== 0) {
     return false;
   }
-  if (x <= edgeReserveRange || y <= edgeReserveRange || x >= roomSize - 1 - edgeReserveRange || y >= roomSize - 1 - edgeReserveRange) {
+  if (!isConstructionSiteTerrainAllowed(context.room.terrain, "extension", x, y)) {
     return false;
   }
 
@@ -561,7 +560,7 @@ function isBuildableAccessRoadTile(context: StructurePlanningContext, x: number,
   if (context.baseBlocked[tile] !== 0 || context.roadMask[tile] !== 0) {
     return false;
   }
-  if (x <= edgeReserveRange || y <= edgeReserveRange || x >= roomSize - 1 - edgeReserveRange || y >= roomSize - 1 - edgeReserveRange) {
+  if (!isRoadPlanningTerrain(context.room.terrain, x, y)) {
     return false;
   }
 
@@ -693,10 +692,6 @@ function validateTerrain(terrain: string): void {
 
 function isNaturalBlocker(object: RoomPlanningObject): boolean {
   return object.type === "controller" || object.type === "source" || object.type === "mineral" || object.type === "deposit";
-}
-
-function isWalkableTerrain(terrain: string, x: number, y: number): boolean {
-  return isInRoom(x, y) && (terrain.charCodeAt(toIndex(x, y)) - 48 & terrainMaskWall) === 0;
 }
 
 function neighbors(coord: RoomStampAnchor): RoomStampAnchor[] {

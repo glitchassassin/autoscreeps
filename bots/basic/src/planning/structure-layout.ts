@@ -1,4 +1,5 @@
 import { createDijkstraMap, dijkstraUnreachable, type DijkstraMap } from "./dijkstra-map.ts";
+import { isConstructionSiteTerrainAllowed, isWalkableTerrain } from "./construction-rules.ts";
 import type { PreRampartStructurePlan } from "./pre-rampart-structures.ts";
 import type { RoadPlan, RoadPlanPath, RoadPlanPathKind } from "./road-plan.ts";
 import type { RoomPlanningObject, RoomPlanningRoomData } from "./room-plan.ts";
@@ -6,7 +7,6 @@ import type { RoomStampAnchor, RoomStampPlan, StampPlacement, StampRotation } fr
 
 const roomSize = 50;
 const roomArea = roomSize * roomSize;
-const terrainMaskWall = 1;
 
 export type PlannedStructureType =
   | "container"
@@ -245,6 +245,7 @@ function chooseSourceLinkTile(
     const tile = toIndex(coord.x, coord.y);
     if (
       !isWalkableTerrain(room.terrain, coord.x, coord.y)
+      || !isConstructionSiteTerrainAllowed(room.terrain, "link", coord.x, coord.y)
       || naturalBlockers[tile] !== 0
       || roadMask[tile] !== 0
       || blockedTiles.has(tile)
@@ -285,6 +286,7 @@ function chooseControllerLinkTile(
     const tile = toIndex(coord.x, coord.y);
     if (
       !isWalkableTerrain(room.terrain, coord.x, coord.y)
+      || !isConstructionSiteTerrainAllowed(room.terrain, "link", coord.x, coord.y)
       || naturalBlockers[tile] !== 0
       || roadMask[tile] !== 0
       || blockedTiles.has(tile)
@@ -431,10 +433,6 @@ function sortPlacements<T extends PlannedStructurePlacement>(placements: T[]): T
 
 function isNaturalBlocker(object: RoomPlanningObject): boolean {
   return object.type === "controller" || object.type === "source" || object.type === "mineral" || object.type === "deposit";
-}
-
-function isWalkableTerrain(terrain: string, x: number, y: number): boolean {
-  return isInRoom(x, y) && (terrain.charCodeAt(toIndex(x, y)) - 48 & terrainMaskWall) === 0;
 }
 
 function neighbors(coord: Coord): Coord[] {

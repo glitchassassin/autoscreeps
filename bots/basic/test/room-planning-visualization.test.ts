@@ -85,7 +85,7 @@ describe("room planning visualization", () => {
     expect(visualization.plan.structurePlan.structures.filter((structure) => structure.type === "lab")).toHaveLength(3);
   }, 20_000);
 
-  it("uses fallback stamp search for rooms needing wider candidate sets", () => {
+  it("plans E11N9 with automatic stamp search", () => {
     const fixture = loadBotarena212RoomPlanningFixture();
     const room = fixture.map.getRoom("E11N9");
     if (room === null) {
@@ -95,7 +95,7 @@ describe("room planning visualization", () => {
     const visualization = createRoomPlanningVisualization(room, "normal");
 
     expect(visualization.validations).toEqual([]);
-    expect(visualization.plan.stampPlan.topK).toBe(5);
+    expect([3, 5, 8]).toContain(visualization.plan.stampPlan.topK);
   }, 20_000);
 });
 

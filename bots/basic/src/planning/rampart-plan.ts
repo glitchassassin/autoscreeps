@@ -1,4 +1,5 @@
 import { createDijkstraMap, dijkstraUnreachable, type DijkstraMap } from "./dijkstra-map.ts";
+import { isConstructionSiteTerrainAllowed } from "./construction-rules.ts";
 import { createFloodFill } from "./flood-fill.ts";
 import {
   planPreRampartStructures,
@@ -28,7 +29,6 @@ const impossibleCapacity = 1_000_000_000;
 const maxTowers = 6;
 const towerControllerReserveRange = 3;
 const towerSourceReserveRange = 2;
-const towerEdgeReserveRange = 2;
 
 export type RampartOptionalRegionKey = "source1" | "source2" | "controller";
 
@@ -1417,12 +1417,7 @@ function isTowerCandidateTile(
   }
 
   const coord = fromIndex(tile);
-  if (
-    coord.x <= towerEdgeReserveRange
-    || coord.y <= towerEdgeReserveRange
-    || coord.x >= roomSize - 1 - towerEdgeReserveRange
-    || coord.y >= roomSize - 1 - towerEdgeReserveRange
-  ) {
+  if (!isConstructionSiteTerrainAllowed(context.room.terrain, "tower", coord.x, coord.y)) {
     return false;
   }
   if (neighbors(coord).every((neighbor) => roadMask[toIndex(neighbor.x, neighbor.y)] === 0)) {
@@ -1442,12 +1437,7 @@ function isGeneralExtraStructureCandidateTile(context: RampartPlanningContext, t
   }
 
   const coord = fromIndex(tile);
-  if (
-    coord.x <= towerEdgeReserveRange
-    || coord.y <= towerEdgeReserveRange
-    || coord.x >= roomSize - 1 - towerEdgeReserveRange
-    || coord.y >= roomSize - 1 - towerEdgeReserveRange
-  ) {
+  if (!isConstructionSiteTerrainAllowed(context.room.terrain, "extension", coord.x, coord.y)) {
     return false;
   }
   if (neighbors(coord).every((neighbor) => roadMask[toIndex(neighbor.x, neighbor.y)] === 0)) {
@@ -1841,12 +1831,8 @@ function addExitIfWalkable(exits: number[], walkable: Uint8Array, x: number, y: 
 
 function isRampartBuildable(context: RampartPlanningContext, tile: number): boolean {
   const coord = fromIndex(tile);
-  const edgeOffset = context.mustDefend[tile] !== 0 && context.rampartAllowedOnMustDefend[tile] !== 0 ? 0 : 1;
   return context.walkable[tile] !== 0
-    && coord.x > edgeOffset
-    && coord.y > edgeOffset
-    && coord.x < roomSize - 1 - edgeOffset
-    && coord.y < roomSize - 1 - edgeOffset;
+    && isConstructionSiteTerrainAllowed(context.room.terrain, "rampart", coord.x, coord.y);
 }
 
 function requirePath(roadPlan: RoadPlan, kind: RoadPlanPathKind): RoadPlanPath {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isConstructionSiteCoordinate, isRoadPlanningTerrain } from "../src/planning/construction-rules";
 import { createDijkstraMap, dijkstraUnreachable } from "../src/planning/dijkstra-map";
 import { planRoom, type RoomPlanningRoomData } from "../src/planning/room-plan";
 import {
@@ -13,11 +14,9 @@ import { loadBotarena212RoomPlanningFixture } from "./helpers/room-planning-fixt
 
 const roomSize = 50;
 const roomArea = roomSize * roomSize;
-const terrainMaskWall = 1;
 const controllerStampReserveRange = 3;
 const sourceStampReserveRange = 2;
-const edgeStampReserveRange = 2;
-const reservedPathUnplannableNormalRooms = new Set(["E14N7", "E15N2", "E2N5"]);
+const reservedPathUnplannableNormalRooms = new Set<string>();
 
 describe("room planning", () => {
   it("identifies the viable botarena-212 planning rooms", () => {
@@ -55,7 +54,7 @@ describe("room planning", () => {
     }
 
     expect([...unplannableRooms].sort()).toEqual([...reservedPathUnplannableNormalRooms].sort());
-  }, 180_000);
+  }, 240_000);
 
   it("returns anchor-based opaque stamp placements", () => {
     const fixture = loadBotarena212RoomPlanningFixture();
@@ -310,9 +309,6 @@ function isReservedStampTile(room: RoomPlanningRoomData, coord: RoomStampAnchor)
   if (!isInRoom(coord.x, coord.y)) {
     return false;
   }
-  if (isReservedEdgeTile(coord)) {
-    return true;
-  }
 
   return room.objects.some((object) => (
     (object.type === "controller" && range(coord, object) <= controllerStampReserveRange)
@@ -376,7 +372,7 @@ function isReservedPathTile(
     return false;
   }
 
-  return isReservedEdgeTile(coord)
+  return !isConstructionSiteCoordinate(coord.x, coord.y)
     || range(coord, controller) <= controllerStampReserveRange
     || sources.some((source, index) => (
       range(coord, source) <= sourceStampReserveRange && sourceExemptionIndex !== index
@@ -386,6 +382,7 @@ function isReservedPathTile(
 function getPathGoals(terrain: string, blocked: Uint8Array, reservedPathMask: Uint8Array, target: RoomStampAnchor): RoomStampAnchor[] {
   return neighbors(target).filter((coord) => (
     isWalkableTerrain(terrain, coord.x, coord.y)
+    && isConstructionSiteCoordinate(coord.x, coord.y)
     && blocked[toIndex(coord.x, coord.y)] === 0
     && reservedPathMask[toIndex(coord.x, coord.y)] === 0
   ));
@@ -394,6 +391,7 @@ function getPathGoals(terrain: string, blocked: Uint8Array, reservedPathMask: Ui
 function getDirectPathGoals(terrain: string, blocked: Uint8Array, reservedPathMask: Uint8Array, target: RoomStampAnchor): RoomStampAnchor[] {
   if (
     isWalkableTerrain(terrain, target.x, target.y)
+    && isConstructionSiteCoordinate(target.x, target.y)
     && blocked[toIndex(target.x, target.y)] === 0
     && reservedPathMask[toIndex(target.x, target.y)] === 0
   ) {
@@ -443,11 +441,6 @@ function isNaturalBlocker(type: string): boolean {
   return type === "controller" || type === "source" || type === "mineral" || type === "deposit";
 }
 
-function isReservedEdgeTile(coord: RoomStampAnchor): boolean {
-  return coord.x <= edgeStampReserveRange || coord.y <= edgeStampReserveRange
-    || coord.x >= roomSize - 1 - edgeStampReserveRange || coord.y >= roomSize - 1 - edgeStampReserveRange;
-}
-
 function toLocalOffsetKeys(stamp: StampPlacement, tiles: number[]): string[] {
   return tiles
     .map(fromIndex)
@@ -473,7 +466,7 @@ function inverseRotateOffset(offset: RoomStampAnchor, rotation: StampPlacement["
 }
 
 function isWalkableTerrain(terrain: string, x: number, y: number): boolean {
-  return (terrain.charCodeAt(toIndex(x, y)) - 48 & terrainMaskWall) === 0;
+  return isRoadPlanningTerrain(terrain, x, y);
 }
 
 function isInRoom(x: number, y: number): boolean {

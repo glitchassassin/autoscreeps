@@ -1,10 +1,10 @@
 import { createDijkstraMap, dijkstraUnreachable, type DijkstraMap } from "./dijkstra-map.ts";
+import { isConstructionSiteTerrainAllowed, isRoadPlanningTerrain } from "./construction-rules.ts";
 import type { RoomPlanningObject, RoomPlanningRoomData } from "./room-plan.ts";
 import { getStampPathBlockedTiles, type RoomStampAnchor, type RoomStampPlan, type StampPlacement } from "./stamp-placement.ts";
 
 const roomSize = 50;
 const roomArea = roomSize * roomSize;
-const terrainMaskWall = 1;
 const defaultPlainCost = 2;
 const defaultSwampCost = 10;
 const defaultRoadReuseCost = 1;
@@ -188,8 +188,8 @@ export function validateRoadPlan(room: RoomPlanningRoomData, stampPlan: RoomStam
     roadTileSet.add(tile);
 
     const coord = fromIndex(tile);
-    if (!isWalkableTerrain(room.terrain, coord.x, coord.y)) {
-      errors.push(`Road tile ${coord.x},${coord.y} is on unwalkable terrain.`);
+    if (!isRoadPlanningTerrain(room.terrain, coord.x, coord.y)) {
+      errors.push(`Road tile ${coord.x},${coord.y} is not buildable road terrain.`);
     }
     if (context.blocked[tile] !== 0) {
       errors.push(`Road tile ${coord.x},${coord.y} overlaps a blocked planner tile.`);
@@ -604,7 +604,7 @@ function createBlockedMask(room: RoomPlanningRoomData, stampPlan: RoomStampPlan)
 
   for (let index = 0; index < roomArea; index += 1) {
     const coord = fromIndex(index);
-    if (!isWalkableTerrain(room.terrain, coord.x, coord.y)) {
+    if (!isRoadPlanningTerrain(room.terrain, coord.x, coord.y)) {
       blocked[index] = 1;
     }
   }
@@ -696,6 +696,7 @@ function collectSourceReservedCandidates(
         context.blocked[tile] !== 0
         || roadMask[tile] !== 0
         || reservedMask[tile] !== 0
+        || !isConstructionSiteTerrainAllowed(context.room.terrain, "link", reserved.x, reserved.y)
         || range(reserved, source) > 2
       ) {
         continue;
@@ -739,6 +740,7 @@ function collectControllerReservedCandidates(
           context.blocked[tile] !== 0
           || roadMask[tile] !== 0
           || reservedMask[tile] !== 0
+          || !isConstructionSiteTerrainAllowed(context.room.terrain, "link", reserved.x, reserved.y)
           || range(reserved, controller) !== controllerReserveRange + 1
         ) {
           continue;
@@ -806,6 +808,7 @@ function chooseSourceLinkReservation(
       context.blocked[tile] !== 0
       || roadMask[tile] !== 0
       || reservedMask[tile] !== 0
+      || !isConstructionSiteTerrainAllowed(context.room.terrain, "link", coord.x, coord.y)
       || range(coord, source) > 2
     ) {
       continue;
@@ -843,6 +846,7 @@ function chooseControllerLinkReservation(
       context.blocked[tile] !== 0
       || roadMask[tile] !== 0
       || reservedMask[tile] !== 0
+      || !isConstructionSiteTerrainAllowed(context.room.terrain, "link", coord.x, coord.y)
       || range(coord, controller) !== 4
     ) {
       continue;
@@ -992,10 +996,6 @@ function ensurePathFinder(): void {
   if (typeof PathFinder === "undefined" || typeof PathFinder.search !== "function") {
     throw new Error("PathFinder global is not installed.");
   }
-}
-
-function isWalkableTerrain(terrain: string, x: number, y: number): boolean {
-  return isInRoom(x, y) && (terrain.charCodeAt(toIndex(x, y)) - 48 & terrainMaskWall) === 0;
 }
 
 function neighbors(coord: RoomStampAnchor): RoomStampAnchor[] {
