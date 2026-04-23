@@ -428,6 +428,11 @@ p {
   color: #f2bd5c;
 }
 
+.step-button.error {
+  border-color: rgba(251, 113, 133, 0.7);
+  color: #fecdd3;
+}
+
 .inspector-section {
   border-bottom: 1px solid #26313d;
   padding-bottom: 14px;

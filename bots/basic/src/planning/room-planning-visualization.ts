@@ -1,7 +1,7 @@
 import { installPlannerPathFinder } from "./pathfinder.ts";
 import { planRamparts, validateRampartPlan, type RampartPlan } from "./rampart-plan.ts";
 import { planRoads, validateRoadPlan, type RoadPlan } from "./road-plan.ts";
-import type { CompleteRoomPlan, RoomPlanningPolicy, RoomPlanningRoomData } from "./room-plan.ts";
+import type { CompleteRoomPlan, RoomPlan, RoomPlanningPolicy, RoomPlanningRoomData } from "./room-plan.ts";
 import {
   planSourceSinkStructures,
   validateSourceSinkStructurePlan,
@@ -23,10 +23,13 @@ const roomSize = 50;
 export type RoomPlanningVisualization = {
   roomName: string;
   policy: RoomPlanningPolicy;
-  plan: CompleteRoomPlan;
+  plan: RoomPlanningVisualizationPlan;
   steps: RoomPlanningVisualizationStep[];
   validations: string[];
+  error?: string;
 };
+
+export type RoomPlanningVisualizationPlan = RoomPlan & Partial<Omit<CompleteRoomPlan, keyof RoomPlan>>;
 
 export type RoomPlanningVisualizationStepStatus = "complete" | "skipped" | "error";
 
@@ -88,14 +91,108 @@ export function createRoomPlanningVisualization(
   installPlannerPathFinder({ [room.roomName]: room.terrain });
 
   const stampPlan = planRoomStamps(room, policy, options);
-  const roadPlan = planRoads(room, stampPlan);
-  const sourceSinkPlan = planSourceSinkStructures(room, stampPlan, roadPlan);
-  const rampartPlan = planRamparts(room, stampPlan, roadPlan, sourceSinkPlan);
-  const structurePlan = planRoomStructures(room, stampPlan, roadPlan, sourceSinkPlan, rampartPlan);
-  const plan: CompleteRoomPlan = {
+  const stampDebug = createStampPlacementDebug(room, policy, stampPlan, options);
+  const phases = stampDebug.phases;
+  const stampSteps = [
+    createHubStep(stampPlan, phases[0]),
+    createFastfillerStep("fastfiller-a", "Fastfiller pod A", stampPlan.stamps.fastfillers[0], phases[1], stampPlan),
+    createFastfillerStep("fastfiller-b", "Fastfiller pod B", stampPlan.stamps.fastfillers[1], phases[2], stampPlan),
+    createLabsStep(stampPlan, phases[3])
+  ];
+  const stampValidations = validateStampPlan(room, stampPlan);
+  const basePlan: RoomPlan = {
     roomName: room.roomName,
     policy,
-    stampPlan,
+    stampPlan
+  };
+
+  let roadPlan: RoadPlan;
+  try {
+    roadPlan = planRoads(room, stampPlan);
+  } catch (error) {
+    return createPartialVisualization(basePlan, stampSteps, stampValidations, "roads", "Roads", error, createCommittedStampLayers(stampPlan));
+  }
+
+  const roadValidations = validateRoadPlan(room, stampPlan, roadPlan);
+  const roadStep = createRoadStep(roadPlan, stampPlan);
+
+  let sourceSinkPlan: SourceSinkStructurePlan;
+  try {
+    sourceSinkPlan = planSourceSinkStructures(room, stampPlan, roadPlan);
+  } catch (error) {
+    return createPartialVisualization(
+      { ...basePlan, roadPlan },
+      [...stampSteps, roadStep],
+      [...stampValidations, ...roadValidations],
+      "sources-sinks",
+      "Sources and sinks",
+      error,
+      [...createCommittedStampLayers(stampPlan), ...createRoadPathLayers(roadPlan)]
+    );
+  }
+
+  const sourceSinkValidations = validateSourceSinkStructurePlan(room, stampPlan, roadPlan, sourceSinkPlan);
+  const sourceSinkStep = createSourceSinkStep(stampPlan, roadPlan, sourceSinkPlan);
+
+  let rampartPlan: RampartPlan;
+  try {
+    rampartPlan = planRamparts(room, stampPlan, roadPlan, sourceSinkPlan);
+  } catch (error) {
+    return createPartialVisualization(
+      { ...basePlan, roadPlan, sourceSinkPlan },
+      [
+        ...stampSteps,
+        roadStep,
+        sourceSinkStep,
+        createSkippedStep("spare-extensions", "Spare extensions", "Skipped because rampart planning did not complete.", [
+          ...createCommittedStampLayers(stampPlan),
+          ...createRoadPathLayers(roadPlan),
+          createSourceSinkStructureLayer(sourceSinkPlan.structures)
+        ])
+      ],
+      [...stampValidations, ...roadValidations, ...sourceSinkValidations],
+      "ramparts",
+      "Rampart min-cut",
+      error,
+      [
+        ...createCommittedStampLayers(stampPlan),
+        ...createRoadPathLayers(roadPlan),
+        createSourceSinkStructureLayer(sourceSinkPlan.structures)
+      ]
+    );
+  }
+
+  let structurePlan: RoomStructurePlan;
+  try {
+    structurePlan = planRoomStructures(room, stampPlan, roadPlan, sourceSinkPlan, rampartPlan);
+  } catch (error) {
+    const rampartValidations = validateRampartPlan(room, stampPlan, roadPlan, sourceSinkPlan, rampartPlan);
+    return createPartialVisualization(
+      { ...basePlan, roadPlan, sourceSinkPlan, rampartPlan },
+      [
+        ...stampSteps,
+        roadStep,
+        sourceSinkStep,
+        createSpareExtensionStep(stampPlan, roadPlan, sourceSinkPlan, rampartPlan),
+        createRampartStep(stampPlan, roadPlan, sourceSinkPlan, rampartPlan),
+        createTowerStep(stampPlan, roadPlan, sourceSinkPlan, rampartPlan)
+      ],
+      [...stampValidations, ...roadValidations, ...sourceSinkValidations, ...rampartValidations],
+      "remaining-structures",
+      "Remaining structures",
+      error,
+      [
+        ...createCommittedStampLayers(stampPlan),
+        ...createRoadPathLayers(roadPlan),
+        createSourceSinkStructureLayer(sourceSinkPlan.structures),
+        ...createPreRampartStructureLayers(rampartPlan),
+        ...createRampartCommittedLayers(rampartPlan)
+      ]
+    );
+  }
+
+  const plan: CompleteRoomPlan = {
+    ...basePlan,
     roadPlan,
     sourceSinkPlan,
     rampartPlan,
@@ -108,27 +205,86 @@ export function createRoomPlanningVisualization(
     ...validateRampartPlan(room, stampPlan, roadPlan, sourceSinkPlan, rampartPlan),
     ...validateRoomStructurePlan(room, stampPlan, roadPlan, sourceSinkPlan, rampartPlan, structurePlan)
   ];
-  const stampDebug = createStampPlacementDebug(room, policy, stampPlan, options);
-  const phases = stampDebug.phases;
 
   return {
     roomName: room.roomName,
     policy,
     plan,
     steps: [
-      createHubStep(stampPlan, phases[0]),
-      createFastfillerStep("fastfiller-a", "Fastfiller pod A", stampPlan.stamps.fastfillers[0], phases[1], stampPlan),
-      createFastfillerStep("fastfiller-b", "Fastfiller pod B", stampPlan.stamps.fastfillers[1], phases[2], stampPlan),
-      createLabsStep(stampPlan, phases[3]),
-      createRoadStep(roadPlan, stampPlan),
-      createSourceSinkStep(stampPlan, roadPlan, sourceSinkPlan),
-      createSpareExtensionStep(stampPlan, roadPlan, sourceSinkPlan, rampartPlan, structurePlan),
-      createRampartStep(stampPlan, roadPlan, sourceSinkPlan, rampartPlan, structurePlan),
-      createTowerStep(stampPlan, roadPlan, sourceSinkPlan, rampartPlan, structurePlan),
+      ...stampSteps,
+      roadStep,
+      sourceSinkStep,
+      createSpareExtensionStep(stampPlan, roadPlan, sourceSinkPlan, rampartPlan),
+      createRampartStep(stampPlan, roadPlan, sourceSinkPlan, rampartPlan),
+      createTowerStep(stampPlan, roadPlan, sourceSinkPlan, rampartPlan),
       createRemainingStructureStep(stampPlan, roadPlan, sourceSinkPlan, rampartPlan, structurePlan)
     ],
     validations
   };
+}
+
+function createPartialVisualization(
+  plan: RoomPlanningVisualizationPlan,
+  completedSteps: RoomPlanningVisualizationStep[],
+  validations: string[],
+  failedStepId: string,
+  failedStepTitle: string,
+  error: unknown,
+  layers: RoomPlanningLayer[]
+): RoomPlanningVisualization {
+  const message = errorMessage(error);
+  const steps = [
+    ...completedSteps,
+    createErrorStep(failedStepId, failedStepTitle, message, layers),
+    ...createTrailingSkippedSteps(failedStepId, layers)
+  ];
+  return {
+    roomName: plan.roomName,
+    policy: plan.policy,
+    plan,
+    steps,
+    validations: [...validations, `Planner error: ${message}`],
+    error: message
+  };
+}
+
+function createErrorStep(id: string, title: string, message: string, layers: RoomPlanningLayer[]): RoomPlanningVisualizationStep {
+  return {
+    id,
+    title,
+    status: "error",
+    summary: message,
+    metrics: [metric("error", message, "bad")],
+    candidates: [],
+    layers
+  };
+}
+
+function createSkippedStep(id: string, title: string, summary: string, layers: RoomPlanningLayer[]): RoomPlanningVisualizationStep {
+  return {
+    id,
+    title,
+    status: "skipped",
+    summary,
+    metrics: [metric("status", "skipped", "warn")],
+    candidates: [],
+    layers
+  };
+}
+
+function createTrailingSkippedSteps(failedStepId: string, layers: RoomPlanningLayer[]): RoomPlanningVisualizationStep[] {
+  const remaining = [
+    ["roads", "Roads"],
+    ["sources-sinks", "Sources and sinks"],
+    ["spare-extensions", "Spare extensions"],
+    ["ramparts", "Rampart min-cut"],
+    ["towers", "Towers"],
+    ["remaining-structures", "Remaining structures"]
+  ] as const;
+  const failedIndex = remaining.findIndex(([id]) => id === failedStepId);
+  return failedIndex < 0
+    ? []
+    : remaining.slice(failedIndex + 1).map(([id, title]) => createSkippedStep(id, title, "Skipped because an earlier planning stage failed.", layers));
 }
 
 function createHubStep(stampPlan: RoomStampPlan, phase: StampDebugByPhase): RoomPlanningVisualizationStep {
@@ -298,8 +454,7 @@ function createSpareExtensionStep(
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
   sourceSinkPlan: SourceSinkStructurePlan,
-  rampartPlan: RampartPlan,
-  structurePlan: RoomStructurePlan
+  rampartPlan: RampartPlan
 ): RoomPlanningVisualizationStep {
   const expansionPlan = rampartPlan.expansionPlan;
 
@@ -328,8 +483,7 @@ function createRampartStep(
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
   sourceSinkPlan: SourceSinkStructurePlan,
-  rampartPlan: RampartPlan,
-  structurePlan: RoomStructurePlan
+  rampartPlan: RampartPlan
 ): RoomPlanningVisualizationStep {
   return {
     id: "ramparts",
@@ -395,8 +549,7 @@ function createTowerStep(
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
   sourceSinkPlan: SourceSinkStructurePlan,
-  rampartPlan: RampartPlan,
-  structurePlan: RoomStructurePlan
+  rampartPlan: RampartPlan
 ): RoomPlanningVisualizationStep {
   const weakest = rampartPlan.towers.length === 0 ? 0 : Math.min(...rampartPlan.towers.map((tower) => tower.minDamage));
   const average = rampartPlan.towers.length === 0
@@ -826,6 +979,10 @@ function createStampStationaryCreepLayers(
 
 function metric(label: string, value: string | number, tone: RoomPlanningMetric["tone"] = "neutral"): RoomPlanningMetric {
   return { label, value, tone };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function getStationaryCreepTiles(stamp: StampPlacement, policy: RoomPlanningPolicy): number[] {

@@ -204,13 +204,19 @@ function renderStatus(): void {
     return;
   }
   if (state.visualization) {
-    statusText.textContent = `${state.visualization.roomName} / ${state.visualization.policy}`;
+    statusText.textContent = state.visualization.error
+      ? `${state.visualization.roomName} / ${state.visualization.policy} / incomplete`
+      : `${state.visualization.roomName} / ${state.visualization.policy}`;
     return;
   }
   statusText.textContent = "Ready";
 }
 
 function getDefaultStepIndex(visualization: RoomPlanningVisualization): number {
+  const errorIndex = visualization.steps.findIndex((step) => step.status === "error");
+  if (errorIndex >= 0) {
+    return errorIndex;
+  }
   for (let index = visualization.steps.length - 1; index >= 0; index -= 1) {
     if (visualization.steps[index]?.status === "complete") {
       return index;
@@ -386,7 +392,7 @@ function renderLayers(step: RoomPlanningVisualizationStep, visualization: RoomPl
     if (layer.kind === "creep") {
       continue;
     }
-    if (rendersAsStructureSvg(layer)) {
+    if (rendersAsStructureSvg(layer) && visualization.plan.structurePlan) {
       continue;
     }
     const className = `overlay overlay-${layer.kind} tone-${layer.tone ?? "selected"}`;
@@ -424,12 +430,16 @@ function renderObjects(room: RoomPlanningRoomData): string {
 }
 
 function renderStructureGlyphs(step: RoomPlanningVisualizationStep, visualization: RoomPlanningVisualization): string {
+  const structures = visualization.plan.structurePlan?.structures;
+  if (!structures) {
+    return "";
+  }
   const selected = new Map<string, PlannedStructurePlacement>();
   for (const layer of step.layers) {
     if (!isLayerVisible(layer) || !rendersAsStructureSvg(layer)) {
       continue;
     }
-    for (const structure of visualization.plan.structurePlan.structures) {
+    for (const structure of structures) {
       if (structureMatchesLayer(structure, layer)) {
         selected.set(structureKey(structure), structure);
       }
@@ -560,7 +570,7 @@ function renderTileInspector(tile: number | null): void {
   const coord = fromIndex(tile);
   const terrain = describeTerrain(state.room, tile);
   const object = state.room.objects.find((item) => item.x === coord.x && item.y === coord.y);
-  const structures = state.visualization?.plan.structurePlan.structures
+  const structures = state.visualization?.plan.structurePlan?.structures
     .filter((structure) => structure.tile === tile)
     .map((structure) => structure.type)
     .join(", ");

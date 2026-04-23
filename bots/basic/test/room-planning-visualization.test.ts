@@ -62,8 +62,8 @@ describe("room planning visualization", () => {
     ));
     expect(visualization.steps.find((step) => step.id === "roads")?.layers.some((layer) => layer.tiles.length > 0)).toBe(true);
     expect(visualization.steps.find((step) => step.id === "ramparts")?.metrics.some((metric) => metric.label === "rampart tiles")).toBe(true);
-    expect(visualization.plan.structurePlan.structures.filter((structure) => structure.type === "extension")).toHaveLength(60);
-    expect(visualization.plan.structurePlan.structures.filter((structure) => structure.type === "tower")).toHaveLength(6);
+    expect(visualization.plan.structurePlan?.structures.filter((structure) => structure.type === "extension")).toHaveLength(60);
+    expect(visualization.plan.structurePlan?.structures.filter((structure) => structure.type === "tower")).toHaveLength(6);
   }, 20_000);
 
   it("creates a selected trace for a temple room", () => {
@@ -82,7 +82,7 @@ describe("room planning visualization", () => {
     expect(labsStep?.status).toBe("skipped");
     expect(visualization.plan.stampPlan.stamps.labs).toBeNull();
     expect(layerTiles(visualization, "hub", "hub-committed-creeps")).toEqual(expectedHubCreepTiles(visualization));
-    expect(visualization.plan.structurePlan.structures.filter((structure) => structure.type === "lab")).toHaveLength(3);
+    expect(visualization.plan.structurePlan?.structures.filter((structure) => structure.type === "lab")).toHaveLength(3);
   }, 20_000);
 
   it("plans E11N9 with automatic stamp search", () => {
@@ -96,6 +96,24 @@ describe("room planning visualization", () => {
 
     expect(visualization.validations).toEqual([]);
     expect([3, 5, 8]).toContain(visualization.plan.stampPlan.topK);
+  }, 20_000);
+
+  it("returns completed stages when rampart planning fails", () => {
+    const fixture = loadBotarena212RoomPlanningFixture();
+    const room = fixture.map.getRoom("E18N6");
+    if (room === null) {
+      throw new Error("Expected fixture room.");
+    }
+
+    const visualization = createRoomPlanningVisualization(room, "normal");
+
+    expect(visualization.plan.roadPlan).toBeDefined();
+    expect(visualization.plan.sourceSinkPlan).toBeDefined();
+    expect(visualization.plan.rampartPlan).toBeUndefined();
+    expect(visualization.plan.structurePlan).toBeUndefined();
+    expect(visualization.steps.find((step) => step.id === "ramparts")?.status).toBe("error");
+    expect(visualization.steps.find((step) => step.id === "towers")?.status).toBe("skipped");
+    expect(visualization.validations.some((message) => message.includes("No finite rampart cut found"))).toBe(true);
   }, 20_000);
 });
 
