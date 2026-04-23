@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { planRamparts } from "../src/planning/rampart-plan";
-import { planRoads } from "../src/planning/road-plan";
+import { planRoads, type RoadPlan, type RoadPlanPathKind } from "../src/planning/road-plan";
 import { planCompleteRoom } from "../src/planning/room-plan";
+import type { RoomPlanningRoomData } from "../src/planning/room-plan";
+import { planSourceSinkStructures } from "../src/planning/source-sink-structure-plan";
 import { planRoomStructures, validateRoomStructurePlan, type RoomStructurePlan } from "../src/planning/structure-plan";
-import type { RoomStampAnchor, RoomStampPlan, StampPlacement } from "../src/planning/stamp-placement";
+import type { RoomStampAnchor, RoomStampPlan, StampKind, StampPlacement } from "../src/planning/stamp-placement";
 import { installScreepsGlobals } from "./helpers/install-globals";
 import { loadBotarena212NormalStampPlanFixture, loadBotarena212RoadPlanningFixture } from "./helpers/stamp-plan-fixture";
 import { installTestPathFinder } from "./helpers/test-pathfinder";
+
+const roomSize = 50;
+const roomArea = roomSize * roomSize;
 
 describe("structure planning", () => {
   beforeEach(() => {
@@ -17,11 +22,12 @@ describe("structure planning", () => {
   it("resolves final structures from stamps, roads, and ramparts", () => {
     const testCase = loadBotarena212RoadPlanningFixture().cases[0]!;
     const roadPlan = planRoads(testCase.room, testCase.plan);
-    const rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan);
-    const structurePlan = planRoomStructures(testCase.room, testCase.plan, roadPlan, rampartPlan);
+    const sourceSinkPlan = planSourceSinkStructures(testCase.room, testCase.plan, roadPlan);
+    const rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan, sourceSinkPlan);
+    const structurePlan = planRoomStructures(testCase.room, testCase.plan, roadPlan, sourceSinkPlan, rampartPlan);
     const counts = countByType(structurePlan);
 
-    expect(validateRoomStructurePlan(testCase.room, testCase.plan, roadPlan, rampartPlan, structurePlan)).toEqual([]);
+    expect(validateRoomStructurePlan(testCase.room, testCase.plan, roadPlan, sourceSinkPlan, rampartPlan, structurePlan)).toEqual([]);
     expect(counts.get("extension")).toBe(60);
     expect(counts.get("tower")).toBe(6);
     expect(counts.get("spawn")).toBe(3);
@@ -73,9 +79,18 @@ describe("structure planning", () => {
     });
 
     expect(plan.roadPlan.roadTiles.length).toBeGreaterThan(0);
+    expect(plan.sourceSinkPlan.structureTiles.length).toBeGreaterThan(0);
     expect(plan.rampartPlan.rampartTiles.length).toBeGreaterThan(0);
-    expect(validateRoomStructurePlan(testCase.room, plan.stampPlan, plan.roadPlan, plan.rampartPlan, plan.structurePlan)).toEqual([]);
+    expect(validateRoomStructurePlan(testCase.room, plan.stampPlan, plan.roadPlan, plan.sourceSinkPlan, plan.rampartPlan, plan.structurePlan)).toEqual([]);
   }, 20_000);
+
+  it("rejects controller link placement on already planned road tiles", () => {
+    const room = createControllerLinkRoadRoom();
+    const stampPlan = createControllerLinkRoadStampPlan();
+    const roadPlan = createControllerLinkRoadPlan();
+
+    expect(() => planSourceSinkStructures(room, stampPlan, roadPlan)).toThrow("No controller link tile found");
+  });
 });
 
 function countByType(plan: RoomStructurePlan): Map<string, number> {
@@ -157,4 +172,128 @@ function inverseRotateOffset(offset: RoomStampAnchor, rotation: StampPlacement["
     case 270:
       return { x: -offset.y, y: offset.x };
   }
+}
+
+function createControllerLinkRoadRoom(): RoomPlanningRoomData {
+  const terrain = Array.from({ length: roomArea }, () => "0");
+  terrain[toIndex(6, 9)] = "1";
+  terrain[toIndex(6, 11)] = "1";
+
+  return {
+    roomName: "W0N0",
+    terrain: terrain.join(""),
+    objects: [
+      { id: "controller", roomName: "W0N0", type: "controller", x: 10, y: 10 },
+      { id: "source-1", roomName: "W0N0", type: "source", x: 40, y: 10 },
+      { id: "source-2", roomName: "W0N0", type: "source", x: 40, y: 20 },
+      { id: "mineral", roomName: "W0N0", type: "mineral", x: 35, y: 35, mineralType: "H" }
+    ]
+  };
+}
+
+function createControllerLinkRoadStampPlan(): RoomStampPlan {
+  return {
+    roomName: "W0N0",
+    policy: "normal",
+    topK: 1,
+    score: [],
+    stamps: {
+      hub: createPlacement("hub", "hub", { x: 2, y: 10 }, {
+        storage: { x: 2, y: 10 },
+        terminal: { x: 2, y: 12 },
+        hubCenter: { x: 3, y: 11 }
+      }),
+      fastfillers: [
+        createPlacement("fastfiller", "pod1", { x: 20, y: 10 }, {
+          container: { x: 20, y: 10 }
+        }),
+        createPlacement("fastfiller", "pod2", { x: 20, y: 20 }, {
+          container: { x: 20, y: 20 }
+        })
+      ],
+      labs: null
+    }
+  };
+}
+
+function createControllerLinkRoadPlan(): RoadPlan {
+  const paths = [
+    createPath("storage-to-source1", { x: 2, y: 10 }, { x: 40, y: 10 }, horizontalTiles(3, 39, 10)),
+    createPath("storage-to-source2", { x: 2, y: 10 }, { x: 40, y: 20 }, [
+      ...horizontalTiles(3, 20, 10),
+      ...verticalTiles(20, 11, 20),
+      ...horizontalTiles(21, 39, 20)
+    ]),
+    createPath("terminal-to-mineral", { x: 2, y: 12 }, { x: 35, y: 35 }, [
+      ...horizontalTiles(3, 34, 12),
+      ...verticalTiles(34, 13, 35)
+    ]),
+    createPath("storage-to-controller", { x: 2, y: 10 }, { x: 10, y: 10 }, horizontalTiles(3, 7, 10))
+  ];
+
+  return {
+    roomName: "W0N0",
+    policy: "normal",
+    roadTiles: [...new Set(paths.flatMap((path) => path.roadTiles))].sort((left, right) => left - right),
+    roads: [],
+    paths
+  };
+}
+
+function createPath(kind: RoadPlanPathKind, origin: RoomStampAnchor, target: RoomStampAnchor, tiles: RoomStampAnchor[]): RoadPlan["paths"][number] {
+  return {
+    kind,
+    origin: {
+      ...origin,
+      label: "origin",
+      range: 0
+    },
+    target: {
+      ...target,
+      label: "target",
+      range: kind === "storage-to-controller" ? 3 : 1
+    },
+    tiles,
+    roadTiles: tiles.map((tile) => toIndex(tile.x, tile.y)),
+    cost: tiles.length,
+    ops: tiles.length,
+    incomplete: false
+  };
+}
+
+function createPlacement(
+  kind: StampKind,
+  label: string,
+  anchor: RoomStampAnchor,
+  anchors: Record<string, RoomStampAnchor>
+): StampPlacement {
+  return {
+    kind,
+    label,
+    rotation: 0,
+    anchor,
+    anchors,
+    blockedTiles: [...new Set([anchor, ...Object.values(anchors)].map((coord) => toIndex(coord.x, coord.y)))],
+    score: []
+  };
+}
+
+function horizontalTiles(startX: number, endX: number, y: number): RoomStampAnchor[] {
+  const tiles: RoomStampAnchor[] = [];
+  for (let x = startX; x <= endX; x += 1) {
+    tiles.push({ x, y });
+  }
+  return tiles;
+}
+
+function verticalTiles(x: number, startY: number, endY: number): RoomStampAnchor[] {
+  const tiles: RoomStampAnchor[] = [];
+  for (let y = startY; y <= endY; y += 1) {
+    tiles.push({ x, y });
+  }
+  return tiles;
+}
+
+function toIndex(x: number, y: number): number {
+  return y * roomSize + x;
 }

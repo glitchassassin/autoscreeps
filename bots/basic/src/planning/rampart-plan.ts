@@ -8,7 +8,8 @@ import {
 } from "./pre-rampart-structures.ts";
 import type { RoadPlan, RoadPlanPath, RoadPlanPathKind } from "./road-plan.ts";
 import type { RoomPlanningObject, RoomPlanningRoomData } from "./room-plan.ts";
-import { collectRampartPostProcessStructureTiles } from "./structure-layout.ts";
+import type { SourceSinkStructurePlan } from "./source-sink-structure-plan.ts";
+import { createStampStructurePlacements } from "./structure-layout.ts";
 import type { RoomStampAnchor, RoomStampPlan, StampPlacement } from "./stamp-placement.ts";
 import { solveWeightedMinCut, type WeightedMinCutEdge } from "./weighted-min-cut.ts";
 
@@ -110,6 +111,7 @@ type RampartPlanningContext = {
   room: RoomPlanningRoomData;
   stampPlan: RoomStampPlan;
   roadPlan: RoadPlan;
+  sourceSinkPlan: SourceSinkStructurePlan;
   config: RampartPlanConfig;
   walkable: Uint8Array;
   exits: number[];
@@ -150,10 +152,11 @@ export function planRamparts(
   room: RoomPlanningRoomData,
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
+  sourceSinkPlan: SourceSinkStructurePlan,
   options: RampartPlanOptions = {}
 ): RampartPlan {
   let config = normalizeOptions(options);
-  let context = createRampartPlanningContext(room, stampPlan, roadPlan, config);
+  let context = createRampartPlanningContext(room, stampPlan, roadPlan, sourceSinkPlan, config);
   let graph = buildRoomCutGraph(context);
   let result = solveWeightedMinCut({
     nodeCount: graph.nodeCount,
@@ -179,7 +182,7 @@ export function planRamparts(
         growExtensionRoads: false
       }
     };
-    context = createRampartPlanningContext(room, stampPlan, roadPlan, config);
+    context = createRampartPlanningContext(room, stampPlan, roadPlan, sourceSinkPlan, config);
     graph = buildRoomCutGraph(context);
     result = solveWeightedMinCut({
       nodeCount: graph.nodeCount,
@@ -237,6 +240,7 @@ export function validateRampartPlan(
   room: RoomPlanningRoomData,
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
+  sourceSinkPlan: SourceSinkStructurePlan,
   rampartPlan: RampartPlan,
   options: RampartPlanOptions = {}
 ): string[] {
@@ -248,11 +252,11 @@ export function validateRampartPlan(
     errors.push(`Rampart plan policy '${rampartPlan.policy}' does not match stamp policy '${stampPlan.policy}'.`);
   }
 
-  const context = createRampartPlanningContext(room, stampPlan, roadPlan, normalizeOptions({
+  const context = createRampartPlanningContext(room, stampPlan, roadPlan, sourceSinkPlan, normalizeOptions({
     ...options,
     preRampartStructures: rampartPlan.preRampartStructures
   }));
-  errors.push(...validatePreRampartStructurePlan(room, stampPlan, roadPlan, rampartPlan.preRampartStructures));
+  errors.push(...validatePreRampartStructurePlan(room, stampPlan, roadPlan, sourceSinkPlan, rampartPlan.preRampartStructures));
   errors.push(...validatePostProcessedRampartSets(rampartPlan));
   const rampartMask = new Uint8Array(roomArea);
   let previousTile = -1;
@@ -407,9 +411,10 @@ function createRampartPlanningContext(
   room: RoomPlanningRoomData,
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
+  sourceSinkPlan: SourceSinkStructurePlan,
   config: RampartPlanConfig
 ): RampartPlanningContext {
-  validateInputs(room, stampPlan, roadPlan);
+  validateInputs(room, stampPlan, roadPlan, sourceSinkPlan);
   const naturalBlockers = createNaturalBlockerMask(room);
   const walkable = createWalkableMask(room.terrain, naturalBlockers);
   const exits = findExitTiles(walkable);
@@ -419,17 +424,17 @@ function createRampartPlanningContext(
 
   const hubCenter = stampPlan.stamps.hub.anchors.hubCenter ?? stampPlan.stamps.hub.anchor;
   const hubDistanceMap = createDijkstraMap(room.terrain, [hubCenter]);
-  const roadMask = createRoadMask(roadPlan);
   const preRampartStructures = config.preRampartStructures
-    ?? planPreRampartStructures(room, stampPlan, roadPlan, config.preRampartStructureOptions);
+    ?? planPreRampartStructures(room, stampPlan, roadPlan, sourceSinkPlan, config.preRampartStructureOptions);
   const mustDefend = createMustDefendMask(room, stampPlan, roadPlan, preRampartStructures, walkable);
   const rampartAllowedOnMustDefend = createRampartAllowedOnMustDefendMask(room, stampPlan, roadPlan, preRampartStructures, walkable);
-  const optionalRegions = createOptionalRegions(room, roadPlan, walkable, roadMask, hubDistanceMap, config);
+  const optionalRegions = createOptionalRegions(room, roadPlan, sourceSinkPlan, walkable, config);
 
   return {
     room,
     stampPlan,
     roadPlan,
+    sourceSinkPlan,
     config,
     walkable,
     exits,
@@ -558,9 +563,8 @@ function addPathToMask(mask: Uint8Array, walkable: Uint8Array, path: RoadPlanPat
 function createOptionalRegions(
   room: RoomPlanningRoomData,
   roadPlan: RoadPlan,
+  sourceSinkPlan: SourceSinkStructurePlan,
   walkable: Uint8Array,
-  roadMask: Uint8Array,
-  hubDistanceMap: DijkstraMap,
   config: RampartPlanConfig
 ): OptionalRegion[] {
   const sources = getSources(room);
@@ -582,9 +586,13 @@ function createOptionalRegions(
       tiles.add(endpointTile);
     }
 
-    const linkTile = chooseSourceLinkTile(source, endpoint, walkable, roadMask, hubDistanceMap);
-    if (linkTile !== null) {
-      tiles.add(linkTile);
+    for (const structure of sourceSinkPlan.structures) {
+      if (
+        (structure.label === `source${index + 1}-container` || structure.label === `source${index + 1}-link`)
+        && walkable[structure.tile] !== 0
+      ) {
+        tiles.add(structure.tile);
+      }
     }
 
     return {
@@ -625,38 +633,6 @@ function createControllerRegion(
   };
 }
 
-function chooseSourceLinkTile(
-  source: RoomPlanningObject,
-  endpoint: RoomStampAnchor,
-  walkable: Uint8Array,
-  roadMask: Uint8Array,
-  hubDistanceMap: DijkstraMap
-): number | null {
-  let bestTile: number | null = null;
-  let bestScore: number[] | null = null;
-
-  for (const coord of neighbors(endpoint)) {
-    const tile = toIndex(coord.x, coord.y);
-    if (walkable[tile] === 0 || roadMask[tile] !== 0 || range(coord, source) > 2) {
-      continue;
-    }
-
-    const distance = hubDistanceMap.get(coord.x, coord.y);
-    const score = [
-      distance === dijkstraUnreachable ? Number.MAX_SAFE_INTEGER : distance,
-      range(coord, source),
-      coord.y,
-      coord.x
-    ];
-    if (bestScore === null || compareScore(score, bestScore) < 0) {
-      bestScore = score;
-      bestTile = tile;
-    }
-  }
-
-  return bestTile;
-}
-
 function createRampartScore(
   context: RampartPlanningContext,
   rampartTiles: number[],
@@ -681,12 +657,11 @@ function createRampartScore(
 function postProcessRamparts(context: RampartPlanningContext, cutRampartTiles: number[]): RampartPostProcessResult {
   const cutRampartMask = createTileMask(cutRampartTiles);
   const initialOutsideMask = createOutsideMask(context.walkable, context.exits, cutRampartMask);
-  const structureTiles = collectRampartPostProcessStructureTiles(
-    context.room,
-    context.stampPlan,
-    context.roadPlan,
-    context.preRampartStructures
-  );
+  const structureTiles = uniqueSorted([
+    ...createStampStructurePlacements(context.stampPlan).map((placement) => placement.tile),
+    ...context.sourceSinkPlan.structureTiles,
+    ...context.preRampartStructures.structureTiles
+  ]);
   const extraRampartTiles = collectPostProcessExtraRamparts(context, cutRampartMask, initialOutsideMask, structureTiles);
   const rampartTiles = uniqueSorted([...cutRampartTiles, ...extraRampartTiles]);
   const rampartMask = createTileMask(rampartTiles);
@@ -1607,7 +1582,12 @@ function validateNonNegativeInteger(value: number, label: string): void {
   }
 }
 
-function validateInputs(room: RoomPlanningRoomData, stampPlan: RoomStampPlan, roadPlan: RoadPlan): void {
+function validateInputs(
+  room: RoomPlanningRoomData,
+  stampPlan: RoomStampPlan,
+  roadPlan: RoadPlan,
+  sourceSinkPlan: SourceSinkStructurePlan
+): void {
   validateTerrain(room.terrain);
   if (room.roomName !== stampPlan.roomName) {
     throw new Error(`Rampart planning room mismatch: room '${room.roomName}' received stamp plan for '${stampPlan.roomName}'.`);
@@ -1615,8 +1595,11 @@ function validateInputs(room: RoomPlanningRoomData, stampPlan: RoomStampPlan, ro
   if (room.roomName !== roadPlan.roomName) {
     throw new Error(`Rampart planning room mismatch: room '${room.roomName}' received road plan for '${roadPlan.roomName}'.`);
   }
-  if (stampPlan.policy !== roadPlan.policy) {
-    throw new Error(`Rampart planning policy mismatch: stamp plan '${stampPlan.policy}' received road plan '${roadPlan.policy}'.`);
+  if (room.roomName !== sourceSinkPlan.roomName) {
+    throw new Error(`Rampart planning room mismatch: room '${room.roomName}' received source/sink plan for '${sourceSinkPlan.roomName}'.`);
+  }
+  if (stampPlan.policy !== roadPlan.policy || stampPlan.policy !== sourceSinkPlan.policy) {
+    throw new Error(`Rampart planning policy mismatch: stamp plan '${stampPlan.policy}' received incompatible inputs.`);
   }
 }
 

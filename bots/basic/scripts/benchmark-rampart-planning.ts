@@ -1,6 +1,7 @@
 import { planRamparts, type RampartPlan } from "../src/planning/rampart-plan.ts";
 import { planRoads, type RoadPlan } from "../src/planning/road-plan.ts";
 import type { RoomPlanningRoomData } from "../src/planning/room-plan.ts";
+import { planSourceSinkStructures, type SourceSinkStructurePlan } from "../src/planning/source-sink-structure-plan.ts";
 import type { RoomStampPlan } from "../src/planning/stamp-placement.ts";
 import { installScreepsGlobals } from "../test/helpers/install-globals.ts";
 import { loadBotarena212RoadPlanningFixture, type CachedStampPlanCase } from "../test/helpers/stamp-plan-fixture.ts";
@@ -11,6 +12,7 @@ type BenchmarkCase = {
   room: RoomPlanningRoomData;
   stampPlan: RoomStampPlan;
   roadPlan: RoadPlan;
+  sourceSinkPlan: SourceSinkStructurePlan;
 };
 
 type PlanningFailure = {
@@ -214,19 +216,23 @@ function parseArgs(args: string[]): BenchmarkConfig {
 
 function loadBenchmarkCases(cases: CachedStampPlanCase[], requestedRoomNames: string[]): BenchmarkCase[] {
   const selectedCases = selectCases(cases, requestedRoomNames);
-  return selectedCases.map((testCase) => ({
-    roomName: testCase.roomName,
-    room: testCase.room,
-    stampPlan: testCase.plan,
-    roadPlan: planRoads(testCase.room, testCase.plan)
-  }));
+  return selectedCases.map((testCase) => {
+    const roadPlan = planRoads(testCase.room, testCase.plan);
+    return {
+      roomName: testCase.roomName,
+      room: testCase.room,
+      stampPlan: testCase.plan,
+      roadPlan,
+      sourceSinkPlan: planSourceSinkStructures(testCase.room, testCase.plan, roadPlan)
+    };
+  });
 }
 
 function collectPlanningFailures(cases: BenchmarkCase[]): PlanningFailure[] {
   const failures: PlanningFailure[] = [];
   for (const testCase of cases) {
     try {
-      planRamparts(testCase.room, testCase.stampPlan, testCase.roadPlan);
+      planRamparts(testCase.room, testCase.stampPlan, testCase.roadPlan, testCase.sourceSinkPlan);
     } catch (error) {
       failures.push({
         roomName: testCase.roomName,
@@ -294,7 +300,7 @@ function measurePerRoom(cases: BenchmarkCase[], config: BenchmarkConfig, seed: n
   }> = [];
 
   for (const testCase of cases) {
-    const plan = planRamparts(testCase.room, testCase.stampPlan, testCase.roadPlan);
+    const plan = planRamparts(testCase.room, testCase.stampPlan, testCase.roadPlan, testCase.sourceSinkPlan);
     checksum = updateChecksum(checksum, plan);
     maybeCollectGarbage(config.gcBetweenSamples);
 
@@ -325,7 +331,7 @@ function measurePerRoom(cases: BenchmarkCase[], config: BenchmarkConfig, seed: n
 }
 
 function runSingleCase(testCase: BenchmarkCase, seed: number): number {
-  return updateChecksum(seed, planRamparts(testCase.room, testCase.stampPlan, testCase.roadPlan));
+  return updateChecksum(seed, planRamparts(testCase.room, testCase.stampPlan, testCase.roadPlan, testCase.sourceSinkPlan));
 }
 
 function updateChecksum(seed: number, plan: RampartPlan): number {

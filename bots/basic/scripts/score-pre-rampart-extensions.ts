@@ -1,5 +1,6 @@
 import { planPreRampartStructures } from "../src/planning/pre-rampart-structures.ts";
 import { planRoads } from "../src/planning/road-plan.ts";
+import { planSourceSinkStructures } from "../src/planning/source-sink-structure-plan.ts";
 import { installScreepsGlobals } from "../test/helpers/install-globals.ts";
 import { loadBotarena212RoadPlanningFixture, type CachedStampPlanCase } from "../test/helpers/stamp-plan-fixture.ts";
 import { installTestPathFinder } from "../test/helpers/test-pathfinder.ts";
@@ -110,7 +111,8 @@ function selectCases(cases: CachedStampPlanCase[], requestedRoomNames: string[])
 function scoreCases(cases: CachedStampPlanCase[], growAccessRoads: boolean): ScoreRow[] {
   return cases.map((testCase) => {
     const roadPlan = planRoads(testCase.room, testCase.plan);
-    const plan = planPreRampartStructures(testCase.room, testCase.plan, roadPlan, { growAccessRoads });
+    const sourceSinkPlan = planSourceSinkStructures(testCase.room, testCase.plan, roadPlan);
+    const plan = planPreRampartStructures(testCase.room, testCase.plan, roadPlan, sourceSinkPlan, { growAccessRoads });
     const extensionSlots = plan.extraStructures.slice(0, plan.extensionCount);
     const distances = extensionSlots.map((extension) => extension.score[1] ?? 0);
     const totalDistance = distances.reduce((sum, distance) => sum + distance, 0);

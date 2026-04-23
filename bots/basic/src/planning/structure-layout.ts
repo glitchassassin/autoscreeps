@@ -286,6 +286,7 @@ function chooseControllerLinkTile(
     if (
       !isWalkableTerrain(room.terrain, coord.x, coord.y)
       || naturalBlockers[tile] !== 0
+      || roadMask[tile] !== 0
       || blockedTiles.has(tile)
       || range(coord, controller) !== 4
     ) {
@@ -294,7 +295,6 @@ function chooseControllerLinkTile(
 
     const distance = hubDistanceMap.get(coord.x, coord.y);
     const score = [
-      roadMask[tile] === 0 ? 0 : 1,
       distance === dijkstraUnreachable ? Number.MAX_SAFE_INTEGER : distance,
       coord.y,
       coord.x

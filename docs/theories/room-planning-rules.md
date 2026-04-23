@@ -128,6 +128,8 @@ Roads other than `storage -> controller` SHOULD prefer to avoid controller range
 
 ## Sources and Sinks
 
+Source and sink structures MUST be planned immediately after primary roads and before pre-mincut extra-structure reservation or rampart planning.
+
 ### Sources
 
 - The last tile of the planned road from `storage` to each source MUST have a container.
@@ -140,7 +142,7 @@ If `temple`, no additional structures are needed.
 Otherwise:
 
 - Below `RCL7`, the last tile of the planned road from `storage` to the controller MUST have a container.
-- At `RCL7`, the last tile of the planned road from `storage` to the controller MUST have an adjacent link at range `4` from the controller, and the container MUST be removed.
+- At `RCL7`, the last tile of the planned road from `storage` to the controller MUST have an adjacent non-road link tile at range `4` from the controller, and the container MUST be removed.
 
 ### Minerals
 
@@ -162,6 +164,7 @@ Extra-structure slots SHOULD be populated along roads close to `storage` for eas
 - The planner MUST prioritize road-adjacent tiles in two groups: roads from `storage` to the two fastfiller pods, then all other planned roads.
 - Within each road group, the planner MUST rank candidates by path distance from `storage` over the planned road network instead of filling one road path at a time.
 - Slot candidates MUST be empty buildable tiles adjacent to the planned road network and outside reserved source, controller, edge, and stamp areas.
+- Slot candidates MUST avoid already planned source/sink structure tiles.
 
 ## Ramparts
 

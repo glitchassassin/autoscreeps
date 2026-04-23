@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { planRamparts, validateRampartPlan, type RampartPlan } from "../src/planning/rampart-plan.ts";
 import { planRoads, validateRoadPlan, type RoadPlan } from "../src/planning/road-plan.ts";
 import type { RoomPlanningRoomData } from "../src/planning/room-plan.ts";
+import { planSourceSinkStructures, type SourceSinkStructurePlan } from "../src/planning/source-sink-structure-plan.ts";
 import { planRoomStructures, validateRoomStructurePlan, type RoomStructurePlan } from "../src/planning/structure-plan.ts";
 import type { PlannedStructurePlacement, PlannedStructureType } from "../src/planning/structure-layout.ts";
 import { renderPlannedStructureSvg } from "../src/planning/structure-svg.ts";
@@ -41,16 +42,18 @@ async function main(): Promise<void> {
   for (const testCase of cases) {
     const errors: string[] = [];
     let roadPlan: RoadPlan | null = null;
+    let sourceSinkPlan: SourceSinkStructurePlan | null = null;
     let rampartPlan: RampartPlan | null = null;
     let structurePlan: RoomStructurePlan | null = null;
 
     try {
       roadPlan = planRoads(testCase.room, testCase.plan);
       errors.push(...validateRoadPlan(testCase.room, testCase.plan, roadPlan));
-      rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan);
-      errors.push(...validateRampartPlan(testCase.room, testCase.plan, roadPlan, rampartPlan));
-      structurePlan = planRoomStructures(testCase.room, testCase.plan, roadPlan, rampartPlan);
-      errors.push(...validateRoomStructurePlan(testCase.room, testCase.plan, roadPlan, rampartPlan, structurePlan));
+      sourceSinkPlan = planSourceSinkStructures(testCase.room, testCase.plan, roadPlan);
+      rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan, sourceSinkPlan);
+      errors.push(...validateRampartPlan(testCase.room, testCase.plan, roadPlan, sourceSinkPlan, rampartPlan));
+      structurePlan = planRoomStructures(testCase.room, testCase.plan, roadPlan, sourceSinkPlan, rampartPlan);
+      errors.push(...validateRoomStructurePlan(testCase.room, testCase.plan, roadPlan, sourceSinkPlan, rampartPlan, structurePlan));
     } catch (error) {
       errors.push(error instanceof Error ? error.message : String(error));
     }

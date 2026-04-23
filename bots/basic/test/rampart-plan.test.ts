@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { planRamparts, validateRampartPlan } from "../src/planning/rampart-plan";
 import { planRoads, type RoadPlan, type RoadPlanPathKind } from "../src/planning/road-plan";
 import type { RoomPlanningRoomData } from "../src/planning/room-plan";
+import { planSourceSinkStructures } from "../src/planning/source-sink-structure-plan";
 import type { RoomStampAnchor, RoomStampPlan, StampKind, StampPlacement } from "../src/planning/stamp-placement";
 import { installScreepsGlobals } from "./helpers/install-globals";
 import { loadBotarena212NormalStampPlanFixture, loadBotarena212RoadPlanningFixture } from "./helpers/stamp-plan-fixture";
@@ -19,9 +20,10 @@ describe("rampart planning", () => {
   it("separates exits from the mandatory defended footprint for a cached room", () => {
     const testCase = loadBotarena212RoadPlanningFixture().cases[0]!;
     const roadPlan = planRoads(testCase.room, testCase.plan);
-    const rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan);
+    const sourceSinkPlan = planSourceSinkStructures(testCase.room, testCase.plan, roadPlan);
+    const rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan, sourceSinkPlan);
 
-    expect(validateRampartPlan(testCase.room, testCase.plan, roadPlan, rampartPlan)).toEqual([]);
+    expect(validateRampartPlan(testCase.room, testCase.plan, roadPlan, sourceSinkPlan, rampartPlan)).toEqual([]);
     expect(rampartPlan.rampartTiles.length).toBeGreaterThan(0);
     expect(rampartPlan.ramparts).toHaveLength(rampartPlan.rampartTiles.length);
     expect(rampartPlan.optionalRegions.map((region) => region.key)).toEqual(["source1", "source2", "controller"]);
@@ -53,8 +55,9 @@ describe("rampart planning", () => {
   it("is deterministic for the same room, stamp, and road inputs", () => {
     const testCase = loadBotarena212RoadPlanningFixture().cases[0]!;
     const roadPlan = planRoads(testCase.room, testCase.plan);
+    const sourceSinkPlan = planSourceSinkStructures(testCase.room, testCase.plan, roadPlan);
 
-    expect(planRamparts(testCase.room, testCase.plan, roadPlan)).toEqual(planRamparts(testCase.room, testCase.plan, roadPlan));
+    expect(planRamparts(testCase.room, testCase.plan, roadPlan, sourceSinkPlan)).toEqual(planRamparts(testCase.room, testCase.plan, roadPlan, sourceSinkPlan));
   }, 20_000);
 
   it("allocates all six towers for every cached road-plannable normal layout", () => {
@@ -62,9 +65,10 @@ describe("rampart planning", () => {
 
     for (const testCase of fixture.cases) {
       const roadPlan = planRoads(testCase.room, testCase.plan);
-      const rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan);
+      const sourceSinkPlan = planSourceSinkStructures(testCase.room, testCase.plan, roadPlan);
+      const rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan, sourceSinkPlan);
 
-      expect(validateRampartPlan(testCase.room, testCase.plan, roadPlan, rampartPlan), testCase.roomName).toEqual([]);
+      expect(validateRampartPlan(testCase.room, testCase.plan, roadPlan, sourceSinkPlan, rampartPlan), testCase.roomName).toEqual([]);
       expect(rampartPlan.towers, testCase.roomName).toHaveLength(6);
     }
   }, 30_000);
@@ -72,12 +76,13 @@ describe("rampart planning", () => {
   it("protects controller access while treating the controller road as an optional region", () => {
     const testCase = loadBotarena212RoadPlanningFixture().cases.find((candidate) => candidate.roomName === "E11N4")!;
     const roadPlan = planRoads(testCase.room, testCase.plan);
-    const rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan);
+    const sourceSinkPlan = planSourceSinkStructures(testCase.room, testCase.plan, roadPlan);
+    const rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan, sourceSinkPlan);
     const controllerPath = roadPlan.paths.find((path) => path.kind === "storage-to-controller")!;
     const controller = testCase.room.objects.find((object) => object.type === "controller")!;
     const controllerAccessTiles = collectWalkableRangeTiles(testCase.room, controller, 1);
 
-    expect(validateRampartPlan(testCase.room, testCase.plan, roadPlan, rampartPlan)).toEqual([]);
+    expect(validateRampartPlan(testCase.room, testCase.plan, roadPlan, sourceSinkPlan, rampartPlan)).toEqual([]);
     expect(rampartPlan.rampartTiles.some((tile) => controllerPath.roadTiles.includes(tile))).toBe(true);
     expect(rampartPlan.optionalRegions.find((region) => region.key === "controller")?.tiles)
       .toEqual([...controllerPath.roadTiles].sort((left, right) => left - right));
@@ -90,14 +95,15 @@ describe("rampart planning", () => {
     const room = createCorridorRoom();
     const stampPlan = createCorridorStampPlan();
     const roadPlan = createCorridorRoadPlan();
+    const sourceSinkPlan = planSourceSinkStructures(room, stampPlan, roadPlan);
     const protectedSourceEndpoint = 25 * roomSize + 15;
     const noExtraStructures = { extensionCount: 0, towerCount: 0, nukerCount: 0, observerCount: 0 };
 
-    const withoutPenalty = planRamparts(room, stampPlan, roadPlan, { sourceRegionPenaltyRamparts: [0, 0], preRampartStructureOptions: noExtraStructures });
-    const withPenalty = planRamparts(room, stampPlan, roadPlan, { sourceRegionPenaltyRamparts: [0, 1], preRampartStructureOptions: noExtraStructures });
+    const withoutPenalty = planRamparts(room, stampPlan, roadPlan, sourceSinkPlan, { sourceRegionPenaltyRamparts: [0, 0], preRampartStructureOptions: noExtraStructures });
+    const withPenalty = planRamparts(room, stampPlan, roadPlan, sourceSinkPlan, { sourceRegionPenaltyRamparts: [0, 1], preRampartStructureOptions: noExtraStructures });
 
-    expect(validateRampartPlan(room, stampPlan, roadPlan, withoutPenalty, { sourceRegionPenaltyRamparts: [0, 0], preRampartStructureOptions: noExtraStructures })).toEqual([]);
-    expect(validateRampartPlan(room, stampPlan, roadPlan, withPenalty, { sourceRegionPenaltyRamparts: [0, 1], preRampartStructureOptions: noExtraStructures })).toEqual([]);
+    expect(validateRampartPlan(room, stampPlan, roadPlan, sourceSinkPlan, withoutPenalty, { sourceRegionPenaltyRamparts: [0, 0], preRampartStructureOptions: noExtraStructures })).toEqual([]);
+    expect(validateRampartPlan(room, stampPlan, roadPlan, sourceSinkPlan, withPenalty, { sourceRegionPenaltyRamparts: [0, 1], preRampartStructureOptions: noExtraStructures })).toEqual([]);
     expect(withoutPenalty.optionalRegions[1].protected).toBe(true);
     expect(withPenalty.optionalRegions[1].protected).toBe(true);
     expect(withoutPenalty.outsideTiles).not.toContain(protectedSourceEndpoint);
@@ -111,6 +117,7 @@ function createCorridorRoom(): RoomPlanningRoomData {
   for (let x = 0; x <= 35; x += 1) {
     terrain[25 * roomSize + x] = "0";
   }
+  terrain[24 * roomSize + 30] = "0";
 
   return {
     roomName: "W0N0",
@@ -163,7 +170,7 @@ function createCorridorRoadPlan(): RoadPlan {
     createPath("terminal-to-mineral", roomName, { x: 30, y: 25 }, { x: 20, y: 24 }, [{ x: 20, y: 25 }]),
     createPath("storage-to-source1", roomName, { x: 30, y: 25 }, { x: 5, y: 24 }, [{ x: 5, y: 25 }]),
     createPath("storage-to-source2", roomName, { x: 30, y: 25 }, { x: 15, y: 24 }, [{ x: 15, y: 25 }]),
-    createPath("storage-to-controller", roomName, { x: 30, y: 25 }, { x: 34, y: 24 }, [{ x: 34, y: 25 }])
+    createPath("storage-to-controller", roomName, { x: 30, y: 25 }, { x: 34, y: 24 }, [{ x: 31, y: 25 }])
   ];
   const roadTiles = [...new Set(paths.flatMap((path) => path.roadTiles))].sort((left, right) => left - right);
 

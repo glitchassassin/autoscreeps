@@ -1,5 +1,6 @@
 import type { RoadPlan, RoadPlanPath, RoadPlanPathKind } from "./road-plan.ts";
 import type { RoomPlanningObject, RoomPlanningRoomData } from "./room-plan.ts";
+import type { SourceSinkStructurePlan } from "./source-sink-structure-plan.ts";
 import type { RoomStampAnchor, RoomStampPlan, StampPlacement } from "./stamp-placement.ts";
 
 const roomSize = 50;
@@ -94,10 +95,11 @@ export function planPreRampartStructures(
   room: RoomPlanningRoomData,
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
+  sourceSinkPlan: SourceSinkStructurePlan | null = null,
   options: PreRampartStructurePlanOptions = {}
 ): PreRampartStructurePlan {
   const config = normalizeOptions(options, stampPlan);
-  const context = createStructurePlanningContext(room, stampPlan, roadPlan);
+  const context = createStructurePlanningContext(room, stampPlan, roadPlan, sourceSinkPlan);
   const structureCount = config.extensionCount + config.towerCount + config.nukerCount + config.observerCount;
   validateTargetCount(config.extensionCount, "extensionCount");
   validateTargetCount(config.towerCount, "towerCount");
@@ -132,6 +134,7 @@ export function validatePreRampartStructurePlan(
   room: RoomPlanningRoomData,
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
+  sourceSinkPlan: SourceSinkStructurePlan | null,
   plan: PreRampartStructurePlan
 ): string[] {
   const errors: string[] = [];
@@ -142,7 +145,7 @@ export function validatePreRampartStructurePlan(
     errors.push(`Pre-rampart structure plan policy '${plan.policy}' does not match stamp policy '${stampPlan.policy}'.`);
   }
 
-  const context = createStructurePlanningContext(room, stampPlan, roadPlan);
+  const context = createStructurePlanningContext(room, stampPlan, roadPlan, sourceSinkPlan);
   const seenRoads = new Set<number>();
   for (const tile of plan.accessRoadTiles) {
     if (!isValidIndex(tile)) {
@@ -359,8 +362,13 @@ function collectRoadTileAdjacentCandidates(
   }
 }
 
-function createStructurePlanningContext(room: RoomPlanningRoomData, stampPlan: RoomStampPlan, roadPlan: RoadPlan): StructurePlanningContext {
-  validateInputs(room, stampPlan, roadPlan);
+function createStructurePlanningContext(
+  room: RoomPlanningRoomData,
+  stampPlan: RoomStampPlan,
+  roadPlan: RoadPlan,
+  sourceSinkPlan: SourceSinkStructurePlan | null
+): StructurePlanningContext {
+  validateInputs(room, stampPlan, roadPlan, sourceSinkPlan);
   const controller = requireObject(room, "controller");
   const sources = getSources(room);
   const storage = stampPlan.stamps.hub.anchors.storage ?? stampPlan.stamps.hub.anchor;
@@ -385,6 +393,12 @@ function createStructurePlanningContext(room: RoomPlanningRoomData, stampPlan: R
       if (isValidIndex(tile)) {
         baseBlocked[tile] = 1;
       }
+    }
+  }
+
+  for (const tile of sourceSinkPlan?.structureTiles ?? []) {
+    if (isValidIndex(tile)) {
+      baseBlocked[tile] = 1;
     }
   }
 
@@ -554,7 +568,12 @@ function getSources(room: RoomPlanningRoomData): [RoomPlanningObject, RoomPlanni
   return [sources[0]!, sources[1]!];
 }
 
-function validateInputs(room: RoomPlanningRoomData, stampPlan: RoomStampPlan, roadPlan: RoadPlan): void {
+function validateInputs(
+  room: RoomPlanningRoomData,
+  stampPlan: RoomStampPlan,
+  roadPlan: RoadPlan,
+  sourceSinkPlan: SourceSinkStructurePlan | null
+): void {
   validateTerrain(room.terrain);
   if (room.roomName !== stampPlan.roomName) {
     throw new Error(`Pre-rampart structure planning room mismatch: room '${room.roomName}' received stamp plan for '${stampPlan.roomName}'.`);
@@ -562,8 +581,11 @@ function validateInputs(room: RoomPlanningRoomData, stampPlan: RoomStampPlan, ro
   if (room.roomName !== roadPlan.roomName) {
     throw new Error(`Pre-rampart structure planning room mismatch: room '${room.roomName}' received road plan for '${roadPlan.roomName}'.`);
   }
-  if (stampPlan.policy !== roadPlan.policy) {
-    throw new Error(`Pre-rampart structure planning policy mismatch: stamp plan '${stampPlan.policy}' received road plan '${roadPlan.policy}'.`);
+  if (sourceSinkPlan !== null && room.roomName !== sourceSinkPlan.roomName) {
+    throw new Error(`Pre-rampart structure planning room mismatch: room '${room.roomName}' received source/sink plan for '${sourceSinkPlan.roomName}'.`);
+  }
+  if (stampPlan.policy !== roadPlan.policy || (sourceSinkPlan !== null && stampPlan.policy !== sourceSinkPlan.policy)) {
+    throw new Error(`Pre-rampart structure planning policy mismatch: stamp plan '${stampPlan.policy}' received incompatible inputs.`);
   }
 }
 

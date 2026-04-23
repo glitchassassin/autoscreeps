@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { planPreRampartStructures, validatePreRampartStructurePlan } from "../src/planning/pre-rampart-structures";
 import { planRoads, type RoadPlan, type RoadPlanPathKind } from "../src/planning/road-plan";
 import type { RoomPlanningRoomData } from "../src/planning/room-plan";
+import { planSourceSinkStructures } from "../src/planning/source-sink-structure-plan";
 import type { RoomStampAnchor, RoomStampPlan, StampKind, StampPlacement } from "../src/planning/stamp-placement";
 import { installScreepsGlobals } from "./helpers/install-globals";
 import { loadBotarena212NormalStampPlanFixture, loadBotarena212RoadPlanningFixture } from "./helpers/stamp-plan-fixture";
@@ -19,9 +20,10 @@ describe("pre-rampart structure planning", () => {
   it("reserves extra-structure slots adjacent to the cached road network", () => {
     const testCase = loadBotarena212RoadPlanningFixture().cases[0]!;
     const roadPlan = planRoads(testCase.room, testCase.plan);
-    const plan = planPreRampartStructures(testCase.room, testCase.plan, roadPlan);
+    const sourceSinkPlan = planSourceSinkStructures(testCase.room, testCase.plan, roadPlan);
+    const plan = planPreRampartStructures(testCase.room, testCase.plan, roadPlan, sourceSinkPlan);
 
-    expect(validatePreRampartStructurePlan(testCase.room, testCase.plan, roadPlan, plan)).toEqual([]);
+    expect(validatePreRampartStructurePlan(testCase.room, testCase.plan, roadPlan, sourceSinkPlan, plan)).toEqual([]);
     expect(plan.extensionCount).toBe(36);
     expect(plan.towerCount).toBe(6);
     expect(plan.nukerCount).toBe(1);
@@ -34,9 +36,15 @@ describe("pre-rampart structure planning", () => {
     const room = createRoadDistanceRoom();
     const stampPlan = createRoadDistanceStampPlan();
     const roadPlan = createRoadDistanceRoadPlan();
-    const plan = planPreRampartStructures(room, stampPlan, roadPlan, { extensionCount: 1, towerCount: 0, nukerCount: 0, observerCount: 0, growAccessRoads: false });
+    const plan = planPreRampartStructures(room, stampPlan, roadPlan, null, {
+      extensionCount: 1,
+      towerCount: 0,
+      nukerCount: 0,
+      observerCount: 0,
+      growAccessRoads: false
+    });
 
-    expect(validatePreRampartStructurePlan(room, stampPlan, roadPlan, plan)).toEqual([]);
+    expect(validatePreRampartStructurePlan(room, stampPlan, roadPlan, null, plan)).toEqual([]);
     expect(plan.extraStructures).toHaveLength(1);
     expect(plan.extraStructures[0]).toMatchObject({ x: 15, y: 9 });
   });

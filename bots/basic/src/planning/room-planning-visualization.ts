@@ -2,6 +2,11 @@ import { installPlannerPathFinder } from "./pathfinder.ts";
 import { planRamparts, validateRampartPlan, type RampartPlan } from "./rampart-plan.ts";
 import { planRoads, validateRoadPlan, type RoadPlan } from "./road-plan.ts";
 import type { CompleteRoomPlan, RoomPlanningPolicy, RoomPlanningRoomData } from "./room-plan.ts";
+import {
+  planSourceSinkStructures,
+  validateSourceSinkStructurePlan,
+  type SourceSinkStructurePlan
+} from "./source-sink-structure-plan.ts";
 import { planRoomStructures, validateRoomStructurePlan, type RoomStructurePlan } from "./structure-plan.ts";
 import {
   createStampPlacementDebug,
@@ -83,21 +88,24 @@ export function createRoomPlanningVisualization(
 
   const stampPlan = planRoomStamps(room, policy, options);
   const roadPlan = planRoads(room, stampPlan);
-  const rampartPlan = planRamparts(room, stampPlan, roadPlan);
-  const structurePlan = planRoomStructures(room, stampPlan, roadPlan, rampartPlan);
+  const sourceSinkPlan = planSourceSinkStructures(room, stampPlan, roadPlan);
+  const rampartPlan = planRamparts(room, stampPlan, roadPlan, sourceSinkPlan);
+  const structurePlan = planRoomStructures(room, stampPlan, roadPlan, sourceSinkPlan, rampartPlan);
   const plan: CompleteRoomPlan = {
     roomName: room.roomName,
     policy,
     stampPlan,
     roadPlan,
+    sourceSinkPlan,
     rampartPlan,
     structurePlan
   };
   const validations = [
     ...validateStampPlan(room, stampPlan),
     ...validateRoadPlan(room, stampPlan, roadPlan),
-    ...validateRampartPlan(room, stampPlan, roadPlan, rampartPlan),
-    ...validateRoomStructurePlan(room, stampPlan, roadPlan, rampartPlan, structurePlan)
+    ...validateSourceSinkStructurePlan(room, stampPlan, roadPlan, sourceSinkPlan),
+    ...validateRampartPlan(room, stampPlan, roadPlan, sourceSinkPlan, rampartPlan),
+    ...validateRoomStructurePlan(room, stampPlan, roadPlan, sourceSinkPlan, rampartPlan, structurePlan)
   ];
   const stampDebug = createStampPlacementDebug(room, policy, stampPlan, options);
   const phases = stampDebug.phases;
@@ -112,11 +120,11 @@ export function createRoomPlanningVisualization(
       createFastfillerStep("fastfiller-b", "Fastfiller pod B", stampPlan.stamps.fastfillers[1], phases[2], stampPlan),
       createLabsStep(stampPlan, phases[3]),
       createRoadStep(roadPlan, stampPlan),
-      createSourceSinkStep(room, stampPlan, roadPlan, rampartPlan, structurePlan),
-      createSpareExtensionStep(stampPlan, roadPlan, rampartPlan, structurePlan),
-      createRampartStep(stampPlan, roadPlan, rampartPlan, structurePlan),
-      createTowerStep(stampPlan, roadPlan, rampartPlan, structurePlan),
-      createRemainingStructureStep(stampPlan, roadPlan, rampartPlan, structurePlan)
+      createSourceSinkStep(stampPlan, roadPlan, sourceSinkPlan),
+      createSpareExtensionStep(stampPlan, roadPlan, sourceSinkPlan, rampartPlan, structurePlan),
+      createRampartStep(stampPlan, roadPlan, sourceSinkPlan, rampartPlan, structurePlan),
+      createTowerStep(stampPlan, roadPlan, sourceSinkPlan, rampartPlan, structurePlan),
+      createRemainingStructureStep(stampPlan, roadPlan, sourceSinkPlan, rampartPlan, structurePlan)
     ],
     validations
   };
@@ -259,15 +267,11 @@ function createRoadStep(roadPlan: RoadPlan, stampPlan: RoomStampPlan): RoomPlann
 }
 
 function createSourceSinkStep(
-  room: RoomPlanningRoomData,
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
-  rampartPlan: RampartPlan,
-  structurePlan: RoomStructurePlan
+  sourceSinkPlan: SourceSinkStructurePlan
 ): RoomPlanningVisualizationStep {
-  void room;
-  void rampartPlan;
-  const placements = getSourceSinkPlacements(structurePlan);
+  const placements = sourceSinkPlan.structures;
 
   return {
     id: "sources-sinks",
@@ -292,6 +296,7 @@ function createSourceSinkStep(
 function createSpareExtensionStep(
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
+  sourceSinkPlan: SourceSinkStructurePlan,
   rampartPlan: RampartPlan,
   structurePlan: RoomStructurePlan
 ): RoomPlanningVisualizationStep {
@@ -312,7 +317,7 @@ function createSpareExtensionStep(
     layers: [
       ...createCommittedStampLayers(stampPlan),
       ...createRoadPathLayers(roadPlan),
-      createSourceSinkStructureLayer(getSourceSinkPlacements(structurePlan)),
+      createSourceSinkStructureLayer(sourceSinkPlan.structures),
       ...createPreRampartStructureLayers(rampartPlan)
     ]
   };
@@ -321,6 +326,7 @@ function createSpareExtensionStep(
 function createRampartStep(
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
+  sourceSinkPlan: SourceSinkStructurePlan,
   rampartPlan: RampartPlan,
   structurePlan: RoomStructurePlan
 ): RoomPlanningVisualizationStep {
@@ -353,7 +359,7 @@ function createRampartStep(
     layers: [
       ...createCommittedStampLayers(stampPlan),
       ...createRoadPathLayers(roadPlan),
-      createSourceSinkStructureLayer(getSourceSinkPlacements(structurePlan)),
+      createSourceSinkStructureLayer(sourceSinkPlan.structures),
       ...createPreRampartStructureLayers(rampartPlan),
       {
         id: "defended-region",
@@ -387,6 +393,7 @@ function createRampartStep(
 function createTowerStep(
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
+  sourceSinkPlan: SourceSinkStructurePlan,
   rampartPlan: RampartPlan,
   structurePlan: RoomStructurePlan
 ): RoomPlanningVisualizationStep {
@@ -424,7 +431,7 @@ function createTowerStep(
     layers: [
       ...createCommittedStampLayers(stampPlan),
       ...createRoadPathLayers(roadPlan),
-      createSourceSinkStructureLayer(getSourceSinkPlacements(structurePlan)),
+      createSourceSinkStructureLayer(sourceSinkPlan.structures),
       ...createPreRampartStructureLayers(rampartPlan),
       ...createRampartCommittedLayers(rampartPlan),
       {
@@ -451,6 +458,7 @@ function createTowerStep(
 function createRemainingStructureStep(
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
+  sourceSinkPlan: SourceSinkStructurePlan,
   rampartPlan: RampartPlan,
   structurePlan: RoomStructurePlan
 ): RoomPlanningVisualizationStep {
@@ -476,7 +484,7 @@ function createRemainingStructureStep(
     layers: [
       ...createCommittedStampLayers(stampPlan),
       ...createRoadPathLayers(roadPlan),
-      createSourceSinkStructureLayer(getSourceSinkPlacements(structurePlan)),
+      createSourceSinkStructureLayer(sourceSinkPlan.structures),
       ...createPreRampartStructureLayers(rampartPlan),
       ...createRampartCommittedLayers(rampartPlan),
       {
@@ -544,15 +552,7 @@ function createRoadPathLayers(roadPlan: RoadPlan): RoomPlanningLayer[] {
   }));
 }
 
-function getSourceSinkPlacements(structurePlan: RoomStructurePlan): RoomStructurePlan["structures"] {
-  return structurePlan.structures.filter((placement) => (
-    placement.label.startsWith("source")
-    || placement.label.startsWith("controller")
-    || placement.label.startsWith("mineral")
-  ));
-}
-
-function createSourceSinkStructureLayer(placements: RoomStructurePlan["structures"]): RoomPlanningLayer {
+function createSourceSinkStructureLayer(placements: SourceSinkStructurePlan["structures"]): RoomPlanningLayer {
   return {
     id: "source-sink-structures",
     title: "Source and sink structures",

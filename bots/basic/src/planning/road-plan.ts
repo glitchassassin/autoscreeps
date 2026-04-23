@@ -1,3 +1,4 @@
+import { createDijkstraMap, dijkstraUnreachable, type DijkstraMap } from "./dijkstra-map.ts";
 import type { RoomPlanningObject, RoomPlanningRoomData } from "./room-plan.ts";
 import { getStampPathBlockedTiles, type RoomStampAnchor, type RoomStampPlan, type StampPlacement } from "./stamp-placement.ts";
 
@@ -63,6 +64,7 @@ type RoadPathRequest = {
 
 type PlanningState = {
   roadMask: Uint8Array;
+  reservedMask: Uint8Array;
   paths: RoadPlanPath[];
 };
 
@@ -70,6 +72,12 @@ type GroupResult = {
   state: PlanningState;
   roadCount: number;
   cost: number;
+};
+
+type ReservedStructureCandidate = {
+  endpoint: RoomStampAnchor;
+  reservedTile: number;
+  reservedScore: number[];
 };
 
 export function planRoads(room: RoomPlanningRoomData, stampPlan: RoomStampPlan, options: RoadPlanOptions = {}): RoadPlan {
@@ -82,6 +90,7 @@ export function planRoads(room: RoomPlanningRoomData, stampPlan: RoomStampPlan, 
   const context = createRoadPlanningContext(room, stampPlan);
   let state: PlanningState = {
     roadMask: new Uint8Array(roomArea),
+    reservedMask: new Uint8Array(roomArea),
     paths: []
   };
 
@@ -160,6 +169,8 @@ export function validateRoadPlan(room: RoomPlanningRoomData, stampPlan: RoomStam
   const context = createRoadPlanningContext(room, stampPlan);
   const roadTileSet = new Set<number>();
   const pathTileSet = new Set<number>();
+  const plannedRoadMask = new Uint8Array(roomArea);
+  const reservedMask = new Uint8Array(roomArea);
   let previousTile = -1;
 
   for (const tile of roadPlan.roadTiles) {
@@ -208,6 +219,18 @@ export function validateRoadPlan(room: RoomPlanningRoomData, stampPlan: RoomStam
     if (range(finalPosition, path.target) > path.target.range) {
       errors.push(`${path.kind} ends at ${finalPosition.x},${finalPosition.y}, outside range ${path.target.range} of ${path.target.label}.`);
     }
+
+    for (const tile of path.roadTiles) {
+      plannedRoadMask[tile] = 1;
+    }
+    if (requiresReservedStructureTile(path.kind)) {
+      const reservedTile = chooseReservedStructureTile(context, path.kind, path, plannedRoadMask, reservedMask);
+      if (reservedTile === null) {
+        errors.push(`${path.kind} endpoint at ${finalPosition.x},${finalPosition.y} does not preserve a reserved logistics tile.`);
+      } else {
+        reservedMask[reservedTile] = 1;
+      }
+    }
   }
 
   for (const tile of pathTileSet) {
@@ -243,6 +266,7 @@ function createRoadPlanningContext(room: RoomPlanningRoomData, stampPlan: RoomSt
   stampPlan: RoomStampPlan;
   blocked: Uint8Array;
   controllerReserveMask: Uint8Array;
+  hubDistanceMap: DijkstraMap;
   storage: RoadPlanEndpoint;
   terminal: RoadPlanEndpoint;
   controller: RoomPlanningObject;
@@ -254,12 +278,14 @@ function createRoadPlanningContext(room: RoomPlanningRoomData, stampPlan: RoomSt
   const mineral = requireObject(room, "mineral");
   const storage = requireAnchor(stampPlan.stamps.hub, "storage");
   const terminal = requireAnchor(stampPlan.stamps.hub, "terminal");
+  const hubCenter = stampPlan.stamps.hub.anchors.hubCenter ?? stampPlan.stamps.hub.anchor;
 
   return {
     room,
     stampPlan,
     blocked: createBlockedMask(room, stampPlan),
     controllerReserveMask: createControllerReserveMask(controller),
+    hubDistanceMap: createDijkstraMap(room.terrain, [hubCenter]),
     storage: {
       ...storage,
       label: "storage",
@@ -371,15 +397,89 @@ function planSequentialPath(
   state: PlanningState,
   request: RoadPathRequest
 ): PlanningState {
-  const result = searchRoadPath(context, config, state.roadMask, request);
+  const searchResult = requiresReservedStructureTile(request.kind)
+    ? searchRoadPathWithReservedStructure(context, config, state.roadMask, state.reservedMask, request)
+    : {
+        path: searchRoadPath(context, config, state.roadMask, state.reservedMask, request),
+        reservedTile: null
+      };
   const roadMask = new Uint8Array(state.roadMask);
-  for (const tile of result.roadTiles) {
+  for (const tile of searchResult.path.roadTiles) {
     roadMask[tile] = 1;
+  }
+
+  const reservedMask = new Uint8Array(state.reservedMask);
+  if (searchResult.reservedTile !== null) {
+    reservedMask[searchResult.reservedTile] = 1;
   }
 
   return {
     roadMask,
-    paths: [...state.paths, result]
+    reservedMask,
+    paths: [...state.paths, searchResult.path]
+  };
+}
+
+function searchRoadPathWithReservedStructure(
+  context: ReturnType<typeof createRoadPlanningContext>,
+  config: RoadPlanConfig,
+  roadMask: Uint8Array,
+  reservedMask: Uint8Array,
+  request: RoadPathRequest
+): {
+  path: RoadPlanPath;
+  reservedTile: number;
+} {
+  const candidates = collectReservedStructureCandidates(context, request.kind, roadMask, reservedMask);
+  let bestResult: {
+    path: RoadPlanPath;
+    reservedTile: number;
+    score: number[];
+  } | null = null;
+
+  for (const candidate of candidates) {
+    let path: RoadPlanPath;
+    try {
+      path = searchRoadPath(
+        context,
+        config,
+        roadMask,
+        reservedMask,
+        request,
+        {
+          ...candidate.endpoint,
+          label: request.target.label,
+          range: 0
+        },
+        candidate.reservedTile
+      );
+    } catch {
+      continue;
+    }
+
+    const score = [
+      path.cost,
+      countNewRoadTiles(roadMask, path.roadTiles),
+      ...candidate.reservedScore,
+      candidate.endpoint.y,
+      candidate.endpoint.x
+    ];
+    if (bestResult === null || compareScore(score, bestResult.score) < 0) {
+      bestResult = {
+        path,
+        reservedTile: candidate.reservedTile,
+        score
+      };
+    }
+  }
+
+  if (bestResult === null) {
+    throw new Error(`No complete road path found for ${request.kind}.`);
+  }
+
+  return {
+    path: bestResult.path,
+    reservedTile: bestResult.reservedTile
   };
 }
 
@@ -387,20 +487,25 @@ function searchRoadPath(
   context: ReturnType<typeof createRoadPlanningContext>,
   config: RoadPlanConfig,
   roadMask: Uint8Array,
-  request: RoadPathRequest
+  reservedMask: Uint8Array,
+  request: RoadPathRequest,
+  searchTarget: RoadPlanEndpoint = request.target,
+  extraBlockedTile: number | null = null
 ): RoadPlanPath {
   const matrix = createCostMatrix(
     context.blocked,
     roadMask,
+    reservedMask,
     request.kind === "storage-to-controller" ? null : context.controllerReserveMask,
-    config
+    config,
+    extraBlockedTile
   );
   matrix.set(request.origin.x, request.origin.y, 0);
   const search = PathFinder.search(
     toRoomPosition(request.origin, context.room.roomName),
     {
-      pos: toRoomPosition(request.target, context.room.roomName),
-      range: request.target.range
+      pos: toRoomPosition(searchTarget, context.room.roomName),
+      range: searchTarget.range
     },
     {
       plainCost: config.plainCost,
@@ -414,7 +519,7 @@ function searchRoadPath(
   const roadTiles = tiles.map((tile) => toIndex(tile.x, tile.y));
   const finalPosition = tiles.at(-1) ?? request.origin;
 
-  if (search.incomplete || range(finalPosition, request.target) > request.target.range) {
+  if (search.incomplete || range(finalPosition, searchTarget) > searchTarget.range) {
     throw new Error(`No complete road path found for ${request.kind}.`);
   }
 
@@ -433,14 +538,16 @@ function searchRoadPath(
 function createCostMatrix(
   blocked: Uint8Array,
   roadMask: Uint8Array,
+  reservedMask: Uint8Array,
   controllerReserveMask: Uint8Array | null,
-  config: RoadPlanConfig
+  config: RoadPlanConfig,
+  extraBlockedTile: number | null = null
 ): CostMatrix {
   const matrix = new PathFinder.CostMatrix();
 
   for (let index = 0; index < roomArea; index += 1) {
     const coord = fromIndex(index);
-    if (blocked[index] !== 0) {
+    if (blocked[index] !== 0 || reservedMask[index] !== 0 || index === extraBlockedTile) {
       matrix.set(coord.x, coord.y, 255);
       continue;
     }
@@ -503,6 +610,214 @@ function createBlockedMask(room: RoomPlanningRoomData, stampPlan: RoomStampPlan)
   return blocked;
 }
 
+function requiresReservedStructureTile(kind: RoadPlanPathKind): boolean {
+  return kind === "storage-to-source1" || kind === "storage-to-source2" || kind === "storage-to-controller";
+}
+
+function collectReservedStructureCandidates(
+  context: ReturnType<typeof createRoadPlanningContext>,
+  kind: RoadPlanPathKind,
+  roadMask: Uint8Array,
+  reservedMask: Uint8Array
+): ReservedStructureCandidate[] {
+  switch (kind) {
+    case "storage-to-source1":
+      return collectSourceReservedCandidates(context, context.sources[0], roadMask, reservedMask);
+    case "storage-to-source2":
+      return collectSourceReservedCandidates(context, context.sources[1], roadMask, reservedMask);
+    case "storage-to-controller":
+      return collectControllerReservedCandidates(context, context.controller, roadMask, reservedMask);
+    default:
+      return [];
+  }
+}
+
+function collectSourceReservedCandidates(
+  context: ReturnType<typeof createRoadPlanningContext>,
+  source: RoomPlanningObject,
+  roadMask: Uint8Array,
+  reservedMask: Uint8Array
+): ReservedStructureCandidate[] {
+  const candidates: ReservedStructureCandidate[] = [];
+
+  for (const endpoint of neighbors(source)) {
+    if (!isSearchEndpointCandidate(context, endpoint, reservedMask)) {
+      continue;
+    }
+
+    for (const reserved of neighbors(endpoint)) {
+      const tile = toIndex(reserved.x, reserved.y);
+      if (
+        context.blocked[tile] !== 0
+        || roadMask[tile] !== 0
+        || reservedMask[tile] !== 0
+        || range(reserved, source) > 2
+      ) {
+        continue;
+      }
+
+      const distance = context.hubDistanceMap.get(reserved.x, reserved.y);
+      candidates.push({
+        endpoint,
+        reservedTile: tile,
+        reservedScore: [
+          distance === dijkstraUnreachable ? Number.MAX_SAFE_INTEGER : distance,
+          range(reserved, source),
+          reserved.y,
+          reserved.x
+        ]
+      });
+    }
+  }
+
+  return candidates;
+}
+
+function collectControllerReservedCandidates(
+  context: ReturnType<typeof createRoadPlanningContext>,
+  controller: RoomPlanningObject,
+  roadMask: Uint8Array,
+  reservedMask: Uint8Array
+): ReservedStructureCandidate[] {
+  const candidates: ReservedStructureCandidate[] = [];
+
+  for (let y = Math.max(0, controller.y - controllerReserveRange); y <= Math.min(roomSize - 1, controller.y + controllerReserveRange); y += 1) {
+    for (let x = Math.max(0, controller.x - controllerReserveRange); x <= Math.min(roomSize - 1, controller.x + controllerReserveRange); x += 1) {
+      const endpoint = { x, y };
+      if (range(endpoint, controller) !== controllerReserveRange || !isSearchEndpointCandidate(context, endpoint, reservedMask)) {
+        continue;
+      }
+
+      for (const reserved of neighbors(endpoint)) {
+        const tile = toIndex(reserved.x, reserved.y);
+        if (
+          context.blocked[tile] !== 0
+          || roadMask[tile] !== 0
+          || reservedMask[tile] !== 0
+          || range(reserved, controller) !== controllerReserveRange + 1
+        ) {
+          continue;
+        }
+
+        const distance = context.hubDistanceMap.get(reserved.x, reserved.y);
+        candidates.push({
+          endpoint,
+          reservedTile: tile,
+          reservedScore: [
+            distance === dijkstraUnreachable ? Number.MAX_SAFE_INTEGER : distance,
+            reserved.y,
+            reserved.x
+          ]
+        });
+      }
+    }
+  }
+
+  return candidates;
+}
+
+function isSearchEndpointCandidate(
+  context: ReturnType<typeof createRoadPlanningContext>,
+  coord: RoomStampAnchor,
+  reservedMask: Uint8Array
+): boolean {
+  return context.blocked[toIndex(coord.x, coord.y)] === 0 && reservedMask[toIndex(coord.x, coord.y)] === 0;
+}
+
+function chooseReservedStructureTile(
+  context: ReturnType<typeof createRoadPlanningContext>,
+  kind: RoadPlanPathKind,
+  path: RoadPlanPath,
+  roadMask: Uint8Array,
+  reservedMask: Uint8Array
+): number | null {
+  const endpoint = path.tiles.at(-1) ?? path.origin;
+
+  switch (kind) {
+    case "storage-to-source1":
+      return chooseSourceLinkReservation(context, context.sources[0], endpoint, roadMask, reservedMask);
+    case "storage-to-source2":
+      return chooseSourceLinkReservation(context, context.sources[1], endpoint, roadMask, reservedMask);
+    case "storage-to-controller":
+      return chooseControllerLinkReservation(context, context.controller, endpoint, roadMask, reservedMask);
+    default:
+      return null;
+  }
+}
+
+function chooseSourceLinkReservation(
+  context: ReturnType<typeof createRoadPlanningContext>,
+  source: RoomPlanningObject,
+  endpoint: RoomStampAnchor,
+  roadMask: Uint8Array,
+  reservedMask: Uint8Array
+): number | null {
+  let bestTile: number | null = null;
+  let bestScore: number[] | null = null;
+
+  for (const coord of neighbors(endpoint)) {
+    const tile = toIndex(coord.x, coord.y);
+    if (
+      context.blocked[tile] !== 0
+      || roadMask[tile] !== 0
+      || reservedMask[tile] !== 0
+      || range(coord, source) > 2
+    ) {
+      continue;
+    }
+
+    const distance = context.hubDistanceMap.get(coord.x, coord.y);
+    const score = [
+      distance === dijkstraUnreachable ? Number.MAX_SAFE_INTEGER : distance,
+      range(coord, source),
+      coord.y,
+      coord.x
+    ];
+    if (bestScore === null || compareScore(score, bestScore) < 0) {
+      bestScore = score;
+      bestTile = tile;
+    }
+  }
+
+  return bestTile;
+}
+
+function chooseControllerLinkReservation(
+  context: ReturnType<typeof createRoadPlanningContext>,
+  controller: RoomPlanningObject,
+  endpoint: RoomStampAnchor,
+  roadMask: Uint8Array,
+  reservedMask: Uint8Array
+): number | null {
+  let bestTile: number | null = null;
+  let bestScore: number[] | null = null;
+
+  for (const coord of neighbors(endpoint)) {
+    const tile = toIndex(coord.x, coord.y);
+    if (
+      context.blocked[tile] !== 0
+      || roadMask[tile] !== 0
+      || reservedMask[tile] !== 0
+      || range(coord, controller) !== 4
+    ) {
+      continue;
+    }
+
+    const distance = context.hubDistanceMap.get(coord.x, coord.y);
+    const score = [
+      distance === dijkstraUnreachable ? Number.MAX_SAFE_INTEGER : distance,
+      coord.y,
+      coord.x
+    ];
+    if (bestScore === null || compareScore(score, bestScore) < 0) {
+      bestScore = score;
+      bestTile = tile;
+    }
+  }
+
+  return bestTile;
+}
+
 function collectRoadTiles(mask: Uint8Array): number[] {
   const tiles: number[] = [];
   for (let index = 0; index < roomArea; index += 1) {
@@ -523,9 +838,20 @@ function countRoadTiles(mask: Uint8Array): number {
   return count;
 }
 
+function countNewRoadTiles(roadMask: Uint8Array, roadTiles: number[]): number {
+  let count = 0;
+  for (const tile of roadTiles) {
+    if (roadMask[tile] === 0) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 function cloneState(state: PlanningState): PlanningState {
   return {
     roadMask: new Uint8Array(state.roadMask),
+    reservedMask: new Uint8Array(state.reservedMask),
     paths: [...state.paths]
   };
 }
@@ -589,6 +915,18 @@ function compareObjects(left: RoomPlanningObject, right: RoomPlanningObject): nu
   return left.id.localeCompare(right.id);
 }
 
+function compareScore(left: number[], right: number[]): number {
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftScore = left[index] ?? 0;
+    const rightScore = right[index] ?? 0;
+    if (leftScore !== rightScore) {
+      return leftScore - rightScore;
+    }
+  }
+  return 0;
+}
+
 function isNaturalBlocker(object: RoomPlanningObject): boolean {
   return object.type === "controller" || object.type === "source" || object.type === "mineral" || object.type === "deposit";
 }
@@ -609,6 +947,23 @@ function ensurePathFinder(): void {
 
 function isWalkableTerrain(terrain: string, x: number, y: number): boolean {
   return isInRoom(x, y) && (terrain.charCodeAt(toIndex(x, y)) - 48 & terrainMaskWall) === 0;
+}
+
+function neighbors(coord: RoomStampAnchor): RoomStampAnchor[] {
+  const result: RoomStampAnchor[] = [];
+  for (let dy = -1; dy <= 1; dy += 1) {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      if (dx === 0 && dy === 0) {
+        continue;
+      }
+      const x = coord.x + dx;
+      const y = coord.y + dy;
+      if (isInRoom(x, y)) {
+        result.push({ x, y });
+      }
+    }
+  }
+  return result;
 }
 
 function range(left: RoomStampAnchor, right: RoomStampAnchor): number {

@@ -2,11 +2,11 @@ import type { RampartPlan } from "./rampart-plan.ts";
 import type { RoadPlan } from "./road-plan.ts";
 import type { RoomPlanningRoomData } from "./room-plan.ts";
 import {
-  createSourceSinkStructurePlacements,
   createStampStructurePlacements,
   type PlannedStructurePlacement,
   type PlannedStructureType
 } from "./structure-layout.ts";
+import type { SourceSinkStructurePlan } from "./source-sink-structure-plan.ts";
 import type { RoomStampAnchor, RoomStampPlan } from "./stamp-placement.ts";
 
 const roomSize = 50;
@@ -24,18 +24,14 @@ export function planRoomStructures(
   room: RoomPlanningRoomData,
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
+  sourceSinkPlan: SourceSinkStructurePlan,
   rampartPlan: RampartPlan
 ): RoomStructurePlan {
-  validateInputs(room, stampPlan, roadPlan, rampartPlan);
+  validateInputs(room, stampPlan, roadPlan, sourceSinkPlan, rampartPlan);
   const stampStructures = createStampStructurePlacements(stampPlan);
   const structures = sortPlacements(dedupePlacements([
     ...stampStructures,
-    ...createSourceSinkStructurePlacements(room, stampPlan, roadPlan, {
-      blockedTiles: [
-        ...rampartPlan.preRampartStructures.structureTiles,
-        ...stampStructures.map((placement) => placement.tile)
-      ]
-    }),
+    ...sourceSinkPlan.structures,
     ...createRoadPlacements(roadPlan, rampartPlan),
     ...createRampartPlacements(rampartPlan),
     ...rampartPlan.towers.map((tower, index) => createPlacement("tower", tower, 3, `tower-${index + 1}`)),
@@ -56,6 +52,7 @@ export function validateRoomStructurePlan(
   room: RoomPlanningRoomData,
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
+  sourceSinkPlan: SourceSinkStructurePlan,
   rampartPlan: RampartPlan,
   structurePlan: RoomStructurePlan
 ): string[] {
@@ -98,7 +95,7 @@ export function validateRoomStructurePlan(
     }
   }
 
-  const expected = planRoomStructures(room, stampPlan, roadPlan, rampartPlan);
+  const expected = planRoomStructures(room, stampPlan, roadPlan, sourceSinkPlan, rampartPlan);
   const expectedKeys = expected.structures.map(structureKey);
   const actualKeys = [...structurePlan.structures].sort(comparePlacements).map(structureKey);
   if (actualKeys.join("|") !== expectedKeys.join("|")) {
@@ -165,6 +162,7 @@ function validateInputs(
   room: RoomPlanningRoomData,
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
+  sourceSinkPlan: SourceSinkStructurePlan,
   rampartPlan: RampartPlan
 ): void {
   if (room.roomName !== stampPlan.roomName) {
@@ -173,11 +171,14 @@ function validateInputs(
   if (room.roomName !== roadPlan.roomName) {
     throw new Error(`Structure planning room mismatch: room '${room.roomName}' received road plan for '${roadPlan.roomName}'.`);
   }
+  if (room.roomName !== sourceSinkPlan.roomName) {
+    throw new Error(`Structure planning room mismatch: room '${room.roomName}' received source/sink plan for '${sourceSinkPlan.roomName}'.`);
+  }
   if (room.roomName !== rampartPlan.roomName) {
     throw new Error(`Structure planning room mismatch: room '${room.roomName}' received rampart plan for '${rampartPlan.roomName}'.`);
   }
-  if (stampPlan.policy !== roadPlan.policy || stampPlan.policy !== rampartPlan.policy) {
-    throw new Error("Structure planning policy mismatch between stamp, road, and rampart plans.");
+  if (stampPlan.policy !== roadPlan.policy || stampPlan.policy !== sourceSinkPlan.policy || stampPlan.policy !== rampartPlan.policy) {
+    throw new Error("Structure planning policy mismatch between stamp, road, source/sink, and rampart plans.");
   }
 }
 
