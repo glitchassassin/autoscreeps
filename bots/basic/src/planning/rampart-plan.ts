@@ -11,6 +11,7 @@ import type { RoomPlanningObject, RoomPlanningRoomData } from "./room-plan.ts";
 import type { SourceSinkStructurePlan } from "./source-sink-structure-plan.ts";
 import {
   createStampStructurePlacements,
+  type PlannedStructurePlacement,
   type PlannedStructureType
 } from "./structure-layout.ts";
 import type { RoomStampAnchor, RoomStampPlan, StampPlacement } from "./stamp-placement.ts";
@@ -903,9 +904,9 @@ function collectPostProcessProtectedTiles(
     ...assignedStructureTiles
   ]);
   const blockingStructureTiles = uniqueSorted([
-    ...stampStructures.filter((placement) => isBlockingPlacementType(placement.type)).map((placement) => placement.tile),
+    ...stampStructures.filter(isPostRampartBlockingPlacement).map((placement) => placement.tile),
     ...context.sourceSinkPlan.structures
-      .filter((placement) => isBlockingPlacementType(placement.type))
+      .filter(isPostRampartBlockingPlacement)
       .map((placement) => placement.tile),
     ...assignedStructureTiles
   ]);
@@ -1559,6 +1560,9 @@ function validatePostRampartRoads(
     if (outsideMask[tile] !== 0 && rampartMask[tile] === 0) {
       errors.push(`Post-rampart road tile ${coord.x},${coord.y} is outside the defended area.`);
     }
+    if (blockingStructureSet.has(tile)) {
+      errors.push(`Post-rampart road tile ${coord.x},${coord.y} overlaps a blocking structure tile.`);
+    }
   }
 
   return errors;
@@ -1763,6 +1767,21 @@ function collectAssignedStructureTiles(structures: RampartAssignedStructures): n
 
 function isBlockingPlacementType(type: PlannedStructureType): boolean {
   return type !== "road" && type !== "rampart" && type !== "container" && type !== "extractor";
+}
+
+function isPostRampartBlockingPlacement(placement: Pick<PlannedStructurePlacement, "type" | "label">): boolean {
+  return isBlockingPlacementType(placement.type)
+    || isSourceContainerPlacement(placement)
+    || isLabRoadPlacement(placement);
+}
+
+function isSourceContainerPlacement(placement: Pick<PlannedStructurePlacement, "type" | "label">): boolean {
+  return placement.type === "container"
+    && (placement.label === "source1-container" || placement.label === "source2-container");
+}
+
+function isLabRoadPlacement(placement: Pick<PlannedStructurePlacement, "type" | "label">): boolean {
+  return placement.type === "road" && placement.label.startsWith("lab-road-");
 }
 
 function arraysEqual(left: number[], right: number[]): boolean {

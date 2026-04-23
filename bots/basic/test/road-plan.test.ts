@@ -137,6 +137,22 @@ describe("road planning", () => {
     expect(nonControllerReserveTiles).toEqual([]);
     expect(controllerRoad.tiles.some((tile) => range(tile, controller) <= 3)).toBe(true);
   });
+
+  it("routes later roads around source container endpoints", () => {
+    const room = createSourceEndpointBlockRoom();
+    const stampPlan = createSourceEndpointBlockStampPlan();
+    installTestPathFinder({ [room.roomName]: room.terrain });
+
+    const plan = planRoads(room, stampPlan);
+    const source1Path = plan.paths.find((path) => path.kind === "storage-to-source1");
+    const controllerPath = plan.paths.find((path) => path.kind === "storage-to-controller");
+    const source1Endpoint = source1Path?.tiles.at(-1);
+
+    expect(validateRoadPlan(room, stampPlan, plan)).toEqual([]);
+    expect(source1Endpoint).toBeDefined();
+    expect(controllerPath).toBeDefined();
+    expect(controllerPath?.roadTiles).not.toContain(source1Endpoint!.y * 50 + source1Endpoint!.x);
+  });
 });
 
 function createSyntheticRoom(): RoomPlanningRoomData {
@@ -212,6 +228,48 @@ function createControllerReserveStampPlan(): RoomStampPlan {
 
   return {
     roomName: "W0N0",
+    policy: "normal",
+    topK: 1,
+    score: [],
+    stamps: {
+      hub,
+      fastfillers: [pod1, pod2],
+      labs
+    }
+  };
+}
+
+function createSourceEndpointBlockRoom(): RoomPlanningRoomData {
+  return {
+    roomName: "W1N1",
+    terrain: "0".repeat(roomArea),
+    objects: [
+      { id: "controller", roomName: "W1N1", type: "controller", x: 30, y: 10 },
+      { id: "mineral", roomName: "W1N1", type: "mineral", x: 30, y: 30, mineralType: "H" },
+      { id: "source-1", roomName: "W1N1", type: "source", x: 20, y: 10 },
+      { id: "source-2", roomName: "W1N1", type: "source", x: 20, y: 20 }
+    ]
+  };
+}
+
+function createSourceEndpointBlockStampPlan(): RoomStampPlan {
+  const hub = createPlacement("hub", "hub", { x: 5, y: 10 }, {
+    storage: { x: 5, y: 10 },
+    terminal: { x: 5, y: 12 },
+    hubCenter: { x: 6, y: 11 }
+  });
+  const pod1 = createPlacement("fastfiller", "pod1", { x: 8, y: 6 }, {
+    container: { x: 8, y: 6 }
+  });
+  const pod2 = createPlacement("fastfiller", "pod2", { x: 8, y: 16 }, {
+    container: { x: 8, y: 16 }
+  });
+  const labs = createPlacement("labs", "labs", { x: 10, y: 22 }, {
+    entrance: { x: 10, y: 22 }
+  });
+
+  return {
+    roomName: "W1N1",
     policy: "normal",
     topK: 1,
     score: [],

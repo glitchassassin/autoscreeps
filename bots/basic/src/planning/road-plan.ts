@@ -208,6 +208,9 @@ export function validateRoadPlan(room: RoomPlanningRoomData, stampPlan: RoomStam
     for (let index = 0; index < path.tiles.length; index += 1) {
       const tile = path.tiles[index]!;
       const tileIndex = toIndex(tile.x, tile.y);
+      if (reservedMask[tileIndex] !== 0) {
+        errors.push(`${path.kind} uses reserved tile ${tile.x},${tile.y}.`);
+      }
       pathTileSet.add(tileIndex);
       if (path.roadTiles[index] !== tileIndex) {
         errors.push(`${path.kind} road tile ${index} does not match path coordinate ${tile.x},${tile.y}.`);
@@ -233,6 +236,10 @@ export function validateRoadPlan(room: RoomPlanningRoomData, stampPlan: RoomStam
       } else {
         reservedMask[reservedTile] = 1;
       }
+    }
+    const reservedEndpointTile = getFutureStructureEndpointTile(path);
+    if (reservedEndpointTile !== null) {
+      reservedMask[reservedEndpointTile] = 1;
     }
   }
 
@@ -437,6 +444,10 @@ function planSequentialPath(
   if (searchResult.reservedTile !== null) {
     reservedMask[searchResult.reservedTile] = 1;
   }
+  const reservedEndpointTile = getFutureStructureEndpointTile(searchResult.path);
+  if (reservedEndpointTile !== null) {
+    reservedMask[reservedEndpointTile] = 1;
+  }
 
   return {
     roadMask,
@@ -637,6 +648,15 @@ function createBlockedMask(room: RoomPlanningRoomData, stampPlan: RoomStampPlan)
 
 function requiresReservedStructureTile(kind: RoadPlanPathKind): boolean {
   return kind === "storage-to-source1" || kind === "storage-to-source2" || kind === "storage-to-controller";
+}
+
+function getFutureStructureEndpointTile(path: RoadPlanPath): number | null {
+  if (path.kind !== "storage-to-source1" && path.kind !== "storage-to-source2") {
+    return null;
+  }
+
+  const endpoint = path.tiles.at(-1);
+  return endpoint ? toIndex(endpoint.x, endpoint.y) : null;
 }
 
 function collectReservedStructureCandidates(

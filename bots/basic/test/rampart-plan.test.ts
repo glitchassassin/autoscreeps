@@ -100,9 +100,19 @@ describe("rampart planning", () => {
       const roadPlan = planRoads(testCase.room, testCase.plan);
       const sourceSinkPlan = planSourceSinkStructures(testCase.room, testCase.plan, roadPlan);
       const rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan, sourceSinkPlan);
+      const sourceContainerTiles = sourceSinkPlan.structures
+        .filter((structure) => structure.label === "source1-container" || structure.label === "source2-container")
+        .map((structure) => structure.tile);
+      const labRoadTiles = testCase.plan.stamps.labs?.roadTiles ?? [];
 
       expect(validateRampartPlan(testCase.room, testCase.plan, roadPlan, sourceSinkPlan, rampartPlan), testCase.roomName).toEqual([]);
       expect(rampartPlan.towers, testCase.roomName).toHaveLength(6);
+      for (const tile of sourceContainerTiles) {
+        expect(rampartPlan.postRampartRoadTiles, `${testCase.roomName}:${tile}`).not.toContain(tile);
+      }
+      for (const tile of labRoadTiles) {
+        expect(rampartPlan.postRampartRoadTiles, `${testCase.roomName}:${tile}`).not.toContain(tile);
+      }
     }
   }, 30_000);
 
