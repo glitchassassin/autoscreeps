@@ -71,13 +71,21 @@ describe("rampart planning", () => {
     expect(rampartPlan.expansionPlan.extraStructures.length).toBeGreaterThanOrEqual(requiredCount);
     expect(rampartPlan.expansionPlan.accessRoadTiles).not.toEqual(rampartPlan.preRampartStructures.accessRoadTiles);
     const rampartSet = new Set(rampartPlan.rampartTiles);
+    const assignedExtraTiles = new Set([
+      ...rampartPlan.towers.map((tower) => tower.tile),
+      ...rampartPlan.extensions.map((extension) => extension.tile),
+      ...(rampartPlan.nuker ? [rampartPlan.nuker.tile] : []),
+      ...(rampartPlan.observer ? [rampartPlan.observer.tile] : [])
+    ]);
     const usableRoadTiles = new Set([
       ...roadPlan.roadTiles,
       ...rampartPlan.expansionPlan.accessRoadTiles,
       ...rampartPlan.postRampartRoadTiles.filter((tile) => !rampartSet.has(tile))
     ]);
     for (const slot of rampartPlan.expansionPlan.extraStructures) {
-      expect(rampartSet.has(slot.tile), `slot on rampart ${testCase.roomName}:${slot.x},${slot.y}`).toBe(false);
+      if (!assignedExtraTiles.has(slot.tile)) {
+        expect(rampartSet.has(slot.tile), `unassigned slot on rampart ${testCase.roomName}:${slot.x},${slot.y}`).toBe(false);
+      }
       expect(
         neighbors(slot).some((coord) => usableRoadTiles.has(coord.y * roomSize + coord.x)),
         `slot missing non-rampart road access ${testCase.roomName}:${slot.x},${slot.y}`

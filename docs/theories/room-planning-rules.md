@@ -212,8 +212,8 @@ Expansion candidates SHOULD be populated along roads close to `storage` for easy
 - The planner MUST add roads from the interior to each connected rampart group.
 - When plotting post-rampart roads, the planner MUST ignore provisional expansion candidates and provisional access roads as blockers.
 - After plotting post-rampart roads, the planner MUST recompute defended expansion candidates against the augmented defended road network.
-- The planner MUST add extra ramparts to structures (other than roads) outside the ramparts.
-- The planner MUST add extra ramparts to structures inside the ramparts but within range `2` of the outermost ring of ramparts.
+- The planner MUST add extra ramparts to buildable exterior structure tiles outside the ramparts.
+- The planner MUST add extra ramparts to any buildable protected interior tile, including roads, within range `3` of a walkable exterior tile.
 
 ## Towers
 
