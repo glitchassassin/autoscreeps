@@ -160,7 +160,7 @@ function createHubStep(stampPlan: RoomStampPlan, phase: StampDebugByPhase): Room
     ),
     layers: [
       candidateLayer("hub-candidates", "Top hub candidates", phase),
-      stampLayer("hub-committed", layerTitleHub(), hub, true)
+      ...createCommittedStampVisualLayers("hub-committed", layerTitleHub(), hub)
     ]
   };
 }
@@ -192,7 +192,7 @@ function createFastfillerStep(
         labs: false
       }),
       candidateLayer(`${id}-candidates`, "Top fastfiller candidates", phase),
-      stampLayer(`${id}-committed`, title, pod, true)
+      ...createCommittedStampVisualLayers(`${id}-committed`, title, pod)
     ]
   };
 }
@@ -229,7 +229,7 @@ function createLabsStep(stampPlan: RoomStampPlan, phase: StampDebugByPhase): Roo
     layers: [
       ...createCommittedStampLayers(stampPlan, { fastfillerCount: 2, labs: false }),
       candidateLayer("lab-candidates", "Top lab candidates", phase),
-      stampLayer("labs-committed", layerTitleLabs(), labs, true)
+      ...createCommittedStampVisualLayers("labs-committed", layerTitleLabs(), labs)
     ]
   };
 }
@@ -514,16 +514,22 @@ function createCommittedStampLayers(
   const fastfillerCount = options.fastfillerCount ?? 2;
   const includeLabs = options.labs ?? true;
   return [
-    stampLayer("hub-committed", layerTitleHub(), stampPlan.stamps.hub, true),
-    ...stampPlan.stamps.fastfillers.slice(0, fastfillerCount).map((pod, index) => (
-      stampLayer(
+    ...createCommittedStampVisualLayers("hub-committed", layerTitleHub(), stampPlan.stamps.hub),
+    ...stampPlan.stamps.fastfillers.slice(0, fastfillerCount).flatMap((pod, index) => (
+      createCommittedStampVisualLayers(
         index === 0 ? "fastfiller-a-committed" : "fastfiller-b-committed",
         layerTitleFastfiller(index),
-        pod,
-        true
+        pod
       )
     )),
-    ...(includeLabs && stampPlan.stamps.labs ? [stampLayer("labs-committed", layerTitleLabs(), stampPlan.stamps.labs, true)] : [])
+    ...(includeLabs && stampPlan.stamps.labs ? createCommittedStampVisualLayers("labs-committed", layerTitleLabs(), stampPlan.stamps.labs) : [])
+  ];
+}
+
+function createCommittedStampVisualLayers(id: string, title: string, stamp: StampPlacement): RoomPlanningLayer[] {
+  return [
+    stampLayer(id, title, stamp, true),
+    ...createStampRoadLayers(id, title, stamp)
   ];
 }
 
@@ -769,6 +775,21 @@ function stampLayer(id: string, title: string, stamp: StampPlacement, visibleByD
     visibleByDefault,
     tone: "selected"
   };
+}
+
+function createStampRoadLayers(id: string, title: string, stamp: StampPlacement): RoomPlanningLayer[] {
+  if (!stamp.roadTiles || stamp.roadTiles.length === 0) {
+    return [];
+  }
+
+  return [{
+    id: `${id}-roads`,
+    title: `${title} roads`,
+    kind: "road",
+    tiles: stamp.roadTiles,
+    visibleByDefault: true,
+    tone: "road"
+  }];
 }
 
 function metric(label: string, value: string | number, tone: RoomPlanningMetric["tone"] = "neutral"): RoomPlanningMetric {

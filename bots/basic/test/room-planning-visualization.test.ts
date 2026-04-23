@@ -36,12 +36,15 @@ describe("room planning visualization", () => {
     expect(layerIds(visualization, "fastfiller-b")).toContain("fastfiller-a-committed");
     expect(layerTitles(visualization, "fastfiller-b")).toContain("Fastfiller pod A");
     expect(layerTitles(visualization, "fastfiller-b")).toContain("Fastfiller pod B");
+    expect(layerIds(visualization, "labs")).toContain("labs-committed-roads");
     expect(layerIds(visualization, "roads")).not.toContain("roads-all");
+    expect(layerIds(visualization, "roads")).toContain("labs-committed-roads");
     expect(layerIds(visualization, "roads")).toContain("road-storage-to-pod1");
     expect(layerTitles(visualization, "roads")).toContain("Road: Storage -> Fastfiller pod A");
     expect(layerIds(visualization, "sources-sinks")).toEqual(expect.arrayContaining(["hub-committed", "fastfiller-a-committed", "fastfiller-b-committed", "labs-committed", "road-storage-to-pod1"]));
     expect(layerIds(visualization, "spare-extensions")).toEqual(expect.arrayContaining(["source-sink-structures", "pre-rampart-access-roads", "pre-rampart-structures"]));
     expect(layerIds(visualization, "towers")).toEqual(expect.arrayContaining(["hub-committed", "road-storage-to-pod1", "pre-rampart-structures", "cut-ramparts", "towers"]));
+    expect(layerTiles(visualization, "roads", "labs-committed-roads")).toEqual(visualization.plan.stampPlan.stamps.labs?.roadTiles ?? []);
     expect(visualization.steps.find((step) => step.id === "roads")?.layers.some((layer) => layer.tiles.length > 0)).toBe(true);
     expect(visualization.steps.find((step) => step.id === "ramparts")?.metrics.some((metric) => metric.label === "rampart tiles")).toBe(true);
     expect(visualization.plan.structurePlan.structures.filter((structure) => structure.type === "extension")).toHaveLength(60);
@@ -73,4 +76,12 @@ function layerIds(visualization: ReturnType<typeof createRoomPlanningVisualizati
 
 function layerTitles(visualization: ReturnType<typeof createRoomPlanningVisualization>, stepId: string): string[] {
   return visualization.steps.find((step) => step.id === stepId)?.layers.map((layer) => layer.title) ?? [];
+}
+
+function layerTiles(
+  visualization: ReturnType<typeof createRoomPlanningVisualization>,
+  stepId: string,
+  layerId: string
+): number[] {
+  return visualization.steps.find((step) => step.id === stepId)?.layers.find((layer) => layer.id === layerId)?.tiles ?? [];
 }
