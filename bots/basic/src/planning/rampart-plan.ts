@@ -640,6 +640,7 @@ function addControllerRangeToMask(
 
 function getMandatoryRoadKinds(policy: RoomStampPlan["policy"]): RoadPlanPathKind[] {
   return [
+    "hub-spawn-to-storage",
     "storage-to-pod1",
     "storage-to-pod2",
     ...(policy === "normal" ? ["terminal-to-labs" as const, "storage-to-labs" as const] : [])

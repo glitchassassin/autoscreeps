@@ -13,6 +13,7 @@ const defaultMaxOps = 10_000;
 const controllerReserveRange = 3;
 
 export type RoadPlanPathKind =
+  | "hub-spawn-to-storage"
   | "storage-to-pod1"
   | "storage-to-pod2"
   | "storage-to-labs"
@@ -93,6 +94,8 @@ export function planRoads(room: RoomPlanningRoomData, stampPlan: RoomStampPlan, 
     reservedMask: new Uint8Array(roomArea),
     paths: []
   };
+
+  state = planSequentialPath(context, config, state, createHubSpawnRequest(context.hubSpawn, context.storage));
 
   state = chooseShortestRoadGroup(context, config, state, [
     createPodRequest("storage-to-pod1", context.storage, stampPlan.stamps.fastfillers[0], 1),
@@ -248,6 +251,9 @@ export function validateRoadPlan(room: RoomPlanningRoomData, stampPlan: RoomStam
   }
 
   const pathKinds = new Set(roadPlan.paths.map((path) => path.kind));
+  if (!pathKinds.has("hub-spawn-to-storage")) {
+    errors.push("Road plans must include a hub-spawn-to-storage path.");
+  }
   if (stampPlan.policy === "normal" && !pathKinds.has("terminal-to-labs")) {
     errors.push("Normal road plans must include a terminal-to-labs path.");
   }
@@ -267,6 +273,7 @@ function createRoadPlanningContext(room: RoomPlanningRoomData, stampPlan: RoomSt
   blocked: Uint8Array;
   controllerReserveMask: Uint8Array;
   hubDistanceMap: DijkstraMap;
+  hubSpawn: RoadPlanEndpoint;
   storage: RoadPlanEndpoint;
   terminal: RoadPlanEndpoint;
   controller: RoomPlanningObject;
@@ -276,6 +283,7 @@ function createRoadPlanningContext(room: RoomPlanningRoomData, stampPlan: RoomSt
   const controller = requireObject(room, "controller");
   const sources = getSources(room);
   const mineral = requireObject(room, "mineral");
+  const hubSpawn = getHubSpawn(stampPlan.stamps.hub);
   const storage = requireAnchor(stampPlan.stamps.hub, "storage");
   const terminal = requireAnchor(stampPlan.stamps.hub, "terminal");
   const hubCenter = stampPlan.stamps.hub.anchors.hubCenter ?? stampPlan.stamps.hub.anchor;
@@ -286,6 +294,11 @@ function createRoadPlanningContext(room: RoomPlanningRoomData, stampPlan: RoomSt
     blocked: createBlockedMask(room, stampPlan),
     controllerReserveMask: createControllerReserveMask(controller),
     hubDistanceMap: createDijkstraMap(room.terrain, [hubCenter]),
+    hubSpawn: {
+      ...hubSpawn,
+      label: "hub spawn",
+      range: 0
+    },
     storage: {
       ...storage,
       label: "storage",
@@ -299,6 +312,18 @@ function createRoadPlanningContext(room: RoomPlanningRoomData, stampPlan: RoomSt
     controller,
     sources,
     mineral
+  };
+}
+
+function createHubSpawnRequest(hubSpawn: RoadPlanEndpoint, storage: RoadPlanEndpoint): RoadPathRequest {
+  return {
+    kind: "hub-spawn-to-storage",
+    origin: hubSpawn,
+    target: {
+      ...storage,
+      label: "storage",
+      range: 1
+    }
   };
 }
 
@@ -888,6 +913,10 @@ function requireAnchor(stamp: StampPlacement, name: string): RoomStampAnchor {
   return anchor;
 }
 
+function getHubSpawn(stamp: StampPlacement): RoomStampAnchor {
+  return stamp.anchors.hubSpawn ?? applyStampOffset(stamp, { x: 1, y: 2 });
+}
+
 function requireObject(room: RoomPlanningRoomData, type: string): RoomPlanningObject {
   const object = room.objects.find((candidate) => candidate.type === type);
   if (!object) {
@@ -964,6 +993,27 @@ function neighbors(coord: RoomStampAnchor): RoomStampAnchor[] {
     }
   }
   return result;
+}
+
+function applyStampOffset(stamp: StampPlacement, offset: RoomStampAnchor): RoomStampAnchor {
+  const rotated = rotateOffset(offset, stamp.rotation);
+  return {
+    x: stamp.anchor.x + rotated.x,
+    y: stamp.anchor.y + rotated.y
+  };
+}
+
+function rotateOffset(offset: RoomStampAnchor, rotation: StampPlacement["rotation"]): RoomStampAnchor {
+  switch (rotation) {
+    case 0:
+      return offset;
+    case 90:
+      return { x: -offset.y, y: offset.x };
+    case 180:
+      return { x: -offset.x, y: -offset.y };
+    case 270:
+      return { x: offset.y, y: -offset.x };
+  }
 }
 
 function range(left: RoomStampAnchor, right: RoomStampAnchor): number {

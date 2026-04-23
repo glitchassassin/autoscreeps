@@ -45,7 +45,9 @@ describe("room planning visualization", () => {
     expect(layerIds(visualization, "labs")).toContain("labs-committed-roads");
     expect(layerIds(visualization, "roads")).not.toContain("roads-all");
     expect(layerIds(visualization, "roads")).toContain("labs-committed-roads");
+    expect(layerIds(visualization, "roads")).toContain("road-hub-spawn-to-storage");
     expect(layerIds(visualization, "roads")).toContain("road-storage-to-pod1");
+    expect(layerTitles(visualization, "roads")).toContain("Road: Hub spawn -> Storage");
     expect(layerTitles(visualization, "roads")).toContain("Road: Storage -> Fastfiller pod A");
     expect(layerIds(visualization, "sources-sinks")).toEqual(expect.arrayContaining(["hub-committed", "fastfiller-a-committed", "fastfiller-b-committed", "labs-committed", "road-storage-to-pod1"]));
     expect(layerIds(visualization, "spare-extensions")).toEqual(expect.arrayContaining(["source-sink-structures", "pre-rampart-access-roads", "pre-rampart-structures"]));

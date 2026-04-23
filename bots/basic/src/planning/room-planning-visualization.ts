@@ -694,6 +694,8 @@ function layerTitleLabs(): string {
 
 function layerTitleRoadPath(kind: RoadPlan["paths"][number]["kind"]): string {
   switch (kind) {
+    case "hub-spawn-to-storage":
+      return "Road: Hub spawn -> Storage";
     case "storage-to-pod1":
       return "Road: Storage -> Fastfiller pod A";
     case "storage-to-pod2":

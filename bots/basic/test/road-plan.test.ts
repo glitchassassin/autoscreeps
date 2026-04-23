@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { planRoads, validateRoadPlan } from "../src/planning/road-plan";
 import type { RoomPlanningRoomData } from "../src/planning/room-plan";
+import { planRoomStamps } from "../src/planning/stamp-placement";
 import type { RoomStampAnchor, RoomStampPlan, StampKind, StampPlacement } from "../src/planning/stamp-placement";
 import { installScreepsGlobals } from "./helpers/install-globals";
+import { loadBotarena212RoomPlanningFixture } from "./helpers/room-planning-fixture";
 import { botarena212RoadUnplannableNormalRooms, loadBotarena212NormalStampPlanFixture, loadBotarena212RoadPlanningFixture } from "./helpers/stamp-plan-fixture";
 import { installTestPathFinder } from "./helpers/test-pathfinder";
 
@@ -27,6 +29,7 @@ describe("road planning", () => {
 
     expect(validateRoadPlan(testCase.room, testCase.plan, plan)).toEqual([]);
     expect(new Set(plan.paths.map((path) => path.kind))).toEqual(new Set([
+      "hub-spawn-to-storage",
       "storage-to-pod1",
       "storage-to-pod2",
       "storage-to-labs",
@@ -36,6 +39,10 @@ describe("road planning", () => {
       "storage-to-source2",
       "storage-to-controller"
     ]));
+    const hubSpawnPath = plan.paths.find((path) => path.kind === "hub-spawn-to-storage");
+    expect(hubSpawnPath).toBeDefined();
+    const hubBlockedTiles = new Set(testCase.plan.stamps.hub.blockedTiles);
+    expect(hubSpawnPath?.roadTiles.some((tile) => hubBlockedTiles.has(tile))).toBe(false);
     expect(plan.roadTiles).toContain(entranceTile);
     for (const tile of nonEntranceLabRoadTiles) {
       expect(plan.roadTiles).not.toContain(tile);
@@ -66,7 +73,7 @@ describe("road planning", () => {
     const allStampCases = loadBotarena212NormalStampPlanFixture();
     const roadCases = loadBotarena212RoadPlanningFixture();
 
-    expect(allStampCases.skippedRooms).toEqual(["E14N7", "E15N2", "E2N5"]);
+    expect(allStampCases.skippedRooms).toEqual(["E13N6", "E14N7", "E15N2", "E15N3", "E2N5", "E8N9"]);
     expect(allStampCases.cases.length - roadCases.cases.length).toBe(botarena212RoadUnplannableNormalRooms.length);
   });
 
@@ -84,6 +91,23 @@ describe("road planning", () => {
 
     expect(unplannableRooms.sort()).toEqual([...botarena212RoadUnplannableNormalRooms].sort());
   });
+
+  it("replans a live hub layout when the cached stamp plan traps the hub spawn", () => {
+    const fixture = loadBotarena212RoomPlanningFixture();
+    const room = fixture.map.getRoom("E11N3");
+    if (room === null) {
+      throw new Error("Expected fixture room.");
+    }
+
+    const stampPlan = planRoomStamps(room, "normal");
+    const roadPlan = planRoads(room, stampPlan);
+    const hubPath = roadPlan.paths.find((path) => path.kind === "hub-spawn-to-storage");
+    const hubBlockedTiles = new Set(stampPlan.stamps.hub.blockedTiles);
+
+    expect(validateRoadPlan(room, stampPlan, roadPlan)).toEqual([]);
+    expect(hubPath).toBeDefined();
+    expect(hubPath?.roadTiles.some((tile) => hubBlockedTiles.has(tile))).toBe(false);
+  }, 20_000);
 
   it("promotes reuse by making existing planned roads cheaper than new plain tiles", () => {
     const room = createSyntheticRoom();

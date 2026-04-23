@@ -317,11 +317,7 @@ function requirePath(roadPlan: RoadPlan, kind: RoadPlanPathKind): RoadPlanPath {
 }
 
 function requirePathEndpoint(path: RoadPlanPath, label: string): RoomStampAnchor {
-  const endpoint = path.tiles.at(-1);
-  if (!endpoint) {
-    throw new Error(`${path.kind} path has no ${label} endpoint tile.`);
-  }
-  return endpoint;
+  return path.tiles.at(-1) ?? path.origin;
 }
 
 function requireObject(room: RoomPlanningRoomData, type: string): RoomPlanningObject {

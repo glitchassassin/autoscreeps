@@ -3,7 +3,7 @@ import { planRamparts } from "../src/planning/rampart-plan";
 import { planRoads, type RoadPlan, type RoadPlanPathKind } from "../src/planning/road-plan";
 import { planCompleteRoom } from "../src/planning/room-plan";
 import type { RoomPlanningRoomData } from "../src/planning/room-plan";
-import { planSourceSinkStructures } from "../src/planning/source-sink-structure-plan";
+import { planSourceSinkStructures, validateSourceSinkStructurePlan } from "../src/planning/source-sink-structure-plan";
 import { planRoomStructures, validateRoomStructurePlan, type RoomStructurePlan } from "../src/planning/structure-plan";
 import type { RoomStampAnchor, RoomStampPlan, StampKind, StampPlacement } from "../src/planning/stamp-placement";
 import { installScreepsGlobals } from "./helpers/install-globals";
@@ -85,6 +85,20 @@ describe("structure planning", () => {
     expect(plan.rampartPlan.rampartTiles.length).toBeGreaterThan(0);
     expect(validateRoomStructurePlan(testCase.room, plan.stampPlan, plan.roadPlan, plan.sourceSinkPlan, plan.rampartPlan, plan.structurePlan)).toEqual([]);
   }, 20_000);
+
+  it("handles zero-length mineral roads when the terminal already touches the mineral", () => {
+    const testCase = loadBotarena212RoadPlanningFixture().cases.find((candidate) => candidate.roomName === "E11N9");
+    if (!testCase) {
+      throw new Error("Expected cached room E11N9.");
+    }
+
+    const roadPlan = planRoads(testCase.room, testCase.plan);
+    const mineralPath = roadPlan.paths.find((path) => path.kind === "terminal-to-mineral");
+    const sourceSinkPlan = planSourceSinkStructures(testCase.room, testCase.plan, roadPlan);
+
+    expect(mineralPath?.tiles).toEqual([]);
+    expect(validateSourceSinkStructurePlan(testCase.room, testCase.plan, roadPlan, sourceSinkPlan)).toEqual([]);
+  });
 
   it("rejects controller link placement on already planned road tiles", () => {
     const room = createControllerLinkRoadRoom();
@@ -220,6 +234,11 @@ function createControllerLinkRoadStampPlan(): RoomStampPlan {
 
 function createControllerLinkRoadPlan(): RoadPlan {
   const paths = [
+    createPath("hub-spawn-to-storage", { x: 3, y: 12 }, { x: 2, y: 10 }, [
+      { x: 2, y: 13 },
+      { x: 1, y: 12 },
+      { x: 1, y: 11 }
+    ]),
     createPath("storage-to-source1", { x: 2, y: 10 }, { x: 40, y: 10 }, horizontalTiles(3, 39, 10)),
     createPath("storage-to-source2", { x: 2, y: 10 }, { x: 40, y: 20 }, [
       ...horizontalTiles(3, 20, 10),

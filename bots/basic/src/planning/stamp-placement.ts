@@ -264,7 +264,7 @@ export function createInteractiveStampPlacementDebug(
               pod2Index,
               pod2Selected,
               [],
-              scoreCompleteLayout(features, pod2State, policy, hub, pod1, pod2, null)
+              scoreCompleteLayout(features, pod2State, policy, hub, pod1, pod2, null) ?? undefined
             );
           }
 
@@ -277,7 +277,7 @@ export function createInteractiveStampPlacementDebug(
               labIndex,
               pod2Selected && labKey === selectedLabKey,
               [],
-              scoreCompleteLayout(features, labState, policy, hub, pod1, pod2, labs)
+              scoreCompleteLayout(features, labState, policy, hub, pod1, pod2, labs) ?? undefined
             );
           }));
         }));
@@ -321,7 +321,7 @@ export function createStampPlacementCandidateTreeDebug(
               pod2Index,
               false,
               [],
-              scoreCompleteLayout(features, pod2State, policy, hub, pod1, pod2, null)
+              scoreCompleteLayout(features, pod2State, policy, hub, pod1, pod2, null) ?? undefined
             );
           }
 
@@ -333,7 +333,7 @@ export function createStampPlacementCandidateTreeDebug(
               labIndex,
               false,
               [],
-              scoreCompleteLayout(features, labState, policy, hub, pod1, pod2, labs)
+              scoreCompleteLayout(features, labState, policy, hub, pod1, pod2, labs) ?? undefined
             );
           }));
         }));
@@ -406,6 +406,9 @@ function searchStampPlacements(room: RoomPlanningRoomData, policy: RoomPlanningP
         for (const labs of labCandidates) {
           const finalState = labs === null ? pod2State : placeStamp(pod2State, labs);
           const score = scoreCompleteLayout(features, finalState, policy, hub, pod1, pod2, labs);
+          if (score === null) {
+            continue;
+          }
           const plan: RoomStampPlan = {
             roomName: features.roomName,
             policy,
@@ -467,6 +470,10 @@ function generateHubCandidates(features: RoomFeatures, state: PlacementState, po
         }
 
         if (policy === "temple" && !satisfiesTempleHubConstraints(features, state, candidate)) {
+          continue;
+        }
+
+        if (!hasOpenNeighborAfterPlacement(features, state, candidate, getHubSpawnAnchor(candidate))) {
           continue;
         }
 
@@ -616,8 +623,11 @@ function scoreCompleteLayout(
   pod1: Candidate,
   pod2: Candidate,
   labs: Candidate | null
-): number[] {
+): number[] | null {
   const paths = createPathContext(features, finalState, hub);
+  if (!hasHubSpawnStorageAccess(features, finalState, hub, paths.storageDistanceMap)) {
+    return null;
+  }
   const pod1Score = scoreFastfillerWithPaths(paths, pod1);
   const pod2Score = scoreFastfillerWithPaths(paths, pod2);
   const storageDistance = (pod1Score?.storageDistance ?? dijkstraUnreachable) + (pod2Score?.storageDistance ?? dijkstraUnreachable);
@@ -1038,6 +1048,14 @@ function projectOffsets(offsets: Coord[], anchor: Coord, rotation: StampRotation
   return tiles;
 }
 
+function getHubSpawnAnchor(hub: StampPlacement): RoomStampAnchor {
+  const offset = rotateOffset({ x: 1, y: 2 }, hub.rotation);
+  return {
+    x: hub.anchor.x + offset.x,
+    y: hub.anchor.y + offset.y
+  };
+}
+
 function rotateOffset(offset: Coord, rotation: StampRotation): Coord {
   switch (rotation) {
     case 0:
@@ -1195,6 +1213,32 @@ function hasOpenNeighborAfterPlacement(features: RoomFeatures, state: PlacementS
 
   for (const neighbor of neighbors(coord)) {
     if (isWalkableTerrain(features.terrain, neighbor.x, neighbor.y) && blocked[toIndex(neighbor.x, neighbor.y)] === 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasHubSpawnStorageAccess(
+  features: RoomFeatures,
+  state: PlacementState,
+  hub: StampPlacement,
+  storageDistanceMap: DijkstraMap | null
+): boolean {
+  if (storageDistanceMap === null) {
+    return false;
+  }
+
+  const spawn = getHubSpawnAnchor(hub);
+  for (const neighbor of neighbors(spawn)) {
+    const tile = toIndex(neighbor.x, neighbor.y);
+    if (
+      isWalkableTerrain(features.terrain, neighbor.x, neighbor.y)
+      && state.pathBlocked[tile] === 0
+      && features.reservedPathMasks.default[tile] === 0
+      && storageDistanceMap.get(neighbor.x, neighbor.y) !== dijkstraUnreachable
+    ) {
       return true;
     }
   }

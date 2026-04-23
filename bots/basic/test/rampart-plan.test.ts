@@ -196,6 +196,7 @@ function createCorridorStampPlan(): RoomStampPlan {
 function createCorridorRoadPlan(): RoadPlan {
   const roomName = "W0N0";
   const paths = [
+    createPath("hub-spawn-to-storage", roomName, { x: 31, y: 25 }, { x: 30, y: 25 }, [{ x: 29, y: 25 }]),
     createPath("storage-to-pod1", roomName, { x: 30, y: 25 }, { x: 31, y: 25 }, [{ x: 31, y: 25 }]),
     createPath("storage-to-pod2", roomName, { x: 30, y: 25 }, { x: 32, y: 25 }, [{ x: 32, y: 25 }]),
     createPath("terminal-to-labs", roomName, { x: 30, y: 25 }, { x: 33, y: 25 }, [{ x: 33, y: 25 }]),
