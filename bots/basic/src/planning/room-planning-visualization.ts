@@ -60,6 +60,7 @@ export type RoomPlanningCandidate = {
 export type RoomPlanningLayerKind =
   | "stamp"
   | "candidate"
+  | "creep"
   | "path"
   | "road"
   | "structure"
@@ -168,7 +169,7 @@ function createHubStep(stampPlan: RoomStampPlan, phase: StampDebugByPhase): Room
     ),
     layers: [
       candidateLayer("hub-candidates", "Top hub candidates", phase),
-      ...createCommittedStampVisualLayers("hub-committed", layerTitleHub(), hub)
+      ...createCommittedStampVisualLayers("hub-committed", layerTitleHub(), hub, stampPlan.policy)
     ]
   };
 }
@@ -200,7 +201,7 @@ function createFastfillerStep(
         labs: false
       }),
       candidateLayer(`${id}-candidates`, "Top fastfiller candidates", phase),
-      ...createCommittedStampVisualLayers(`${id}-committed`, title, pod)
+      ...createCommittedStampVisualLayers(`${id}-committed`, title, pod, stampPlan.policy)
     ]
   };
 }
@@ -237,7 +238,7 @@ function createLabsStep(stampPlan: RoomStampPlan, phase: StampDebugByPhase): Roo
     layers: [
       ...createCommittedStampLayers(stampPlan, { fastfillerCount: 2, labs: false }),
       candidateLayer("lab-candidates", "Top lab candidates", phase),
-      ...createCommittedStampVisualLayers("labs-committed", layerTitleLabs(), labs)
+      ...createCommittedStampVisualLayers("labs-committed", layerTitleLabs(), labs, stampPlan.policy)
     ]
   };
 }
@@ -300,18 +301,18 @@ function createSpareExtensionStep(
   rampartPlan: RampartPlan,
   structurePlan: RoomStructurePlan
 ): RoomPlanningVisualizationStep {
-  const preRampart = rampartPlan.preRampartStructures;
+  const expansionPlan = rampartPlan.expansionPlan;
 
   return {
     id: "spare-extensions",
     title: "Spare extensions",
     status: "complete",
-    summary: "Reserved remaining RCL8 build slots near the planned road network before min-cut planning.",
+    summary: "Re-resolved defended expansion candidates after plotting post-rampart roads, keeping enough room for towers and remaining RCL8 structures.",
     metrics: [
       metric("reserved extensions", rampartPlan.extensions.length, "good"),
-      metric("reserved towers", preRampart.towerCount),
-      metric("access road tiles", preRampart.accessRoadTiles.length, "good"),
-      metric("reserved structure tiles", preRampart.structureTiles.length)
+      metric("reserved towers", expansionPlan.towerCount),
+      metric("access road tiles", expansionPlan.accessRoadTiles.length, "good"),
+      metric("reserved structure tiles", expansionPlan.structureTiles.length)
     ],
     candidates: [],
     layers: [
@@ -522,21 +523,30 @@ function createCommittedStampLayers(
   const fastfillerCount = options.fastfillerCount ?? 2;
   const includeLabs = options.labs ?? true;
   return [
-    ...createCommittedStampVisualLayers("hub-committed", layerTitleHub(), stampPlan.stamps.hub),
+    ...createCommittedStampVisualLayers("hub-committed", layerTitleHub(), stampPlan.stamps.hub, stampPlan.policy),
     ...stampPlan.stamps.fastfillers.slice(0, fastfillerCount).flatMap((pod, index) => (
       createCommittedStampVisualLayers(
         index === 0 ? "fastfiller-a-committed" : "fastfiller-b-committed",
         layerTitleFastfiller(index),
-        pod
+        pod,
+        stampPlan.policy
       )
     )),
-    ...(includeLabs && stampPlan.stamps.labs ? createCommittedStampVisualLayers("labs-committed", layerTitleLabs(), stampPlan.stamps.labs) : [])
+    ...(includeLabs && stampPlan.stamps.labs
+      ? createCommittedStampVisualLayers("labs-committed", layerTitleLabs(), stampPlan.stamps.labs, stampPlan.policy)
+      : [])
   ];
 }
 
-function createCommittedStampVisualLayers(id: string, title: string, stamp: StampPlacement): RoomPlanningLayer[] {
+function createCommittedStampVisualLayers(
+  id: string,
+  title: string,
+  stamp: StampPlacement,
+  policy: RoomPlanningPolicy
+): RoomPlanningLayer[] {
   return [
     stampLayer(id, title, stamp, true),
+    ...createStampStationaryCreepLayers(id, title, stamp, policy),
     ...createStampRoadLayers(id, title, stamp)
   ];
 }
@@ -567,17 +577,17 @@ function createPreRampartStructureLayers(rampartPlan: RampartPlan): RoomPlanning
   return [
     {
       id: "pre-rampart-access-roads",
-      title: "Pre-rampart access roads",
+      title: "Expansion access roads",
       kind: "road",
-      tiles: rampartPlan.preRampartStructures.accessRoadTiles,
+      tiles: rampartPlan.expansionPlan.accessRoadTiles,
       visibleByDefault: true,
       tone: "road"
     },
     {
       id: "pre-rampart-structures",
-      title: "Reserved extension slots",
+      title: "Reserved expansion slots",
       kind: "structure",
-      tiles: rampartPlan.extensionTiles,
+      tiles: rampartPlan.expansionPlan.structureTiles,
       visibleByDefault: true,
       tone: "structure"
     }
@@ -792,8 +802,63 @@ function createStampRoadLayers(id: string, title: string, stamp: StampPlacement)
   }];
 }
 
+function createStampStationaryCreepLayers(
+  id: string,
+  title: string,
+  stamp: StampPlacement,
+  policy: RoomPlanningPolicy
+): RoomPlanningLayer[] {
+  const tiles = uniqueTiles(getStationaryCreepTiles(stamp, policy));
+  if (tiles.length === 0) {
+    return [];
+  }
+
+  return [{
+    id: `${id}-creeps`,
+    title: `${title} stationary creeps`,
+    kind: "creep",
+    tiles,
+    visibleByDefault: true
+  }];
+}
+
 function metric(label: string, value: string | number, tone: RoomPlanningMetric["tone"] = "neutral"): RoomPlanningMetric {
   return { label, value, tone };
+}
+
+function getStationaryCreepTiles(stamp: StampPlacement, policy: RoomPlanningPolicy): number[] {
+  switch (stamp.kind) {
+    case "hub":
+      return [
+        projectStampOffset(stamp, { x: 1, y: 1 }),
+        ...(policy === "temple" ? [projectStampOffset(stamp, { x: 2, y: 1 })] : [])
+      ];
+    case "fastfiller":
+      return [
+        projectStampOffset(stamp, { x: -1, y: 1 }),
+        projectStampOffset(stamp, { x: 1, y: -1 })
+      ];
+    case "labs":
+      return [];
+  }
+}
+
+function projectStampOffset(stamp: StampPlacement, offset: RoomStampAnchor): number {
+  const rotated = rotateOffset(offset, stamp.rotation);
+  return toIndex(stamp.anchor.x + rotated.x, stamp.anchor.y + rotated.y);
+}
+
+function rotateOffset(offset: RoomStampAnchor, rotation: StampPlacement["rotation"]): RoomStampAnchor {
+  switch (rotation) {
+    case 0:
+      return offset;
+    case 90:
+      return { x: -offset.y, y: offset.x };
+    case 180:
+      return { x: -offset.x, y: -offset.y };
+    case 270:
+      return { x: offset.y, y: -offset.x };
+  }
 }
 
 function stampKey(stamp: StampPlacement): string {
@@ -836,4 +901,8 @@ function fromIndex(index: number): RoomStampAnchor {
     x: index % roomSize,
     y: Math.floor(index / roomSize)
   };
+}
+
+function toIndex(x: number, y: number): number {
+  return y * roomSize + x;
 }

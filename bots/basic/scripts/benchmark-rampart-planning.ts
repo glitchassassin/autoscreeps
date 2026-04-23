@@ -316,7 +316,7 @@ function measurePerRoom(cases: BenchmarkCase[], config: BenchmarkConfig, seed: n
       ramparts: plan.rampartTiles.length,
       extensions: plan.extensions.length,
       towers: plan.towers.length,
-      accessRoads: plan.preRampartStructures.accessRoadTiles.length,
+      accessRoads: plan.expansionPlan.accessRoadTiles.length,
       extensionDistanceTotal: extensionDistance.total,
       extensionDistanceAverage: extensionDistance.average,
       extensionDistanceMax: extensionDistance.max,
@@ -340,7 +340,7 @@ function updateChecksum(seed: number, plan: RampartPlan): number {
     ^ plan.rampartTiles.length
     ^ (plan.extensions.length << 1)
     ^ (plan.towers.length << 2)
-    ^ (plan.preRampartStructures.accessRoadTiles.length << 4)
+    ^ (plan.expansionPlan.accessRoadTiles.length << 4)
     ^ (plan.defendedTiles.length << 3)
     ^ (plan.outsideTiles.length << 7)
     ^ plan.optionalRegions.filter((region) => region.protected).length

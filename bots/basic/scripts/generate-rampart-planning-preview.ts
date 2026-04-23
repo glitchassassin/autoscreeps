@@ -128,7 +128,7 @@ function renderPreviewHtml(
   rampartPlan: RampartPlan | null,
   errors: string[]
 ): string {
-  const visiblePreRampartStructures = rampartPlan?.preRampartStructures ?? preRampartStructures;
+  const visiblePreRampartStructures = rampartPlan?.expansionPlan ?? preRampartStructures;
   const stampTiles = createStampTileMap(stampPlan);
   const accessRoadTiles = new Set(visiblePreRampartStructures?.accessRoadTiles ?? []);
   const postRampartRoadTiles = new Set(rampartPlan?.postRampartRoadTiles ?? []);
@@ -370,7 +370,7 @@ function renderPreviewHtml(
   <div class="summary">
     <span>policy: ${escapeHtml(stampPlan.policy)}</span>
     <span>ramparts: ${rampartPlan?.rampartTiles.length ?? 0}</span>
-    <span>extra slots: ${visiblePreRampartStructures?.extraStructures.length ?? 0}</span>
+    <span>expansion slots: ${visiblePreRampartStructures?.extraStructures.length ?? 0}</span>
     <span>extensions: ${rampartPlan?.extensions.length ?? 0}</span>
     <span>towers: ${rampartPlan?.towers.length ?? 0}</span>
     <span>nuker: ${rampartPlan?.nuker ? 1 : 0}</span>
@@ -387,7 +387,7 @@ function renderPreviewHtml(
     <span>E: assigned extension</span>
     <span>T: tower coverage placement</span>
     <span>N/O: nuker / observer</span>
-    <span>extra white dots: access roads</span>
+    <span>extra white dots: expansion access roads</span>
     <span>orange outline: post-rampart road</span>
     <span>dim: exit-reachable outside</span>
     <span>green outline: defended interior</span>

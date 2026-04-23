@@ -343,6 +343,7 @@ function renderRoomSvg(): void {
   parts.push(renderObjects(room));
   if (visualization && step) {
     parts.push(renderStructureGlyphs(step, visualization));
+    parts.push(renderCreepGlyphs(step));
   }
   roomSvg.innerHTML = parts.join("");
 }
@@ -372,6 +373,9 @@ function renderLayers(step: RoomPlanningVisualizationStep, visualization: RoomPl
     }
     if (layer.kind === "heatmap") {
       parts.push(renderHeatmapLayer(layer));
+      continue;
+    }
+    if (layer.kind === "creep") {
       continue;
     }
     if (rendersAsStructureSvg(layer)) {
@@ -430,6 +434,31 @@ function renderStructureGlyphs(step: RoomPlanningVisualizationStep, visualizatio
     .join("");
 }
 
+function renderCreepGlyphs(step: RoomPlanningVisualizationStep): string {
+  const selectedTiles = new Set<number>();
+  for (const layer of step.layers) {
+    if (!isLayerVisible(layer) || layer.kind !== "creep") {
+      continue;
+    }
+    for (const tile of layer.tiles) {
+      selectedTiles.add(tile);
+    }
+  }
+
+  return [...selectedTiles].map((tile) => {
+    const coord = fromIndex(tile);
+    const centerX = coord.x + 0.5;
+    const centerY = coord.y + 0.5;
+    return `
+      <g class="creep-marker" data-tile="${tile}">
+        <circle class="creep-marker-body" cx="${centerX}" cy="${centerY}" r="0.28"></circle>
+        <line class="creep-marker-cross" x1="${centerX - 0.14}" y1="${centerY}" x2="${centerX + 0.14}" y2="${centerY}"></line>
+        <line class="creep-marker-cross" x1="${centerX}" y1="${centerY - 0.14}" x2="${centerX}" y2="${centerY + 0.14}"></line>
+      </g>
+    `;
+  }).join("");
+}
+
 function rendersAsStructureSvg(layer: RoomPlanningLayer): boolean {
   return layer.kind === "stamp"
     || layer.kind === "path"
@@ -453,6 +482,7 @@ function structureMatchesLayer(structure: PlannedStructurePlacement, layer: Room
       return structure.type !== "road" && structure.type !== "rampart";
     case "structure":
       return structureMatchesStructureLayer(structure, layer);
+    case "creep":
     case "candidate":
     case "region":
     case "heatmap":

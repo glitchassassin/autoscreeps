@@ -336,6 +336,24 @@ p {
   pointer-events: auto;
 }
 
+.creep-marker {
+  pointer-events: auto;
+}
+
+.creep-marker-body {
+  fill: #a855f7;
+  stroke: #5b21b6;
+  stroke-width: 0.07;
+  shape-rendering: geometricPrecision;
+}
+
+.creep-marker-cross {
+  stroke: #ffffff;
+  stroke-width: 0.09;
+  stroke-linecap: round;
+  shape-rendering: geometricPrecision;
+}
+
 .tile-inspector {
   min-height: 30px;
   padding: 7px 10px;

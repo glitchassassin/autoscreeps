@@ -71,6 +71,7 @@ export type RampartPlan = {
   outsideTiles: number[];
   defendedTiles: number[];
   preRampartStructures: PreRampartStructurePlan;
+  expansionPlan: PreRampartStructurePlan;
   extensionTiles: number[];
   extensions: RampartExtensionPlacement[];
   towerTiles: number[];
@@ -141,9 +142,12 @@ type TowerCandidate = RoomStampAnchor & {
 };
 
 type RampartPostProcessResult = {
+  expansionPlan: PreRampartStructurePlan;
   cutRampartTiles: number[];
   extraRampartTiles: number[];
   rampartTiles: number[];
+  outsideMask: Uint8Array;
+  defendedTiles: number[];
   postRampartRoadTiles: number[];
   postRampartRoads: RoomStampAnchor[];
 };
@@ -155,85 +159,77 @@ export function planRamparts(
   sourceSinkPlan: SourceSinkStructurePlan,
   options: RampartPlanOptions = {}
 ): RampartPlan {
-  let config = normalizeOptions(options);
-  let context = createRampartPlanningContext(room, stampPlan, roadPlan, sourceSinkPlan, config);
-  let graph = buildRoomCutGraph(context);
-  let result = solveWeightedMinCut({
-    nodeCount: graph.nodeCount,
-    source: graph.source,
-    sink: graph.sink,
-    edges: graph.edges
-  });
+  const initialConfig = normalizeOptions(options);
+  const baseExpansionNeed = getBaseExpansionNeed(stampPlan, initialConfig);
+  let candidateCount = initialConfig.preRampartStructures?.candidateCount ?? baseExpansionNeed;
 
-  if (result.maxFlow >= impossibleCapacity / 2) {
-    const growAccessRoads = config.preRampartStructureOptions.growAccessRoads
-      ?? config.preRampartStructureOptions.growExtensionRoads;
-    const canRetryWithoutExtensionRoadGrowth = config.preRampartStructures === null
-      && growAccessRoads !== false;
-    if (!canRetryWithoutExtensionRoadGrowth) {
-      throw new Error(`No finite rampart cut found for room '${room.roomName}'.`);
-    }
+  while (true) {
+    const config = initialConfig.preRampartStructures === null
+      ? {
+          ...initialConfig,
+          preRampartStructureOptions: {
+            ...initialConfig.preRampartStructureOptions,
+            candidateCount
+          }
+        }
+      : initialConfig;
+    const { context, postProcess } = solveRampartAttempt(room, stampPlan, roadPlan, sourceSinkPlan, config);
+    const shortfall = baseExpansionNeed - postProcess.expansionPlan.extraStructures.length;
 
-    config = {
-      ...config,
-      preRampartStructureOptions: {
-        ...config.preRampartStructureOptions,
-        growAccessRoads: false,
-        growExtensionRoads: false
+    if (shortfall > 0) {
+      if (initialConfig.preRampartStructures !== null) {
+        throw new Error(`Pre-rampart candidate plan resolves ${postProcess.expansionPlan.extraStructures.length} defended expansion tiles, short of required ${baseExpansionNeed}.`);
       }
-    };
-    context = createRampartPlanningContext(room, stampPlan, roadPlan, sourceSinkPlan, config);
-    graph = buildRoomCutGraph(context);
-    result = solveWeightedMinCut({
-      nodeCount: graph.nodeCount,
-      source: graph.source,
-      sink: graph.sink,
-      edges: graph.edges
-    });
-    if (result.maxFlow >= impossibleCapacity / 2) {
-      throw new Error(`No finite rampart cut found for room '${room.roomName}'.`);
+      candidateCount += shortfall;
+      continue;
     }
+
+    const towers = planTowers(context, postProcess.expansionPlan, postProcess.rampartTiles, postProcess.defendedTiles, postProcess.postRampartRoadTiles);
+    const nuker = planSingleExtraStructure(
+      context,
+      postProcess.expansionPlan,
+      postProcess.defendedTiles,
+      towers,
+      postProcess.expansionPlan.nukerCount,
+      postProcess.postRampartRoadTiles
+    );
+    const extensions = planExtensions(postProcess.expansionPlan, [...towers, ...(nuker ? [nuker] : [])]);
+    const observer = planSingleExtraStructure(
+      context,
+      postProcess.expansionPlan,
+      postProcess.defendedTiles,
+      [...towers, ...(nuker ? [nuker] : []), ...extensions],
+      postProcess.expansionPlan.observerCount,
+      postProcess.postRampartRoadTiles
+    );
+    const optionalRegions = context.optionalRegions.map((region) => createOptionalRegionPlan(region, postProcess.outsideMask));
+    const score = createRampartScore(context, postProcess.rampartTiles, optionalRegions);
+
+    return {
+      roomName: room.roomName,
+      policy: stampPlan.policy,
+      cutRampartTiles: postProcess.cutRampartTiles,
+      extraRampartTiles: postProcess.extraRampartTiles,
+      rampartTiles: postProcess.rampartTiles,
+      ramparts: postProcess.rampartTiles.map(fromIndex),
+      postRampartRoadTiles: postProcess.postRampartRoadTiles,
+      postRampartRoads: postProcess.postRampartRoads,
+      outsideTiles: collectMaskTiles(postProcess.outsideMask),
+      defendedTiles: postProcess.defendedTiles,
+      preRampartStructures: context.preRampartStructures,
+      expansionPlan: postProcess.expansionPlan,
+      extensionTiles: extensions.map((extension) => extension.tile).sort(compareNumbers),
+      extensions,
+      towerTiles: towers.map((tower) => tower.tile).sort(compareNumbers),
+      towers,
+      nukerTile: nuker?.tile ?? null,
+      nuker,
+      observerTile: observer?.tile ?? null,
+      observer,
+      optionalRegions,
+      score
+    };
   }
-
-  const postProcess = postProcessRamparts(context, collectRampartTiles(result.cutEdgeIndexes, graph.cutEdgeToTile));
-  const rampartMask = createTileMask(postProcess.rampartTiles);
-  const outsideMask = createOutsideMask(context.walkable, context.exits, rampartMask);
-  const defendedTiles = collectDefendedTiles(context.walkable, outsideMask, rampartMask);
-  const towers = planTowers(context, postProcess.rampartTiles, defendedTiles, postProcess.postRampartRoadTiles);
-  const nuker = planSingleExtraStructure(context, defendedTiles, towers, context.preRampartStructures.nukerCount);
-  const extensions = planExtensions(context.preRampartStructures, [...towers, ...(nuker ? [nuker] : [])]);
-  const observer = planSingleExtraStructure(
-    context,
-    defendedTiles,
-    [...towers, ...(nuker ? [nuker] : []), ...extensions],
-    context.preRampartStructures.observerCount
-  );
-  const optionalRegions = context.optionalRegions.map((region) => createOptionalRegionPlan(region, outsideMask));
-  const score = createRampartScore(context, postProcess.rampartTiles, optionalRegions);
-
-  return {
-    roomName: room.roomName,
-    policy: stampPlan.policy,
-    cutRampartTiles: postProcess.cutRampartTiles,
-    extraRampartTiles: postProcess.extraRampartTiles,
-    rampartTiles: postProcess.rampartTiles,
-    ramparts: postProcess.rampartTiles.map(fromIndex),
-    postRampartRoadTiles: postProcess.postRampartRoadTiles,
-    postRampartRoads: postProcess.postRampartRoads,
-    outsideTiles: collectMaskTiles(outsideMask),
-    defendedTiles,
-    preRampartStructures: context.preRampartStructures,
-    extensionTiles: extensions.map((extension) => extension.tile).sort(compareNumbers),
-    extensions,
-    towerTiles: towers.map((tower) => tower.tile).sort(compareNumbers),
-    towers,
-    nukerTile: nuker?.tile ?? null,
-    nuker,
-    observerTile: observer?.tile ?? null,
-    observer,
-    optionalRegions,
-    score
-  };
 }
 
 export function validateRampartPlan(
@@ -290,10 +286,32 @@ export function validateRampartPlan(
     }
   }
 
+  const defendedTiles = collectDefendedTiles(context.walkable, outsideMask, rampartMask);
+  const nonRampartPostRoadTiles = rampartPlan.postRampartRoadTiles.filter((tile) => rampartMask[tile] === 0);
+  errors.push(...validatePreRampartStructurePlan(
+    room,
+    stampPlan,
+    roadPlan,
+    sourceSinkPlan,
+    rampartPlan.expansionPlan,
+    {
+      extensionCount: rampartPlan.expansionPlan.extensionCount,
+      towerCount: rampartPlan.expansionPlan.towerCount,
+      nukerCount: rampartPlan.expansionPlan.nukerCount,
+      observerCount: rampartPlan.expansionPlan.observerCount,
+      candidateCount: rampartPlan.expansionPlan.candidateCount,
+      growAccessRoads: options.preRampartStructureOptions?.growAccessRoads ?? options.preRampartStructureOptions?.growExtensionRoads,
+      maxAccessRoadTiles: options.preRampartStructureOptions?.maxAccessRoadTiles ?? options.preRampartStructureOptions?.maxExtensionRoadTiles,
+      accessRoadCost: options.preRampartStructureOptions?.accessRoadCost ?? options.preRampartStructureOptions?.extensionRoadCost,
+      extraRoadTiles: nonRampartPostRoadTiles,
+      allowedTiles: defendedTiles,
+      blockedTiles: rampartPlan.rampartTiles
+    }
+  ));
   errors.push(...validatePostRampartRoads(context, rampartPlan, rampartMask, outsideMask));
   errors.push(...validateTowerPlan(context, rampartPlan, rampartMask, outsideMask));
-  errors.push(...validateSingleExtraStructurePlan(context, rampartPlan, rampartPlan.nuker, rampartPlan.nukerTile, rampartPlan.preRampartStructures.nukerCount, "nuker"));
-  errors.push(...validateSingleExtraStructurePlan(context, rampartPlan, rampartPlan.observer, rampartPlan.observerTile, rampartPlan.preRampartStructures.observerCount, "observer"));
+  errors.push(...validateSingleExtraStructurePlan(context, rampartPlan, rampartPlan.nuker, rampartPlan.nukerTile, rampartPlan.expansionPlan.nukerCount, "nuker"));
+  errors.push(...validateSingleExtraStructurePlan(context, rampartPlan, rampartPlan.observer, rampartPlan.observerTile, rampartPlan.expansionPlan.observerCount, "observer"));
   errors.push(...validateExtensionPlan(rampartPlan));
 
   const optionalByKey = new Map(rampartPlan.optionalRegions.map((region) => [region.key, region]));
@@ -310,6 +328,79 @@ export function validateRampartPlan(
   }
 
   return errors;
+}
+
+function getBaseExpansionNeed(stampPlan: RoomStampPlan, config: RampartPlanConfig): number {
+  const extensionCount = config.preRampartStructures?.extensionCount
+    ?? config.preRampartStructureOptions.extensionCount
+    ?? Math.max(60 - stampPlan.stamps.fastfillers.length * 12, 0);
+  const towerCount = config.preRampartStructures?.towerCount
+    ?? config.preRampartStructureOptions.towerCount
+    ?? maxTowers;
+  const nukerCount = config.preRampartStructures?.nukerCount
+    ?? config.preRampartStructureOptions.nukerCount
+    ?? 1;
+  const observerCount = config.preRampartStructures?.observerCount
+    ?? config.preRampartStructureOptions.observerCount
+    ?? 1;
+
+  return extensionCount + towerCount + nukerCount + observerCount;
+}
+
+function solveRampartAttempt(
+  room: RoomPlanningRoomData,
+  stampPlan: RoomStampPlan,
+  roadPlan: RoadPlan,
+  sourceSinkPlan: SourceSinkStructurePlan,
+  initialConfig: RampartPlanConfig
+): {
+  context: RampartPlanningContext;
+  postProcess: RampartPostProcessResult;
+} {
+  let config = initialConfig;
+  let context = createRampartPlanningContext(room, stampPlan, roadPlan, sourceSinkPlan, config);
+  let graph = buildRoomCutGraph(context);
+  let result = solveWeightedMinCut({
+    nodeCount: graph.nodeCount,
+    source: graph.source,
+    sink: graph.sink,
+    edges: graph.edges
+  });
+
+  if (result.maxFlow >= impossibleCapacity / 2) {
+    const growAccessRoads = config.preRampartStructureOptions.growAccessRoads
+      ?? config.preRampartStructureOptions.growExtensionRoads;
+    const canRetryWithoutExtensionRoadGrowth = config.preRampartStructures === null
+      && growAccessRoads !== false;
+    if (!canRetryWithoutExtensionRoadGrowth) {
+      throw new Error(`No finite rampart cut found for room '${room.roomName}'.`);
+    }
+
+    config = {
+      ...config,
+      preRampartStructureOptions: {
+        ...config.preRampartStructureOptions,
+        growAccessRoads: false,
+        growExtensionRoads: false
+      }
+    };
+    context = createRampartPlanningContext(room, stampPlan, roadPlan, sourceSinkPlan, config);
+    graph = buildRoomCutGraph(context);
+    result = solveWeightedMinCut({
+      nodeCount: graph.nodeCount,
+      source: graph.source,
+      sink: graph.sink,
+      edges: graph.edges
+    });
+    if (result.maxFlow >= impossibleCapacity / 2) {
+      throw new Error(`No finite rampart cut found for room '${room.roomName}'.`);
+    }
+  }
+
+  return {
+    context,
+    postProcess: postProcessRamparts(context, collectRampartTiles(result.cutEdgeIndexes, graph.cutEdgeToTile))
+  };
 }
 
 function buildRoomCutGraph(context: RampartPlanningContext): RoomCutGraph {
@@ -657,25 +748,49 @@ function createRampartScore(
 function postProcessRamparts(context: RampartPlanningContext, cutRampartTiles: number[]): RampartPostProcessResult {
   const cutRampartMask = createTileMask(cutRampartTiles);
   const initialOutsideMask = createOutsideMask(context.walkable, context.exits, cutRampartMask);
-  const structureTiles = uniqueSorted([
-    ...createStampStructurePlacements(context.stampPlan).map((placement) => placement.tile),
-    ...context.sourceSinkPlan.structureTiles,
-    ...context.preRampartStructures.structureTiles
-  ]);
-  const extraRampartTiles = collectPostProcessExtraRamparts(context, cutRampartMask, initialOutsideMask, structureTiles);
+  const committedStructureTiles = collectCommittedStructureTiles(context);
+  const extraRampartTiles = collectPostProcessExtraRamparts(context, cutRampartMask, initialOutsideMask, committedStructureTiles);
   const rampartTiles = uniqueSorted([...cutRampartTiles, ...extraRampartTiles]);
   const rampartMask = createTileMask(rampartTiles);
   const outsideMask = createOutsideMask(context.walkable, context.exits, rampartMask);
   const defendedTiles = collectDefendedTiles(context.walkable, outsideMask, rampartMask);
-  const postRampartRoadTiles = collectPostRampartRoadTiles(context, rampartTiles, outsideMask, structureTiles);
+  const postRampartRoadTiles = collectPostRampartRoadTiles(context, rampartTiles, outsideMask, committedStructureTiles);
+  const nonRampartPostRoadTiles = postRampartRoadTiles.filter((tile) => rampartMask[tile] === 0);
+  const expansionPlan = planPreRampartStructures(
+    context.room,
+    context.stampPlan,
+    context.roadPlan,
+    context.sourceSinkPlan,
+    {
+      ...context.config.preRampartStructureOptions,
+      extensionCount: context.preRampartStructures.extensionCount,
+      towerCount: context.preRampartStructures.towerCount,
+      nukerCount: context.preRampartStructures.nukerCount,
+      observerCount: context.preRampartStructures.observerCount,
+      candidateCount: context.preRampartStructures.candidateCount,
+      extraRoadTiles: nonRampartPostRoadTiles,
+      allowedTiles: defendedTiles,
+      blockedTiles: rampartTiles
+    }
+  );
 
   return {
+    expansionPlan,
     cutRampartTiles: uniqueSorted(cutRampartTiles),
     extraRampartTiles,
     rampartTiles,
+    outsideMask,
+    defendedTiles,
     postRampartRoadTiles,
     postRampartRoads: postRampartRoadTiles.map(fromIndex)
   };
+}
+
+function collectCommittedStructureTiles(context: RampartPlanningContext): number[] {
+  return uniqueSorted([
+    ...createStampStructurePlacements(context.stampPlan).map((placement) => placement.tile),
+    ...context.sourceSinkPlan.structureTiles
+  ]);
 }
 
 function collectPostProcessExtraRamparts(
@@ -704,11 +819,12 @@ function collectPostRampartRoadTiles(
   outsideMask: Uint8Array,
   structureTiles: number[]
 ): number[] {
-  const roadTiles = new Set<number>(rampartTiles);
   const structureMask = createTileMask(structureTiles);
+  const traversableRampartTiles = rampartTiles.filter((tile) => structureMask[tile] === 0);
+  const roadTiles = new Set<number>(traversableRampartTiles);
   const seedTiles = getInteriorRoadSeedTiles(context, outsideMask, structureMask);
 
-  for (const group of collectConnectedTileGroups(rampartTiles)) {
+  for (const group of collectConnectedTileGroups(traversableRampartTiles)) {
     for (const tile of findRampartGroupAccessPath(context, group, outsideMask, structureMask, seedTiles)) {
       roadTiles.add(tile);
     }
@@ -722,7 +838,7 @@ function getInteriorRoadSeedTiles(
   outsideMask: Uint8Array,
   structureMask: Uint8Array
 ): number[] {
-  const roadMask = createTowerRoadMask(context.roadPlan, context.preRampartStructures);
+  const roadMask = createBaseRoadMask(context.roadPlan);
   const seedTiles: number[] = [];
   for (let tile = 0; tile < roomArea; tile += 1) {
     if (roadMask[tile] !== 0 && context.walkable[tile] !== 0 && outsideMask[tile] === 0 && structureMask[tile] === 0) {
@@ -938,14 +1054,14 @@ function collectDefendedTiles(walkable: Uint8Array, outsideMask: Uint8Array, ram
 }
 
 function planExtensions(
-  preRampartStructures: PreRampartStructurePlan,
+  expansionPlan: PreRampartStructurePlan,
   assignedStructures: Array<{ tile: number }>
 ): RampartExtensionPlacement[] {
   const assignedTiles = new Set(assignedStructures.map((structure) => structure.tile));
   const extensions: RampartExtensionPlacement[] = [];
 
-  for (const slot of preRampartStructures.extraStructures) {
-    if (extensions.length >= preRampartStructures.extensionCount) {
+  for (const slot of expansionPlan.extraStructures) {
+    if (extensions.length >= expansionPlan.extensionCount) {
       break;
     }
     if (assignedTiles.has(slot.tile)) {
@@ -965,9 +1081,11 @@ function planExtensions(
 
 function planSingleExtraStructure(
   context: RampartPlanningContext,
+  expansionPlan: PreRampartStructurePlan,
   defendedTiles: number[],
   assignedStructures: Array<{ tile: number }>,
-  targetCount: number
+  targetCount: number,
+  postRampartRoadTiles: number[] = []
 ): RampartExtraStructurePlacement | null {
   if (targetCount <= 0) {
     return null;
@@ -975,9 +1093,9 @@ function planSingleExtraStructure(
 
   const assignedTiles = new Set(assignedStructures.map((structure) => structure.tile));
   const defendedMask = createTileMask(defendedTiles);
-  const roadMask = createTowerRoadMask(context.roadPlan, context.preRampartStructures);
+  const roadMask = createRoadMask(context.roadPlan, expansionPlan, postRampartRoadTiles);
 
-  for (const slot of context.preRampartStructures.extraStructures) {
+  for (const slot of expansionPlan.extraStructures) {
     if (assignedTiles.has(slot.tile) || defendedMask[slot.tile] === 0) {
       continue;
     }
@@ -998,11 +1116,12 @@ function planSingleExtraStructure(
 
 function planTowers(
   context: RampartPlanningContext,
+  expansionPlan: PreRampartStructurePlan,
   rampartTiles: number[],
   defendedTiles: number[],
   postRampartRoadTiles: number[]
 ): RampartTowerPlacement[] {
-  const targetTowers = Math.min(maxTowers, context.preRampartStructures.towerCount);
+  const targetTowers = Math.min(maxTowers, expansionPlan.towerCount);
   if (rampartTiles.length === 0) {
     if (targetTowers > 0) {
       throw new Error(`No ramparts available for ${targetTowers} required tower placements.`);
@@ -1010,12 +1129,12 @@ function planTowers(
     return [];
   }
 
-  const roadMask = createTowerRoadMask(context.roadPlan, context.preRampartStructures, postRampartRoadTiles);
+  const roadMask = createRoadMask(context.roadPlan, expansionPlan, postRampartRoadTiles);
   const blocked = createTowerBlockedMask(context, rampartTiles, roadMask);
   const defendedMask = createTileMask(defendedTiles);
   const coverage = new Int32Array(rampartTiles.length);
   const towers: RampartTowerPlacement[] = [];
-  const preferredCandidateTiles = context.preRampartStructures.extraStructures.map((structure) => structure.tile);
+  const preferredCandidateTiles = expansionPlan.extraStructures.map((structure) => structure.tile);
   const fallbackCandidateTiles = collectFallbackTowerCandidateTiles(preferredCandidateTiles);
 
   while (towers.length < targetTowers) {
@@ -1199,13 +1318,13 @@ function isGeneralExtraStructureCandidateTile(context: RampartPlanningContext, t
   return getSources(context.room).every((source) => range(coord, source) > towerSourceReserveRange);
 }
 
-function createTowerRoadMask(
+function createRoadMask(
   roadPlan: RoadPlan,
-  preRampartStructures: PreRampartStructurePlan,
+  expansionPlan: PreRampartStructurePlan | null = null,
   postRampartRoadTiles: number[] = []
 ): Uint8Array {
-  const mask = createRoadMask(roadPlan);
-  for (const tile of preRampartStructures.accessRoadTiles) {
+  const mask = createBaseRoadMask(roadPlan);
+  for (const tile of expansionPlan?.accessRoadTiles ?? []) {
     if (isValidIndex(tile)) {
       mask[tile] = 1;
     }
@@ -1270,6 +1389,7 @@ function validatePostRampartRoads(
 ): string[] {
   const errors: string[] = [];
   const postRoadSet = new Set(rampartPlan.postRampartRoadTiles);
+  const committedStructureSet = new Set(collectCommittedStructureTiles(context));
   const expectedRoads = rampartPlan.postRampartRoadTiles.map(fromIndex);
   if (
     rampartPlan.postRampartRoads.length !== expectedRoads.length
@@ -1279,7 +1399,7 @@ function validatePostRampartRoads(
   }
 
   for (const tile of rampartPlan.rampartTiles) {
-    if (!postRoadSet.has(tile)) {
+    if (!postRoadSet.has(tile) && !committedStructureSet.has(tile)) {
       const coord = fromIndex(tile);
       errors.push(`Rampart tile ${coord.x},${coord.y} is missing a road underneath it.`);
     }
@@ -1308,12 +1428,12 @@ function validateTowerPlan(
   outsideMask: Uint8Array
 ): string[] {
   const errors: string[] = [];
-  const towerLimit = Math.min(maxTowers, rampartPlan.preRampartStructures.towerCount);
+  const towerLimit = Math.min(maxTowers, rampartPlan.expansionPlan.towerCount);
   if (rampartPlan.towers.length !== towerLimit) {
     errors.push(`Rampart plan has ${rampartPlan.towers.length} towers, expected ${towerLimit}.`);
   }
 
-  const roadMask = createTowerRoadMask(context.roadPlan, rampartPlan.preRampartStructures, rampartPlan.postRampartRoadTiles);
+  const roadMask = createRoadMask(context.roadPlan, rampartPlan.expansionPlan, rampartPlan.postRampartRoadTiles);
   const blocked = createTowerBlockedMask(context, rampartPlan.rampartTiles, roadMask);
   const defendedTiles = collectDefendedTiles(context.walkable, outsideMask, rampartMask);
   const defendedMask = createTileMask(defendedTiles);
@@ -1390,7 +1510,7 @@ function validateSingleExtraStructurePlan(
     errors.push(`${label} at ${placement.x},${placement.y} has mismatched tile index ${placement.tile}.`);
   }
 
-  const extraStructureTiles = new Set(rampartPlan.preRampartStructures.extraStructures.map((structure) => structure.tile));
+  const extraStructureTiles = new Set(rampartPlan.expansionPlan.extraStructures.map((structure) => structure.tile));
   if (!extraStructureTiles.has(placement.tile)) {
     errors.push(`${label} at ${placement.x},${placement.y} does not occupy a planned extra-structure slot.`);
   }
@@ -1403,7 +1523,7 @@ function validateSingleExtraStructurePlan(
   }
 
   const defendedMask = createTileMask(rampartPlan.defendedTiles);
-  const roadMask = createTowerRoadMask(context.roadPlan, rampartPlan.preRampartStructures);
+  const roadMask = createRoadMask(context.roadPlan, rampartPlan.expansionPlan, rampartPlan.postRampartRoadTiles);
   if (defendedMask[placement.tile] === 0 || !isGeneralExtraStructureCandidateTile(context, placement.tile, roadMask)) {
     errors.push(`${label} at ${placement.x},${placement.y} is not a valid defended extra-structure candidate.`);
   }
@@ -1413,11 +1533,11 @@ function validateSingleExtraStructurePlan(
 
 function validateExtensionPlan(rampartPlan: RampartPlan): string[] {
   const errors: string[] = [];
-  if (rampartPlan.extensions.length !== rampartPlan.preRampartStructures.extensionCount) {
-    errors.push(`Rampart plan has ${rampartPlan.extensions.length} extensions, expected ${rampartPlan.preRampartStructures.extensionCount}.`);
+  if (rampartPlan.extensions.length !== rampartPlan.expansionPlan.extensionCount) {
+    errors.push(`Rampart plan has ${rampartPlan.extensions.length} extensions, expected ${rampartPlan.expansionPlan.extensionCount}.`);
   }
 
-  const extraStructureTiles = new Set(rampartPlan.preRampartStructures.extraStructures.map((structure) => structure.tile));
+  const extraStructureTiles = new Set(rampartPlan.expansionPlan.extraStructures.map((structure) => structure.tile));
   const assignedTiles = new Set([
     ...rampartPlan.towers.map((tower) => tower.tile),
     ...(rampartPlan.nuker ? [rampartPlan.nuker.tile] : []),
@@ -1449,7 +1569,7 @@ function validateExtensionPlan(rampartPlan: RampartPlan): string[] {
   return errors;
 }
 
-function createRoadMask(roadPlan: RoadPlan): Uint8Array {
+function createBaseRoadMask(roadPlan: RoadPlan): Uint8Array {
   const mask = new Uint8Array(roomArea);
   for (const tile of roadPlan.roadTiles) {
     if (isValidIndex(tile)) {

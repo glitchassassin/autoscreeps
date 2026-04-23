@@ -44,7 +44,7 @@ describe("structure planning", () => {
     expect(counts.get("rampart")).toBe(rampartPlan.rampartTiles.length);
     expect(counts.get("road")).toBe(new Set([
       ...roadPlan.roadTiles,
-      ...rampartPlan.preRampartStructures.accessRoadTiles,
+      ...rampartPlan.expansionPlan.accessRoadTiles,
       ...rampartPlan.postRampartRoadTiles,
       ...getLabRoadTiles(testCase.plan)
     ]).size);
@@ -65,6 +65,8 @@ describe("structure planning", () => {
       "road:3,3"
     ]);
     expect(structurePlan.structures.find((structure) => structure.label === "controller-container")?.removeAtRcl).toBe(7);
+    expect(structurePlan.structures.find((structure) => structure.tile === 23 + 19 * 50 && structure.type === "road")).toBeUndefined();
+    expect(structurePlan.structures.find((structure) => structure.tile === 24 + 19 * 50 && structure.type === "road")).toBeUndefined();
   }, 20_000);
 
   it("exposes a complete room plan entry point", () => {

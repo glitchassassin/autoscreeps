@@ -135,7 +135,7 @@ function createRoadPlacements(roadPlan: RoadPlan, rampartPlan: RampartPlan): Pla
   const roadTiles = [
     ...new Set([
       ...roadPlan.roadTiles,
-      ...rampartPlan.preRampartStructures.accessRoadTiles,
+      ...rampartPlan.expansionPlan.accessRoadTiles,
       ...rampartPlan.postRampartRoadTiles
     ])
   ].sort(compareNumbers);

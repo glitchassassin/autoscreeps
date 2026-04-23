@@ -151,20 +151,21 @@ Otherwise:
 
 ## Pre-Mincut Extra Structures
 
-The planner MUST reserve generic extra-structure slots before rampart min-cut planning. These slots MUST include room for both spare extensions and towers, and MUST be included in the defended interior so the min-cut does not cut off valid build space.
+The planner MUST reserve generic expansion candidates before rampart min-cut planning. These candidates MUST include room for both spare extensions and towers, and MUST be included in the defended interior so the min-cut does not cut off valid build space.
 
 ### Slots
 
-Extra-structure slots SHOULD be populated along roads close to `storage` for easy access to refillers and builders.
+Expansion candidates SHOULD be populated along roads close to `storage` for easy access to refillers and builders.
 
 - The planner MUST reserve the remaining RCL8 extensions not already supplied by fastfiller pods.
 - The planner MUST reserve up to six additional slots for towers.
-- The planner SHOULD grow a bounded number of extra access road tiles before placing slots when those roads reduce the selected slots' total planned-road path distance from `storage`.
+- The planner MAY reserve additional buffer candidates beyond the exact final structure need when a first pass does not leave enough defended buildable space after post-rampart road routing.
+- The planner SHOULD grow a bounded number of extra access road tiles before placing candidates when those roads reduce the selected candidates' total planned-road path distance from `storage`.
 - Extra access roads MUST be connected to the planned road network and MUST avoid reserved source, controller, edge, and stamp areas.
 - The planner MUST prioritize road-adjacent tiles in two groups: roads from `storage` to the two fastfiller pods, then all other planned roads.
 - Within each road group, the planner MUST rank candidates by path distance from `storage` over the planned road network instead of filling one road path at a time.
-- Slot candidates MUST be empty buildable tiles adjacent to the planned road network and outside reserved source, controller, edge, and stamp areas.
-- Slot candidates MUST avoid already planned source/sink structure tiles.
+- Candidate tiles MUST be empty buildable tiles adjacent to the planned road network and outside reserved source, controller, edge, and stamp areas.
+- Candidate tiles MUST avoid already planned source/sink structure tiles.
 
 ## Ramparts
 
@@ -209,13 +210,15 @@ Extra-structure slots SHOULD be populated along roads close to `storage` for eas
 
 - The planner MUST add roads under ramparts.
 - The planner MUST add roads from the interior to each connected rampart group.
+- When plotting post-rampart roads, the planner MUST ignore provisional expansion candidates and provisional access roads as blockers.
+- After plotting post-rampart roads, the planner MUST recompute defended expansion candidates against the augmented defended road network.
 - The planner MUST add extra ramparts to structures (other than roads) outside the ramparts.
 - The planner MUST add extra ramparts to structures inside the ramparts but within range `2` of the outermost ring of ramparts.
 
 ## Towers
 
 - The planner MUST place towers after rampart min-cut planning so tower choices can be scored against the actual rampart line.
-- Candidate tiles MUST be defended pre-mincut extra-structure slots adjacent to the planned road network, including pre-mincut access roads.
+- Candidate tiles MUST be defended post-rampart expansion candidates adjacent to the final planned road network.
 - Candidate tiles MUST avoid ramparts, roads, stamps, source reserve zones, controller reserve zones, room-edge reserve zones, and already assigned tower slots.
 - Tower placement MUST score each candidate by its tower damage coverage over every planned rampart tile using Screeps range falloff.
 - Tower placement SHOULD greedily add towers one at a time, each time maximizing the weakest covered rampart tile before considering total coverage.
@@ -224,7 +227,7 @@ Extra-structure slots SHOULD be populated along roads close to `storage` for eas
 ## Extensions
 
 - The planner MUST assign spare extensions after tower placement.
-- Extensions MUST fill the remaining pre-mincut extra-structure slots in the slot planner's ranked order.
+- Extensions MUST fill the remaining post-rampart expansion candidates in the slot planner's ranked order.
 
 ## Remaining Structures
 

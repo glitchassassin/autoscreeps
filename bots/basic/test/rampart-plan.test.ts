@@ -32,9 +32,6 @@ describe("rampart planning", () => {
     expect(rampartPlan.cutRampartTiles.length).toBeGreaterThan(0);
     expect(rampartPlan.rampartTiles).toEqual([...new Set([...rampartPlan.cutRampartTiles, ...rampartPlan.extraRampartTiles])].sort((left, right) => left - right));
     expect(rampartPlan.postRampartRoadTiles).toEqual([...rampartPlan.postRampartRoadTiles].sort((left, right) => left - right));
-    for (const tile of rampartPlan.rampartTiles) {
-      expect(rampartPlan.postRampartRoadTiles).toContain(tile);
-    }
     expect(rampartPlan.preRampartStructures.extraStructures).toHaveLength(44);
     expect(rampartPlan.extensions).toHaveLength(36);
     expect(rampartPlan.towers).toHaveLength(6);
@@ -58,6 +55,34 @@ describe("rampart planning", () => {
     const sourceSinkPlan = planSourceSinkStructures(testCase.room, testCase.plan, roadPlan);
 
     expect(planRamparts(testCase.room, testCase.plan, roadPlan, sourceSinkPlan)).toEqual(planRamparts(testCase.room, testCase.plan, roadPlan, sourceSinkPlan));
+  }, 20_000);
+
+  it("recomputes defended expansion slots after plotting post-rampart roads", () => {
+    const testCase = loadBotarena212RoadPlanningFixture().cases[0]!;
+    const roadPlan = planRoads(testCase.room, testCase.plan);
+    const sourceSinkPlan = planSourceSinkStructures(testCase.room, testCase.plan, roadPlan);
+    const rampartPlan = planRamparts(testCase.room, testCase.plan, roadPlan, sourceSinkPlan);
+    const requiredCount = rampartPlan.expansionPlan.extensionCount
+      + rampartPlan.expansionPlan.towerCount
+      + rampartPlan.expansionPlan.nukerCount
+      + rampartPlan.expansionPlan.observerCount;
+
+    expect(validateRampartPlan(testCase.room, testCase.plan, roadPlan, sourceSinkPlan, rampartPlan)).toEqual([]);
+    expect(rampartPlan.expansionPlan.extraStructures.length).toBeGreaterThanOrEqual(requiredCount);
+    expect(rampartPlan.expansionPlan.accessRoadTiles).not.toEqual(rampartPlan.preRampartStructures.accessRoadTiles);
+    const rampartSet = new Set(rampartPlan.rampartTiles);
+    const usableRoadTiles = new Set([
+      ...roadPlan.roadTiles,
+      ...rampartPlan.expansionPlan.accessRoadTiles,
+      ...rampartPlan.postRampartRoadTiles.filter((tile) => !rampartSet.has(tile))
+    ]);
+    for (const slot of rampartPlan.expansionPlan.extraStructures) {
+      expect(rampartSet.has(slot.tile), `slot on rampart ${testCase.roomName}:${slot.x},${slot.y}`).toBe(false);
+      expect(
+        neighbors(slot).some((coord) => usableRoadTiles.has(coord.y * roomSize + coord.x)),
+        `slot missing non-rampart road access ${testCase.roomName}:${slot.x},${slot.y}`
+      ).toBe(true);
+    }
   }, 20_000);
 
   it("allocates all six towers for every cached road-plannable normal layout", () => {
@@ -256,5 +281,22 @@ function collectWalkableRangeTiles(
     }
   }
 
+  return tiles;
+}
+
+function neighbors(coord: RoomStampAnchor): RoomStampAnchor[] {
+  const tiles: RoomStampAnchor[] = [];
+  for (let dy = -1; dy <= 1; dy += 1) {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      if (dx === 0 && dy === 0) {
+        continue;
+      }
+      const x = coord.x + dx;
+      const y = coord.y + dy;
+      if (x >= 0 && x < roomSize && y >= 0 && y < roomSize) {
+        tiles.push({ x, y });
+      }
+    }
+  }
   return tiles;
 }

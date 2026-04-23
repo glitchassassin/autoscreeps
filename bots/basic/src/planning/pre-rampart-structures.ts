@@ -38,6 +38,7 @@ export type PreRampartStructurePlan = {
   towerCount: number;
   nukerCount: number;
   observerCount: number;
+  candidateCount: number;
   accessRoadTiles: number[];
   accessRoads: RoomStampAnchor[];
   extraStructures: PreRampartStructurePlacement[];
@@ -49,12 +50,16 @@ export type PreRampartStructurePlanOptions = {
   towerCount?: number;
   nukerCount?: number;
   observerCount?: number;
+  candidateCount?: number;
   growAccessRoads?: boolean;
   maxAccessRoadTiles?: number;
   accessRoadCost?: number;
   growExtensionRoads?: boolean;
   maxExtensionRoadTiles?: number;
   extensionRoadCost?: number;
+  extraRoadTiles?: Iterable<number>;
+  allowedTiles?: Iterable<number>;
+  blockedTiles?: Iterable<number>;
 };
 
 type StructurePlanningContext = {
@@ -64,6 +69,7 @@ type StructurePlanningContext = {
   controller: RoomPlanningObject;
   sources: [RoomPlanningObject, RoomPlanningObject];
   storage: RoomStampAnchor;
+  allowedMask: Uint8Array;
   baseBlocked: Uint8Array;
   blocked: Uint8Array;
   roadMask: Uint8Array;
@@ -81,9 +87,13 @@ type PreRampartStructurePlanConfig = {
   towerCount: number;
   nukerCount: number;
   observerCount: number;
+  candidateCount: number;
   growAccessRoads: boolean;
   maxAccessRoadTiles: number;
   accessRoadCost: number;
+  extraRoadTiles: number[];
+  allowedTiles: number[] | null;
+  blockedTiles: number[];
 };
 
 type ExtensionAllocationScore = {
@@ -99,19 +109,23 @@ export function planPreRampartStructures(
   options: PreRampartStructurePlanOptions = {}
 ): PreRampartStructurePlan {
   const config = normalizeOptions(options, stampPlan);
-  const context = createStructurePlanningContext(room, stampPlan, roadPlan, sourceSinkPlan);
-  const structureCount = config.extensionCount + config.towerCount + config.nukerCount + config.observerCount;
+  const context = createStructurePlanningContext(room, stampPlan, roadPlan, sourceSinkPlan, config);
+  const baseStructureCount = config.extensionCount + config.towerCount + config.nukerCount + config.observerCount;
   validateTargetCount(config.extensionCount, "extensionCount");
   validateTargetCount(config.towerCount, "towerCount");
   validateTargetCount(config.nukerCount, "nukerCount");
   validateTargetCount(config.observerCount, "observerCount");
+  validateTargetCount(config.candidateCount, "candidateCount");
   validateTargetCount(config.maxAccessRoadTiles, "maxAccessRoadTiles");
   validateTargetCount(config.accessRoadCost, "accessRoadCost");
-
-  if (config.growAccessRoads && structureCount > 0 && config.maxAccessRoadTiles > 0) {
-    growAccessRoads(context, structureCount, config);
+  if (config.candidateCount < baseStructureCount) {
+    throw new Error(`candidateCount must be at least ${baseStructureCount}, received ${config.candidateCount}.`);
   }
-  const extraStructures = placeExtraStructures(context, structureCount);
+
+  if (config.growAccessRoads && config.candidateCount > 0 && config.maxAccessRoadTiles > 0) {
+    growAccessRoads(context, config.candidateCount, config);
+  }
+  const extraStructures = placeExtraStructures(context, config.candidateCount);
   for (const structure of extraStructures) {
     context.blocked[structure.tile] = 1;
   }
@@ -123,6 +137,7 @@ export function planPreRampartStructures(
     towerCount: config.towerCount,
     nukerCount: config.nukerCount,
     observerCount: config.observerCount,
+    candidateCount: config.candidateCount,
     accessRoadTiles: [...context.accessRoadTiles],
     accessRoads: context.accessRoadTiles.map(fromIndex),
     extraStructures,
@@ -135,7 +150,8 @@ export function validatePreRampartStructurePlan(
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
   sourceSinkPlan: SourceSinkStructurePlan | null,
-  plan: PreRampartStructurePlan
+  plan: PreRampartStructurePlan,
+  options: PreRampartStructurePlanOptions = {}
 ): string[] {
   const errors: string[] = [];
   if (plan.roomName !== room.roomName) {
@@ -145,7 +161,15 @@ export function validatePreRampartStructurePlan(
     errors.push(`Pre-rampart structure plan policy '${plan.policy}' does not match stamp policy '${stampPlan.policy}'.`);
   }
 
-  const context = createStructurePlanningContext(room, stampPlan, roadPlan, sourceSinkPlan);
+  const config = normalizeOptions({
+    ...options,
+    extensionCount: plan.extensionCount,
+    towerCount: plan.towerCount,
+    nukerCount: plan.nukerCount,
+    observerCount: plan.observerCount,
+    candidateCount: plan.candidateCount
+  }, stampPlan);
+  const context = createStructurePlanningContext(room, stampPlan, roadPlan, sourceSinkPlan, config);
   const seenRoads = new Set<number>();
   for (const tile of plan.accessRoadTiles) {
     if (!isValidIndex(tile)) {
@@ -189,6 +213,13 @@ export function validatePreRampartStructurePlan(
       errors.push(`${placement.kind} at ${placement.x},${placement.y} is not adjacent to a planned road.`);
     }
     context.blocked[placement.tile] = 1;
+  }
+
+  if (plan.candidateCount < plan.extensionCount + plan.towerCount + plan.nukerCount + plan.observerCount) {
+    errors.push("Pre-rampart candidateCount must cover all required final structures.");
+  }
+  if (plan.extraStructures.length > plan.candidateCount) {
+    errors.push(`Pre-rampart structure plan resolved ${plan.extraStructures.length} candidates, exceeding target ${plan.candidateCount}.`);
   }
 
   const expectedTiles = [...plan.extraStructures].sort(comparePlacementsByTile).map((placement) => placement.tile);
@@ -366,12 +397,14 @@ function createStructurePlanningContext(
   room: RoomPlanningRoomData,
   stampPlan: RoomStampPlan,
   roadPlan: RoadPlan,
-  sourceSinkPlan: SourceSinkStructurePlan | null
+  sourceSinkPlan: SourceSinkStructurePlan | null,
+  config: PreRampartStructurePlanConfig
 ): StructurePlanningContext {
   validateInputs(room, stampPlan, roadPlan, sourceSinkPlan);
   const controller = requireObject(room, "controller");
   const sources = getSources(room);
   const storage = stampPlan.stamps.hub.anchors.storage ?? stampPlan.stamps.hub.anchor;
+  const allowedMask = createAllowedMask(config.allowedTiles);
   const baseBlocked = new Uint8Array(roomArea);
   const roadMask = new Uint8Array(roomArea);
 
@@ -401,10 +434,21 @@ function createStructurePlanningContext(
       baseBlocked[tile] = 1;
     }
   }
+  for (const tile of config.blockedTiles) {
+    if (isValidIndex(tile)) {
+      baseBlocked[tile] = 1;
+    }
+  }
 
   const blocked = new Uint8Array(baseBlocked);
   for (const tile of roadPlan.roadTiles) {
-    if (isValidIndex(tile)) {
+    if (isValidIndex(tile) && allowedMask[tile] !== 0) {
+      blocked[tile] = 1;
+      roadMask[tile] = 1;
+    }
+  }
+  for (const tile of config.extraRoadTiles) {
+    if (isValidIndex(tile) && allowedMask[tile] !== 0) {
       blocked[tile] = 1;
       roadMask[tile] = 1;
     }
@@ -418,6 +462,7 @@ function createStructurePlanningContext(
     controller,
     sources,
     storage,
+    allowedMask,
     baseBlocked,
     blocked,
     roadMask,
@@ -490,6 +535,9 @@ function isBuildableStructureTile(context: StructurePlanningContext, x: number, 
     return false;
   }
   const tile = toIndex(x, y);
+  if (context.allowedMask[tile] === 0) {
+    return false;
+  }
   if (context.blocked[tile] !== 0) {
     return false;
   }
@@ -507,6 +555,9 @@ function isBuildableAccessRoadTile(context: StructurePlanningContext, x: number,
     return false;
   }
   const tile = toIndex(x, y);
+  if (context.allowedMask[tile] === 0) {
+    return false;
+  }
   if (context.baseBlocked[tile] !== 0 || context.roadMask[tile] !== 0) {
     return false;
   }
@@ -599,16 +650,39 @@ function normalizeOptions(options: PreRampartStructurePlanOptions, stampPlan: Ro
   const growAccessRoads = options.growAccessRoads ?? options.growExtensionRoads ?? true;
   const maxAccessRoadTiles = options.maxAccessRoadTiles ?? options.maxExtensionRoadTiles ?? defaultMaxAccessRoadTiles;
   const accessRoadCost = options.accessRoadCost ?? options.extensionRoadCost ?? defaultAccessRoadCost;
+  const extensionCount = options.extensionCount ?? Math.max(maxExtensions - stampPlan.stamps.fastfillers.length * fastfillerExtensionsPerPod, 0);
+  const towerCount = options.towerCount ?? maxTowers;
+  const nukerCount = options.nukerCount ?? maxNukers;
+  const observerCount = options.observerCount ?? maxObservers;
+  const candidateCount = options.candidateCount ?? extensionCount + towerCount + nukerCount + observerCount;
 
   return {
-    extensionCount: options.extensionCount ?? Math.max(maxExtensions - stampPlan.stamps.fastfillers.length * fastfillerExtensionsPerPod, 0),
-    towerCount: options.towerCount ?? maxTowers,
-    nukerCount: options.nukerCount ?? maxNukers,
-    observerCount: options.observerCount ?? maxObservers,
+    extensionCount,
+    towerCount,
+    nukerCount,
+    observerCount,
+    candidateCount,
     growAccessRoads,
     maxAccessRoadTiles,
-    accessRoadCost
+    accessRoadCost,
+    extraRoadTiles: [...new Set(options.extraRoadTiles ?? [])].sort(compareNumbers),
+    allowedTiles: options.allowedTiles ? [...new Set(options.allowedTiles)].sort(compareNumbers) : null,
+    blockedTiles: [...new Set(options.blockedTiles ?? [])].sort(compareNumbers)
   };
+}
+
+function createAllowedMask(allowedTiles: number[] | null): Uint8Array {
+  if (allowedTiles === null) {
+    return new Uint8Array(Array.from({ length: roomArea }, () => 1));
+  }
+
+  const mask = new Uint8Array(roomArea);
+  for (const tile of allowedTiles) {
+    if (isValidIndex(tile)) {
+      mask[tile] = 1;
+    }
+  }
+  return mask;
 }
 
 function validateTerrain(terrain: string): void {
