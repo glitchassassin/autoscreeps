@@ -6,6 +6,7 @@ import { planRoads, validateRoadPlan, type RoadPlan } from "../src/planning/road
 import type { RoomPlanningRoomData } from "../src/planning/room-plan.ts";
 import { planRoomStructures, validateRoomStructurePlan, type RoomStructurePlan } from "../src/planning/structure-plan.ts";
 import type { PlannedStructurePlacement, PlannedStructureType } from "../src/planning/structure-layout.ts";
+import { renderPlannedStructureSvg } from "../src/planning/structure-svg.ts";
 import type { RoomStampPlan } from "../src/planning/stamp-placement.ts";
 import { installScreepsGlobals } from "../test/helpers/install-globals.ts";
 import { loadBotarena212RoadPlanningFixture, type CachedStampPlanCase } from "../test/helpers/stamp-plan-fixture.ts";
@@ -274,7 +275,7 @@ function renderRoomSvg(room: RoomPlanningRoomData, structures: PlannedStructureP
     </g>`;
   });
 
-  const structureShapes = structures.map((structure) => renderStructureShape(structure));
+  const structureShapes = structures.map((structure) => renderPlannedStructureSvg(structure));
 
   return `<svg class="room-visual" viewBox="0 0 ${roomSize} ${roomSize}" role="img" aria-label="Resolved room structure plan">
     ${terrainTiles.join("")}

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autoscreeps Room Planner</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <h1>Autoscreeps Room Planner</h1>
+          <span id="status-text">Loading</span>
+        </div>
+        <div class="toolbar">
+          <label>
+            <span>Target room</span>
+            <select id="room-select"></select>
+          </label>
+          <label>
+            <span>Policy</span>
+            <select id="policy-select">
+              <option value="normal">normal</option>
+              <option value="temple">temple</option>
+            </select>
+          </label>
+          <label>
+            <span>Top K</span>
+            <select id="top-k-select">
+              <option value="3">3</option>
+              <option value="5">5</option>
+              <option value="8">8</option>
+            </select>
+          </label>
+        </div>
+      </header>
+
+      <section class="workspace">
+        <aside class="left-panel">
+          <h2>Room Facts</h2>
+          <div id="room-facts" class="facts"></div>
+          <h2>Validation</h2>
+          <div id="validation-list" class="validation-list"></div>
+        </aside>
+
+        <section class="room-panel">
+          <div class="room-frame">
+            <svg id="room-svg" class="room-svg" viewBox="0 0 50 50" role="img" aria-label="Screeps room planning grid"></svg>
+          </div>
+          <div id="tile-inspector" class="tile-inspector">Hover a tile</div>
+          <div class="step-controls">
+            <button id="previous-step" type="button">&lt;</button>
+            <div id="step-timeline" class="step-timeline"></div>
+            <button id="next-step" type="button">&gt;</button>
+          </div>
+        </section>
+
+        <aside class="right-panel">
+          <section class="inspector-section">
+            <h2 id="step-title">No plan</h2>
+            <p id="step-summary"></p>
+            <div id="step-metrics" class="metrics"></div>
+          </section>
+          <section class="inspector-section">
+            <h2>Candidates</h2>
+            <div id="candidate-list" class="candidate-list"></div>
+          </section>
+          <section class="inspector-section">
+            <h2>Layers</h2>
+            <div id="layer-list" class="layer-list"></div>
+          </section>
+        </aside>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

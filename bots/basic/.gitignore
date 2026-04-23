@@ -1,4 +1,5 @@
 dist/
+dist-visualizer/
 node_modules/
 screeps.json
 test/artifacts/

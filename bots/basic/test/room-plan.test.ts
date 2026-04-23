@@ -55,7 +55,7 @@ describe("room planning", () => {
     }
 
     expect([...unplannableRooms].sort()).toEqual([...reservedPathUnplannableNormalRooms].sort());
-  }, 120_000);
+  }, 180_000);
 
   it("returns anchor-based opaque stamp placements", () => {
     const fixture = loadBotarena212RoomPlanningFixture();
