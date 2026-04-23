@@ -80,6 +80,12 @@ input {
   text-transform: uppercase;
 }
 
+.room-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .toolbar select,
 .toolbar button,
 .step-controls button {

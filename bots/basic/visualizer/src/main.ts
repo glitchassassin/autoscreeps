@@ -40,6 +40,7 @@ const state: AppState = {
 const worker = new Worker(new URL("./planner-worker.ts", import.meta.url), { type: "module" });
 
 const roomSelect = getElement<HTMLSelectElement>("room-select");
+const randomRoomButton = getElement<HTMLButtonElement>("random-room");
 const policySelect = getElement<HTMLSelectElement>("policy-select");
 const topKSelect = getElement<HTMLSelectElement>("top-k-select");
 const previousButton = getElement<HTMLButtonElement>("previous-step");
@@ -76,6 +77,17 @@ worker.addEventListener("message", (event: MessageEvent<PlannerWorkerResponse>) 
 
 roomSelect.addEventListener("change", () => {
   state.room = state.fixture?.map.getRoom(roomSelect.value) ?? null;
+  requestPlan();
+});
+
+randomRoomButton.addEventListener("click", () => {
+  const roomName = pickRandomRoomName(state.fixture?.candidateRooms ?? [], roomSelect.value);
+  if (roomName === null) {
+    return;
+  }
+
+  roomSelect.value = roomName;
+  state.room = state.fixture?.map.getRoom(roomName) ?? null;
   requestPlan();
 });
 
@@ -181,6 +193,21 @@ function parseTopK(value: string): number | undefined {
   return Number.isFinite(topK) ? topK : undefined;
 }
 
+function pickRandomRoomName(roomNames: string[], currentRoomName: string): string | null {
+  if (roomNames.length === 0) {
+    return null;
+  }
+  if (roomNames.length === 1) {
+    return roomNames[0]!;
+  }
+
+  let roomName = currentRoomName;
+  while (roomName === currentRoomName) {
+    roomName = roomNames[Math.floor(Math.random() * roomNames.length)]!;
+  }
+  return roomName;
+}
+
 function render(): void {
   renderStatus();
   renderRoomFacts();
@@ -192,6 +219,7 @@ function render(): void {
 
 function renderStatus(): void {
   roomSelect.disabled = state.loading || state.fixture === null;
+  randomRoomButton.disabled = state.loading || state.fixture === null || state.fixture.candidateRooms.length === 0;
   policySelect.disabled = state.loading;
   topKSelect.disabled = state.loading;
 
