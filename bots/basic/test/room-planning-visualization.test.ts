@@ -84,6 +84,19 @@ describe("room planning visualization", () => {
     expect(layerTiles(visualization, "hub", "hub-committed-creeps")).toEqual(expectedHubCreepTiles(visualization));
     expect(visualization.plan.structurePlan.structures.filter((structure) => structure.type === "lab")).toHaveLength(3);
   }, 20_000);
+
+  it("uses fallback stamp search for rooms needing wider candidate sets", () => {
+    const fixture = loadBotarena212RoomPlanningFixture();
+    const room = fixture.map.getRoom("E11N9");
+    if (room === null) {
+      throw new Error("Expected fixture room.");
+    }
+
+    const visualization = createRoomPlanningVisualization(room, "normal");
+
+    expect(visualization.validations).toEqual([]);
+    expect(visualization.plan.stampPlan.topK).toBe(5);
+  }, 20_000);
 });
 
 function layerIds(visualization: ReturnType<typeof createRoomPlanningVisualization>, stepId: string): string[] {

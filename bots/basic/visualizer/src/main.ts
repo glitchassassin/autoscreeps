@@ -158,7 +158,7 @@ async function init(): Promise<void> {
 function requestPlan(): void {
   const roomName = roomSelect.value;
   const policy = policySelect.value as RoomPlanningPolicy;
-  const topK = Number(topKSelect.value);
+  const topK = parseTopK(topKSelect.value);
   state.room = state.fixture?.map.getRoom(roomName) ?? null;
   state.loading = true;
   state.error = null;
@@ -171,6 +171,14 @@ function requestPlan(): void {
     topK: Number.isFinite(topK) ? topK : undefined
   };
   worker.postMessage(request);
+}
+
+function parseTopK(value: string): number | undefined {
+  if (value === "") {
+    return undefined;
+  }
+  const topK = Number(value);
+  return Number.isFinite(topK) ? topK : undefined;
 }
 
 function render(): void {
