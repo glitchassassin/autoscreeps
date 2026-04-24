@@ -1,10 +1,11 @@
 import type { ColonyPlan, ExecutionSummary, SitePlan, SpawnDemandInputs, WorldSnapshot } from "../core/types";
+import { getRoomPlanningTelemetry, type RoomPlanningTelemetry } from "../planning/room-planning-runtime";
 import { ensureTelemetryState } from "../state/telemetry";
 import { createEmptyCpuTelemetrySnapshot, type CpuTelemetrySnapshot } from "./cpu-profiler";
 
 export const telemetrySegmentId = 42;
 export const telemetrySampleEveryTicks = 25;
-export const telemetrySchemaVersion = 16;
+export const telemetrySchemaVersion = 17;
 
 export type SourceTelemetrySnapshot = {
   sourceId: string;
@@ -45,6 +46,7 @@ export type BotTelemetrySnapshot = {
   counters: {
     creepDeaths: number;
   };
+  roomPlanning: RoomPlanningTelemetry;
 };
 
 export type BotReport = {
@@ -89,7 +91,8 @@ export function createTelemetrySnapshot(
     },
     counters: {
       creepDeaths: telemetryState.creepDeaths
-    }
+    },
+    roomPlanning: getRoomPlanningTelemetry()
   };
 }
 

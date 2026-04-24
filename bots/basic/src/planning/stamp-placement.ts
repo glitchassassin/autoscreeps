@@ -48,6 +48,10 @@ export type StampSearchOptions = {
   topK?: number;
 };
 
+export type PlanningBudget = {
+  shouldYield(): boolean;
+};
+
 export type RoomStampPlan = {
   roomName: string;
   policy: RoomPlanningPolicy;
@@ -190,6 +194,13 @@ type SearchResult = {
   };
 };
 
+export type RoomStampPlanningJob = {
+  roomName: string;
+  policy: RoomPlanningPolicy;
+  stage: string;
+  advance(budget?: PlanningBudget | null): RoomStampPlan | null;
+};
+
 type ExactCandidate = {
   preliminaryIndex: number;
   candidate: Candidate;
@@ -216,6 +227,14 @@ type CandidateGenerationCache = {
 
 export function planRoomStamps(room: RoomPlanningRoomData, policy: RoomPlanningPolicy, options: StampSearchOptions = {}): RoomStampPlan {
   return searchStampPlacements(room, policy, options).plan;
+}
+
+export function createRoomStampPlanningJob(
+  room: RoomPlanningRoomData,
+  policy: RoomPlanningPolicy,
+  options: StampSearchOptions = {}
+): RoomStampPlanningJob {
+  return new ResumableRoomStampPlanningJob(room, policy, options);
 }
 
 export function createStampPlacementDebug(
@@ -422,50 +441,160 @@ export function validateStampPlan(room: RoomPlanningRoomData, plan: RoomStampPla
 }
 
 function searchStampPlacements(room: RoomPlanningRoomData, policy: RoomPlanningPolicy, options: StampSearchOptions): SearchResult {
-  const features = createRoomFeatures(room);
-  const baseState = createBaseState(features);
-  const topKs = options.topK === undefined ? [...fallbackTopKs] : [normalizeTopK(options.topK)];
-  const cache = createCandidateGenerationCache();
-  const exploredLayouts = new Set<string>();
-
-  for (const topK of topKs) {
-    const result = searchStampPlacementsAtTopK(features, baseState, policy, topK, cache, exploredLayouts);
-    if (result !== null) {
-      return result;
-    }
+  const job = new ResumableRoomStampPlanningJob(room, policy, options);
+  const plan = job.advance(null);
+  if (plan === null) {
+    throw new Error(`No viable ${policy} stamp layout found for room '${room.roomName}'.`);
   }
-
-  throw new Error(`No viable ${policy} stamp layout found for room '${room.roomName}'.`);
+  return {
+    plan,
+    branch: {
+      hub: plan.stamps.hub,
+      pod1: plan.stamps.fastfillers[0],
+      pod2: plan.stamps.fastfillers[1],
+      labs: plan.stamps.labs
+    }
+  };
 }
 
-function searchStampPlacementsAtTopK(
+class ResumableRoomStampPlanningJob implements RoomStampPlanningJob {
+  readonly roomName: string;
+  readonly policy: RoomPlanningPolicy;
+  stage = "stamp:init";
+
+  private readonly features: RoomFeatures;
+  private readonly baseState: PlacementState;
+  private readonly topKs: number[];
+  private readonly cache = createCandidateGenerationCache();
+  private readonly exploredLayouts = new Set<string>();
+  private topKIndex = 0;
+  private search: TopKSearchState | null = null;
+  private done: RoomStampPlan | null = null;
+
+  constructor(room: RoomPlanningRoomData, policy: RoomPlanningPolicy, options: StampSearchOptions) {
+    this.roomName = room.roomName;
+    this.policy = policy;
+    this.features = createRoomFeatures(room);
+    this.baseState = createBaseState(this.features);
+    this.topKs = options.topK === undefined ? [...fallbackTopKs] : [normalizeTopK(options.topK)];
+  }
+
+  advance(budget: PlanningBudget | null = null): RoomStampPlan | null {
+    if (this.done !== null) {
+      return this.done;
+    }
+
+    while (this.topKIndex < this.topKs.length) {
+      this.stage = `stamp:topK-${this.topKs[this.topKIndex]!}`;
+      this.search ??= createTopKSearchState(this.features, this.baseState, this.policy, this.topKs[this.topKIndex]!);
+      const result = advanceStampSearchAtTopK(this.search, this.cache, this.exploredLayouts, budget);
+      if (result === "yield") {
+        return null;
+      }
+      if (result !== null) {
+        this.done = result.plan;
+        this.stage = "stamp:complete";
+        return this.done;
+      }
+
+      this.search = null;
+      this.topKIndex += 1;
+    }
+
+    throw new Error(`No viable ${this.policy} stamp layout found for room '${this.roomName}'.`);
+  }
+}
+
+type TopKSearchState = {
+  features: RoomFeatures;
+  baseState: PlacementState;
+  policy: RoomPlanningPolicy;
+  topK: number;
+  hubCandidates: Candidate[];
+  hubIndex: number;
+  pod1Candidates: Candidate[] | null;
+  pod1Index: number;
+  pod2Candidates: Candidate[] | null;
+  pod2Index: number;
+  labCandidates: Array<Candidate | null> | null;
+  labIndex: number;
+  best: SearchResult | null;
+};
+
+function createTopKSearchState(
   features: RoomFeatures,
   baseState: PlacementState,
   policy: RoomPlanningPolicy,
-  topK: number,
-  cache: CandidateGenerationCache,
-  exploredLayouts: Set<string>
-): SearchResult | null {
-  const hubCandidates = generateHubCandidates(features, baseState, policy, topK);
-  let best: SearchResult | null = null;
+  topK: number
+): TopKSearchState {
+  return {
+    features,
+    baseState,
+    policy,
+    topK,
+    hubCandidates: generateHubCandidates(features, baseState, policy, topK),
+    hubIndex: 0,
+    pod1Candidates: null,
+    pod1Index: 0,
+    pod2Candidates: null,
+    pod2Index: 0,
+    labCandidates: null,
+    labIndex: 0,
+    best: null
+  };
+}
 
-  for (const hub of hubCandidates) {
-    if (best !== null && compareScorePrefix(hub.score, best.plan.score, hub.score.length) > 0) {
+function advanceStampSearchAtTopK(
+  state: TopKSearchState,
+  cache: CandidateGenerationCache,
+  exploredLayouts: Set<string>,
+  budget: PlanningBudget | null
+): SearchResult | null | "yield" {
+  while (state.hubIndex < state.hubCandidates.length) {
+    if (shouldYield(budget)) return "yield";
+    const hub = state.hubCandidates[state.hubIndex]!;
+    if (state.best !== null && compareScorePrefix(hub.score, state.best.plan.score, hub.score.length) > 0) {
       break;
     }
 
-    const hubState = placeStamp(baseState, hub);
-    const pod1Candidates = generateFastfillerCandidates(features, hubState, hub, topK, cache);
+    const hubState = placeStamp(state.baseState, hub);
+    if (state.pod1Candidates === null) {
+      const pod1Candidates = generateFastfillerCandidatesBudgeted(state.features, hubState, hub, state.topK, cache, budget);
+      if (pod1Candidates === null) return "yield";
+      state.pod1Candidates = pod1Candidates;
+      state.pod1Index = 0;
+    }
 
-    for (const pod1 of pod1Candidates) {
+    while (state.pod1Index < state.pod1Candidates.length) {
+      if (shouldYield(budget)) return "yield";
+      const pod1 = state.pod1Candidates[state.pod1Index]!;
       const pod1State = placeStamp(hubState, pod1);
-      const pod2Candidates = generateFastfillerCandidates(features, pod1State, hub, topK, cache);
+      if (state.pod2Candidates === null) {
+        const pod2Candidates = generateFastfillerCandidatesBudgeted(state.features, pod1State, hub, state.topK, cache, budget);
+        if (pod2Candidates === null) return "yield";
+        state.pod2Candidates = pod2Candidates;
+        state.pod2Index = 0;
+      }
 
-      for (const pod2 of pod2Candidates) {
+      while (state.pod2Index < state.pod2Candidates.length) {
+        if (shouldYield(budget)) return "yield";
+        const pod2 = state.pod2Candidates[state.pod2Index]!;
         const pod2State = placeStamp(pod1State, pod2);
-        const labCandidates = policy === "normal" ? generateLabCandidates(features, pod2State, hub, topK, cache) : [null];
+        if (state.labCandidates === null) {
+          if (state.policy === "normal") {
+            const labCandidates = generateLabCandidatesBudgeted(state.features, pod2State, hub, state.topK, cache, budget);
+            if (labCandidates === null) return "yield";
+            state.labCandidates = labCandidates;
+          } else {
+            state.labCandidates = [null];
+          }
+          state.labIndex = 0;
+        }
 
-        for (const labs of labCandidates) {
+        while (state.labIndex < state.labCandidates.length) {
+          if (shouldYield(budget)) return "yield";
+          const labs = state.labCandidates[state.labIndex]!;
+          state.labIndex += 1;
           const key = layoutSearchKey(hub, pod1, pod2, labs);
           if (exploredLayouts.has(key)) {
             continue;
@@ -473,14 +602,14 @@ function searchStampPlacementsAtTopK(
           exploredLayouts.add(key);
 
           const finalState = labs === null ? pod2State : placeStamp(pod2State, labs);
-          const score = scoreCompleteLayout(features, finalState, policy, hub, pod1, pod2, labs);
+          const score = scoreCompleteLayout(state.features, finalState, state.policy, hub, pod1, pod2, labs);
           if (score === null) {
             continue;
           }
           const plan: RoomStampPlan = {
-            roomName: features.roomName,
-            policy,
-            topK,
+            roomName: state.features.roomName,
+            policy: state.policy,
+            topK: state.topK,
             score,
             stamps: {
               hub,
@@ -490,26 +619,30 @@ function searchStampPlacementsAtTopK(
           };
           const candidate: SearchResult = {
             plan,
-            branch: {
-              hub,
-              pod1,
-              pod2,
-              labs
-            }
+            branch: { hub, pod1, pod2, labs }
           };
 
-          if (best === null || compareScore(candidate.plan.score, best.plan.score) < 0 || (
-            compareScore(candidate.plan.score, best.plan.score) === 0
-            && layoutKey(candidate.plan).localeCompare(layoutKey(best.plan)) < 0
+          if (state.best === null || compareScore(candidate.plan.score, state.best.plan.score) < 0 || (
+            compareScore(candidate.plan.score, state.best.plan.score) === 0
+            && layoutKey(candidate.plan).localeCompare(layoutKey(state.best.plan)) < 0
           )) {
-            best = candidate;
+            state.best = candidate;
           }
         }
+
+        state.labCandidates = null;
+        state.pod2Index += 1;
       }
+
+      state.pod2Candidates = null;
+      state.pod1Index += 1;
     }
+
+    state.pod1Candidates = null;
+    state.hubIndex += 1;
   }
 
-  return best;
+  return state.best;
 }
 
 function generateHubCandidates(features: RoomFeatures, state: PlacementState, policy: RoomPlanningPolicy, topK: number): Candidate[] {
@@ -563,6 +696,26 @@ function generateFastfillerCandidates(
     cache.fastfillers.set(cacheKey, candidateSet);
   }
   expandFastfillerCandidateSet(features, state, candidateSet, hub, topK);
+  return topCandidates(getExactCandidatesForTopK(candidateSet, topK), topK);
+}
+
+function generateFastfillerCandidatesBudgeted(
+  features: RoomFeatures,
+  state: PlacementState,
+  hub: StampPlacement,
+  topK: number,
+  cache: CandidateGenerationCache,
+  budget: PlanningBudget | null
+): Candidate[] | null {
+  const cacheKey = placementStateKey(state);
+  const cached = cache.fastfillers.get(cacheKey);
+  const candidateSet = cached ?? createFastfillerCandidateSet(features, state, hub);
+  if (!cached) {
+    cache.fastfillers.set(cacheKey, candidateSet);
+  }
+  if (!expandFastfillerCandidateSetBudgeted(features, state, candidateSet, hub, topK, budget)) {
+    return null;
+  }
   return topCandidates(getExactCandidatesForTopK(candidateSet, topK), topK);
 }
 
@@ -646,6 +799,46 @@ function expandFastfillerCandidateSet(
   }
 }
 
+function expandFastfillerCandidateSetBudgeted(
+  features: RoomFeatures,
+  state: PlacementState,
+  candidateSet: FastfillerCandidateSet,
+  hub: StampPlacement,
+  topK: number,
+  budget: PlanningBudget | null
+): boolean {
+  void features;
+  void state;
+  void hub;
+  for (const limit of candidateEvaluationLimits(candidateSet, topK)) {
+    for (; candidateSet.evaluated < limit; candidateSet.evaluated += 1) {
+      if (shouldYield(budget)) {
+        return false;
+      }
+      const candidate = candidateSet.preliminary[candidateSet.evaluated]!;
+      const metrics = scoreFastfillerCandidate(candidateSet.paths, candidate);
+      if (metrics === null) {
+        continue;
+      }
+
+      const { storageDistance, sourceDetours } = metrics;
+      const bestSourceDetour = Math.min(sourceDetours[0], sourceDetours[1]);
+      if (bestSourceDetour === dijkstraUnreachable) {
+        continue;
+      }
+
+      candidate.storageDistance = storageDistance;
+      candidate.sourceDetours = sourceDetours;
+      candidate.score = [-storageDistance, -bestSourceDetour, -candidate.anchor.y, -candidate.anchor.x];
+      candidateSet.exactCandidates.push({
+        preliminaryIndex: candidateSet.evaluated,
+        candidate
+      });
+    }
+  }
+  return true;
+}
+
 function generateLabCandidates(
   features: RoomFeatures,
   state: PlacementState,
@@ -660,6 +853,26 @@ function generateLabCandidates(
     cache.labs.set(cacheKey, candidateSet);
   }
   expandLabCandidateSet(features, state, candidateSet, topK);
+  return topCandidates(getExactCandidatesForTopK(candidateSet, topK), topK);
+}
+
+function generateLabCandidatesBudgeted(
+  features: RoomFeatures,
+  state: PlacementState,
+  hub: StampPlacement,
+  topK: number,
+  cache: CandidateGenerationCache,
+  budget: PlanningBudget | null
+): Candidate[] | null {
+  const cacheKey = placementStateKey(state);
+  const cached = cache.labs.get(cacheKey);
+  const candidateSet = cached ?? createLabCandidateSet(features, state, hub);
+  if (!cached) {
+    cache.labs.set(cacheKey, candidateSet);
+  }
+  if (!expandLabCandidateSetBudgeted(features, state, candidateSet, topK, budget)) {
+    return null;
+  }
   return topCandidates(getExactCandidatesForTopK(candidateSet, topK), topK);
 }
 
@@ -722,6 +935,39 @@ function expandLabCandidateSet(
       });
     }
   }
+}
+
+function expandLabCandidateSetBudgeted(
+  features: RoomFeatures,
+  state: PlacementState,
+  candidateSet: LabCandidateSet,
+  topK: number,
+  budget: PlanningBudget | null
+): boolean {
+  for (const limit of candidateEvaluationLimits(candidateSet, topK)) {
+    for (; candidateSet.evaluated < limit; candidateSet.evaluated += 1) {
+      if (shouldYield(budget)) {
+        return false;
+      }
+      const candidate = candidateSet.preliminary[candidateSet.evaluated]!;
+      const candidateState = placeStamp(state, candidate);
+      const labScore = scoreLabCandidate(features, candidateState, candidateSet.paths, candidate);
+      if (labScore === null) {
+        continue;
+      }
+
+      assignLabScore(candidate, labScore);
+      candidateSet.exactCandidates.push({
+        preliminaryIndex: candidateSet.evaluated,
+        candidate
+      });
+    }
+  }
+  return true;
+}
+
+function shouldYield(budget: PlanningBudget | null): boolean {
+  return budget?.shouldYield() ?? false;
 }
 
 function* candidateEvaluationLimits(candidateSet: ExpandableCandidateSet, topK: number): Iterable<number> {

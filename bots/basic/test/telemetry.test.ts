@@ -100,7 +100,7 @@ describe("telemetry", () => {
     }, Memory.telemetry!, cpu, null);
 
     expect(snapshot).toEqual({
-      schemaVersion: 16,
+      schemaVersion: 17,
       gameTime: 25,
       cpuGameTime: null,
       cpu: {
@@ -170,6 +170,15 @@ describe("telemetry", () => {
       },
       counters: {
         creepDeaths: 2
+      },
+      roomPlanning: {
+        activeRoomName: null,
+        activePolicy: null,
+        activeStage: null,
+        activeTicksSpent: 0,
+        completedCount: 0,
+        failedCount: 0,
+        lastFailure: null
       }
     });
   });
@@ -188,7 +197,7 @@ describe("telemetry", () => {
 
     expect(testGlobal.RawMemory.setActiveSegments).toHaveBeenCalledWith([telemetrySegmentId]);
     expect(JSON.parse(testGlobal.RawMemory.segments[telemetrySegmentId] as string)).toMatchObject({
-      schemaVersion: 16,
+      schemaVersion: 17,
       gameTime: 25,
       errors: [],
       telemetry: {
@@ -253,11 +262,11 @@ describe("telemetry", () => {
     }, createCpuProfiler());
 
     expect(JSON.parse(testGlobal.RawMemory.segments[telemetrySegmentId] as string)).toEqual({
-      schemaVersion: 16,
+      schemaVersion: 17,
       gameTime: 26,
       errors: [],
       telemetry: {
-        schemaVersion: 16,
+        schemaVersion: 17,
         gameTime: 26,
         cpuGameTime: 25,
         cpu: {
@@ -335,6 +344,15 @@ describe("telemetry", () => {
         },
         counters: {
           creepDeaths: 2
+        },
+        roomPlanning: {
+          activeRoomName: null,
+          activePolicy: null,
+          activeStage: null,
+          activeTicksSpent: 0,
+          completedCount: 0,
+          failedCount: 0,
+          lastFailure: null
         }
       }
     });
