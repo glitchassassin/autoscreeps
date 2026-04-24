@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createColonyPlan } from "../src/planning/colony-plan";
 import { createEmptyCpuTelemetrySnapshot } from "../src/telemetry/cpu-profiler";
 import { beginCpuSpan, createCpuProfiler, endCpuSpan } from "../src/telemetry/cpu-profiler";
+import { createEnergyLedgerState, createRunnerMovementState, createRunnerStateTicksState } from "../src/state/telemetry";
 import { recordTelemetry, resetPendingCpuTelemetry } from "../src/telemetry/report";
 import { createTelemetrySnapshot, telemetrySegmentId } from "../src/telemetry/snapshot";
 import { observeWorld } from "../src/world/observe";
@@ -20,6 +21,8 @@ describe("telemetry", () => {
       creeps: {},
       telemetry: {
         creepDeaths: 2,
+        energy: createEnergyLedgerState(),
+        runnerStateTicks: createRunnerStateTicksState(),
         firstOwnedSpawnTick: null,
         rcl2Tick: null,
         rcl3Tick: null,
@@ -100,7 +103,7 @@ describe("telemetry", () => {
     }, Memory.telemetry!, cpu, null);
 
     expect(snapshot).toEqual({
-      schemaVersion: 18,
+      schemaVersion: 21,
       gameTime: 25,
       cpuGameTime: null,
       cpu: {
@@ -159,6 +162,7 @@ describe("telemetry", () => {
           assignedHarvesterCount: 1
         }
       ],
+      haul: createExpectedHaulTelemetry(25),
       controller: {
         level: 2,
         progress: 500,
@@ -170,7 +174,8 @@ describe("telemetry", () => {
         rcl3Tick: null
       },
       counters: {
-        creepDeaths: 2
+        creepDeaths: 2,
+        energy: createEnergyLedgerState()
       },
       roomPlanning: {
         activeRoomName: null,
@@ -198,7 +203,7 @@ describe("telemetry", () => {
 
     expect(testGlobal.RawMemory.setActiveSegments).toHaveBeenCalledWith([telemetrySegmentId]);
     expect(JSON.parse(testGlobal.RawMemory.segments[telemetrySegmentId] as string)).toMatchObject({
-      schemaVersion: 18,
+      schemaVersion: 21,
       gameTime: 25,
       errors: [],
       telemetry: {
@@ -263,11 +268,11 @@ describe("telemetry", () => {
     }, createCpuProfiler());
 
     expect(JSON.parse(testGlobal.RawMemory.segments[telemetrySegmentId] as string)).toEqual({
-      schemaVersion: 18,
+      schemaVersion: 21,
       gameTime: 26,
       errors: [],
       telemetry: {
-        schemaVersion: 18,
+        schemaVersion: 21,
         gameTime: 26,
         cpuGameTime: 25,
         cpu: {
@@ -334,6 +339,7 @@ describe("telemetry", () => {
             assignedHarvesterCount: 1
           }
         ],
+        haul: createExpectedHaulTelemetry(1),
         controller: {
           level: 2,
           progress: 500,
@@ -345,7 +351,8 @@ describe("telemetry", () => {
           rcl3Tick: null
         },
         counters: {
-          creepDeaths: 2
+          creepDeaths: 2,
+          energy: createEnergyLedgerState()
         },
         roomPlanning: {
           activeRoomName: null,
@@ -526,6 +533,45 @@ function makeSpawn(): StructureSpawn {
       roomName: "W0N0"
     } as RoomPosition
   } as unknown as StructureSpawn;
+}
+
+function createExpectedHaulTelemetry(observedTicks: number) {
+  return {
+    observedTicks,
+    runnerStateTicks: createRunnerStateTicksState(),
+    movement: createRunnerMovementState(),
+    capacity: {
+      activeRunnerCarryParts: 1,
+      activeRunnerCarryCapacity: 50,
+      observedRequiredCarryParts: 0,
+      observedRequiredCarryPartsExact: 0,
+      plannedRequiredCarryParts: 1,
+      plannedRequiredCarryPartsExact: 0.96,
+      theoreticalRequiredCarryParts: 3,
+      theoreticalRequiredCarryPartsExact: 2.4,
+      observedCoverage: null,
+      plannedCoverage: 1 / 0.96,
+      theoreticalCoverage: 1 / 2.4,
+      unknownPathSourceCount: 0
+    },
+    sources: [
+      {
+        sourceId: "source-1",
+        pathLengthToPrimarySpawn: 5,
+        roundTripTicks: 12,
+        observedHarvestedEnergy: 0,
+        observedHarvestedEpt: 0,
+        plannedGrossEpt: 4,
+        theoreticalGrossEpt: 10,
+        observedRequiredCarryParts: 0,
+        observedRequiredCarryPartsExact: 0,
+        plannedRequiredCarryParts: 1,
+        plannedRequiredCarryPartsExact: 0.96,
+        theoreticalRequiredCarryParts: 3,
+        theoreticalRequiredCarryPartsExact: 2.4
+      }
+    ]
+  };
 }
 
 function makeSource(id: string): Source {

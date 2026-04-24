@@ -5,12 +5,16 @@ import { executeSpawnPlan } from "../execution/spawn";
 import { createColonyPlan } from "../planning/colony-plan";
 import { advanceRoomPlanning } from "../planning/room-planning-runtime";
 import { cleanupDeadCreeps } from "../state/reconcile-creeps";
+import { rememberLiveCreepEnergy } from "../state/telemetry";
 import type { CpuProfiler } from "../telemetry/cpu-profiler";
 import { measureCpu } from "../telemetry/cpu-profiler";
 import { observeWorld } from "../world/observe";
 
 export function runTick(profiler?: CpuProfiler): TickResult {
-  measureCpu(profiler, "cleanup", () => cleanupDeadCreeps());
+  measureCpu(profiler, "cleanup", () => {
+    cleanupDeadCreeps();
+    rememberLiveCreepEnergy();
+  });
 
   const world = measureCpu(profiler, "observe", () => observeWorld());
   const plan = measureCpu(profiler, "plan", () => createColonyPlan(world));

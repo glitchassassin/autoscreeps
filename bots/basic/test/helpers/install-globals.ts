@@ -1,6 +1,8 @@
 export function installScreepsGlobals(): void {
   Object.assign(globalThis, {
     OK: 0,
+    ERR_TIRED: -11,
+    ERR_NO_PATH: -2,
     ERR_NOT_FOUND: -5,
     ERR_NOT_IN_RANGE: -9,
     ERR_INVALID_TARGET: -7,

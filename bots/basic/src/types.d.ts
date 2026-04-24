@@ -3,10 +3,59 @@ declare global {
 
   interface TelemetryMemoryState {
     creepDeaths: number;
+    energy?: EnergyLedgerMemoryState;
+    runnerStateTicks?: RunnerStateTicksMemoryState;
+    runnerMovement?: RunnerMovementMemoryState;
     firstOwnedSpawnTick: number | null;
     rcl2Tick: number | null;
     rcl3Tick: number | null;
     errors?: string[];
+  }
+
+  interface EnergyLedgerMemoryState {
+    harvested: number;
+    harvestedBySourceId: Record<string, number>;
+    dropped: number;
+    pickedUp: number;
+    withdrawn: number;
+    transferred: number;
+    spawnedBodyCost: number;
+    upgraded: number;
+    built: number;
+    lostOnCreepDeath: number;
+  }
+
+  interface RunnerStateTicksMemoryState {
+    idleNoPickupTarget: number;
+    movingToPickup: number;
+    pickupSucceeded: number;
+    pickupFailed: number;
+    idleNoDeliveryTarget: number;
+    movingToDelivery: number;
+    transferSucceeded: number;
+    transferFailed: number;
+  }
+
+  type RunnerMovementKind = "pickup" | "delivery";
+
+  interface RunnerMovementTicksMemoryState {
+    failedToPath: number;
+    tired: number;
+    stuck: number;
+  }
+
+  interface RunnerMovementMemoryState {
+    pickup: RunnerMovementTicksMemoryState;
+    delivery: RunnerMovementTicksMemoryState;
+    total: RunnerMovementTicksMemoryState;
+  }
+
+  interface RunnerMoveIntentMemoryState {
+    kind: RunnerMovementKind;
+    x: number;
+    y: number;
+    roomName: string;
+    tick: number;
   }
 
   interface RoomPlanningMemoryState {
@@ -33,6 +82,8 @@ declare global {
     role: WorkerRole;
     working?: boolean;
     homeRoom: string;
+    lastEnergy?: number;
+    lastRunnerMove?: RunnerMoveIntentMemoryState;
   }
 
   interface Memory {

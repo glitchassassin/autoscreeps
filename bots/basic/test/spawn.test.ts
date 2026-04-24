@@ -3,6 +3,7 @@ import { createColonyPlan } from "../src/planning/colony-plan";
 import { executeSpawnPlan } from "../src/execution/spawn";
 import { chooseBody, summarizeSpawnDemand } from "../src/planning/spawn-plan";
 import { createSitePlans } from "../src/planning/site-plan";
+import { createEnergyLedgerState } from "../src/state/telemetry";
 import type { WorldSnapshot } from "../src/core/types";
 import { observeWorld } from "../src/world/observe";
 import { installScreepsGlobals } from "./helpers/install-globals";
@@ -13,8 +14,16 @@ describe("spawn manager", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game; Memory: Memory };
 
     testGlobal.Memory = {
-      creeps: {}
-    } as Memory;
+      creeps: {},
+      telemetry: {
+        creepDeaths: 0,
+        energy: createEnergyLedgerState(),
+        firstOwnedSpawnTick: null,
+        rcl2Tick: null,
+        rcl3Tick: null,
+        errors: []
+      }
+    } as unknown as Memory;
 
     testGlobal.Game = {
       creeps: {},
@@ -140,6 +149,7 @@ describe("spawn manager", () => {
     const result = executeSpawnPlan(plan);
 
     expect(result).toBe(OK);
+    expect(Memory.telemetry?.energy?.spawnedBodyCost).toBe(200);
     expect(spawn.spawnCreep).toHaveBeenCalledWith(
       [WORK, CARRY, MOVE],
       "recovery-worker-123",

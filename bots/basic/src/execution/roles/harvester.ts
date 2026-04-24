@@ -1,12 +1,17 @@
-import { countActiveBodyParts } from "../../core/body-parts";
 import type { CreepPlan } from "../../core/types";
+import { calculateDroppedHarvestEnergy, calculateHarvestedEnergy, createEnergyAccountingContext, reserveHarvestedEnergy, type EnergyAccountingContext } from "../energy-accounting";
+import { adjustRememberedCreepEnergy, recordDroppedEnergy, recordHarvestedEnergy } from "../../state/telemetry";
 
 export type HarvesterExecution = {
   sourceId: string;
   harvestedEnergy: number;
 };
 
-export function runHarvester(creep: Creep, plan: CreepPlan | undefined): HarvesterExecution | null {
+export function runHarvester(
+  creep: Creep,
+  plan: CreepPlan | undefined,
+  energyContext: EnergyAccountingContext = createEnergyAccountingContext()
+): HarvesterExecution | null {
   if (!plan?.sourceId) {
     return null;
   }
@@ -25,9 +30,16 @@ export function runHarvester(creep: Creep, plan: CreepPlan | undefined): Harvest
     return null;
   }
 
+  const harvestedEnergy = calculateHarvestedEnergy(energyContext, creep, source);
+  const droppedEnergy = calculateDroppedHarvestEnergy(creep, harvestedEnergy);
+  reserveHarvestedEnergy(energyContext, source, harvestedEnergy);
+  recordHarvestedEnergy(source.id, harvestedEnergy);
+  recordDroppedEnergy(droppedEnergy);
+  adjustRememberedCreepEnergy(creep, harvestedEnergy - droppedEnergy);
+
   return {
     sourceId: source.id,
-    harvestedEnergy: Math.min(countActiveBodyParts(creep, WORK) * 2, source.energy)
+    harvestedEnergy
   };
 }
 

@@ -1,4 +1,6 @@
+import { calculateBodyCost } from "../core/body-parts";
 import type { SpawnPlan } from "../core/types";
+import { recordSpawnedBodyCost } from "../state/telemetry";
 
 export function executeSpawnPlan(plan: SpawnPlan): ScreepsReturnCode | null {
   if (plan.bootstrapRoomName) {
@@ -15,7 +17,12 @@ export function executeSpawnPlan(plan: SpawnPlan): ScreepsReturnCode | null {
     return null;
   }
 
-  return spawn.spawnCreep(request.body, request.name, { memory: request.memory });
+  const result = spawn.spawnCreep(request.body, request.name, { memory: request.memory });
+  if (result === OK) {
+    recordSpawnedBodyCost(calculateBodyCost(request.body));
+  }
+
+  return result;
 }
 
 function placeBootstrapSpawn(roomName: string): ScreepsReturnCode | null {
