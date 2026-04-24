@@ -1,12 +1,16 @@
-type EnergyDeliveryTarget = StructureSpawn;
+export type EnergyDeliveryTarget = StructureSpawn | StructureExtension;
 type EnergyPickupTarget = Resource<ResourceConstant>;
 type EnergyWithdrawTarget = StructureSpawn;
 
 export function findDeliveryTarget(creep: Creep): EnergyDeliveryTarget | null {
-  const spawnTargets = Object.values(Game.spawns).filter(
+  const spawnTargets: EnergyDeliveryTarget[] = Object.values(Game.spawns).filter(
     (spawn) => spawn.room.name === creep.room.name && getFreeEnergyCapacity(spawn) > 0
   );
-  return findClosestByPath(creep, spawnTargets);
+  const extensionTargets = creep.room.find(FIND_MY_STRUCTURES).filter(
+    (structure): structure is StructureExtension =>
+      structure.structureType === STRUCTURE_EXTENSION && getFreeEnergyCapacity(structure) > 0
+  );
+  return findClosestByPath(creep, [...spawnTargets, ...extensionTargets]);
 }
 
 export function findPickupTarget(creep: Creep): EnergyPickupTarget | null {

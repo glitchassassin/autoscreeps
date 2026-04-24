@@ -1,5 +1,6 @@
 import { findDeliveryTarget, findPickupTarget } from "./energy";
 import { updateWorkingState } from "./working-state";
+import { moveToRunnerDeliveryTarget } from "../traffic";
 import { calculatePickupEnergy, calculateTransferEnergy, createEnergyAccountingContext, reservePickupEnergy, reserveTransferEnergy, type EnergyAccountingContext } from "../energy-accounting";
 import { adjustRememberedCreepEnergy, recordPickedUpEnergy, recordRunnerMovementTick, recordRunnerState, recordTransferredEnergy } from "../../state/telemetry";
 
@@ -66,7 +67,9 @@ function deliverEnergy(creep: Creep, energyContext: EnergyAccountingContext): vo
 }
 
 function moveRunnerTo(creep: Creep, target: RoomObject, kind: RunnerMovementKind, stroke: string): void {
-  const result = creep.moveTo(target, { visualizePathStyle: { stroke } });
+  const result = kind === "delivery"
+    ? moveToRunnerDeliveryTarget(creep, target, stroke)
+    : creep.moveTo(target, { visualizePathStyle: { stroke } });
   if (result === ERR_NO_PATH) {
     recordRunnerMovementTick(kind, "failedToPath");
     return;

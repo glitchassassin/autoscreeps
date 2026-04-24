@@ -167,6 +167,45 @@ describe("role execution", () => {
     expect(Memory.telemetry?.runnerStateTicks?.idleNoDeliveryTarget).toBe(1);
   });
 
+  it("runners deliver to extensions when the spawn is full", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+    const spawn = makeSpawn({ freeCapacity: 0, storedEnergy: 300 });
+    const extension = makeExtension({ freeCapacity: 50, storedEnergy: 0 });
+    const creep = makeCreep({
+      role: "runner",
+      working: true,
+      energy: 50,
+      roomFind: vi.fn((type: FindConstant) => type === FIND_MY_STRUCTURES ? [extension] : [])
+    });
+    testGlobal.Game.spawns = { Spawn1: spawn } as Game["spawns"];
+
+    runRunner(creep);
+
+    expect(creep.transfer).toHaveBeenCalledWith(extension, RESOURCE_ENERGY);
+    expect(Memory.telemetry?.energy?.transferred).toBe(50);
+  });
+
+  it("runners move to a reserved spawn delivery pad while delivering", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+    const spawn = makeSpawn({ freeCapacity: 300, x: 10, y: 10 });
+    const creep = makeCreep({
+      role: "runner",
+      working: true,
+      energy: 50,
+      transferResult: ERR_NOT_IN_RANGE,
+      x: 5,
+      y: 5
+    });
+    testGlobal.Game.spawns = { Spawn1: spawn } as Game["spawns"];
+
+    runRunner(creep);
+
+    expect(creep.moveTo).toHaveBeenCalledWith(expect.objectContaining({ x: 10, y: 9, roomName: "W0N0" }), {
+      range: 0,
+      visualizePathStyle: { stroke: "#ffffff" }
+    });
+  });
+
   it("upgraders upgrade the controller once they have energy", () => {
     const controller = { my: true, pos: { x: 15, y: 15, roomName: "W0N0" } } as StructureController;
     const creep = makeCreep({ role: "upgrader", energy: 50, activeWorkParts: 1, controller });
@@ -175,6 +214,24 @@ describe("role execution", () => {
 
     expect(creep.upgradeController).toHaveBeenCalledWith(controller);
     expect(Memory.telemetry?.energy?.upgraded).toBe(1);
+  });
+
+  it("upgraders move within upgrade range instead of adjacent to the controller", () => {
+    const controller = { my: true, pos: makeRoomPosition(15, 15) } as StructureController;
+    const creep = makeCreep({
+      role: "upgrader",
+      energy: 50,
+      activeWorkParts: 1,
+      controller,
+      upgradeResult: ERR_NOT_IN_RANGE
+    });
+
+    runUpgrader(creep);
+
+    expect(creep.moveTo).toHaveBeenCalledWith(controller, expect.objectContaining({
+      range: 3,
+      visualizePathStyle: { stroke: "#ffffff" }
+    }));
   });
 
   it("upgraders only withdraw from a full spawn", () => {
@@ -206,7 +263,7 @@ describe("role execution", () => {
     expect(Memory.telemetry?.energy?.withdrawn).toBe(50);
   });
 
-  it("builders move to the spawn while waiting for it to fill", () => {
+  it("builders do not move to the spawn while waiting for it to fill", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game };
     const spawn = makeSpawn({ freeCapacity: 300, storedEnergy: 0 });
     const creep = makeCreep({ role: "builder", working: false, energy: 0 });
@@ -215,7 +272,22 @@ describe("role execution", () => {
     runBuilder(creep);
 
     expect(creep.withdraw).not.toHaveBeenCalled();
-    expect(creep.moveTo).toHaveBeenCalledWith(spawn, { visualizePathStyle: { stroke: "#ffaa00" } });
+    expect(creep.moveTo).not.toHaveBeenCalled();
+  });
+
+  it("builders move off spawn access tiles while waiting for energy", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+    const spawn = makeSpawn({ freeCapacity: 300, storedEnergy: 0, x: 10, y: 10 });
+    const creep = makeCreep({ role: "builder", working: false, energy: 0, x: 10, y: 9 });
+    testGlobal.Game.spawns = { Spawn1: spawn } as Game["spawns"];
+
+    runBuilder(creep);
+
+    expect(creep.withdraw).not.toHaveBeenCalled();
+    expect(creep.moveTo).toHaveBeenCalledWith(expect.objectContaining({ y: 8 }), {
+      range: 0,
+      visualizePathStyle: { stroke: "#ffaa00" }
+    });
   });
 
   it("builders build the closest owned construction site while working", () => {
@@ -247,7 +319,10 @@ describe("role execution", () => {
 
     runBuilder(creep);
 
-    expect(creep.moveTo).toHaveBeenCalledWith(site, { visualizePathStyle: { stroke: "#ffffff" } });
+    expect(creep.moveTo).toHaveBeenCalledWith(site, expect.objectContaining({
+      range: 3,
+      visualizePathStyle: { stroke: "#ffffff" }
+    }));
   });
 
   it("builders upgrade only when no construction target exists", () => {
@@ -259,14 +334,41 @@ describe("role execution", () => {
     expect(creep.build).not.toHaveBeenCalled();
     expect(creep.upgradeController).toHaveBeenCalledWith(controller);
   });
+
+  it("builders move within upgrade range when falling back to controller work", () => {
+    const controller = { my: true, pos: makeRoomPosition(15, 15) } as StructureController;
+    const creep = makeCreep({
+      role: "builder",
+      working: true,
+      energy: 50,
+      activeWorkParts: 1,
+      controller,
+      upgradeResult: ERR_NOT_IN_RANGE
+    });
+
+    runBuilder(creep);
+
+    expect(creep.moveTo).toHaveBeenCalledWith(controller, expect.objectContaining({
+      range: 3,
+      visualizePathStyle: { stroke: "#ffffff" }
+    }));
+  });
 });
 
-function makeSpawn(input: { freeCapacity: number; storedEnergy?: number }): StructureSpawn {
+function makeSpawn(input: { freeCapacity: number; storedEnergy?: number; x?: number; y?: number }): StructureSpawn {
   return {
+    id: "spawn-1" as Id<StructureSpawn>,
     name: "Spawn1",
+    structureType: STRUCTURE_SPAWN,
+    pos: makeRoomPosition(input.x ?? 10, input.y ?? 10),
     room: {
-      name: "W0N0"
-    } as Room,
+      name: "W0N0",
+      controller: null,
+      find: vi.fn((type: FindConstant) => type === FIND_SOURCES ? [] : []),
+      getTerrain: vi.fn(() => ({
+        get: vi.fn(() => 0)
+      }))
+    } as unknown as Room,
     store: {
       [RESOURCE_ENERGY]: input.storedEnergy ?? 0,
       getFreeCapacity: vi.fn(() => input.freeCapacity)
@@ -275,13 +377,28 @@ function makeSpawn(input: { freeCapacity: number; storedEnergy?: number }): Stru
   } as unknown as StructureSpawn;
 }
 
+function makeExtension(input: { freeCapacity: number; storedEnergy?: number; x?: number; y?: number }): StructureExtension {
+  return {
+    id: "extension-1" as Id<StructureExtension>,
+    structureType: STRUCTURE_EXTENSION,
+    pos: makeRoomPosition(input.x ?? 11, input.y ?? 10),
+    room: {
+      name: "W0N0"
+    } as Room,
+    store: {
+      [RESOURCE_ENERGY]: input.storedEnergy ?? 0,
+      getFreeCapacity: vi.fn(() => input.freeCapacity)
+    }
+  } as unknown as StructureExtension;
+}
+
 function makeConstructionSite(structureType: BuildableStructureConstant, x: number, y: number): ConstructionSite {
   return {
     id: `${structureType}-${x}-${y}` as Id<ConstructionSite>,
     structureType,
     progress: 0,
     progressTotal: 3000,
-    pos: { x, y, roomName: "W0N0" }
+    pos: makeRoomPosition(x, y)
   } as ConstructionSite;
 }
 
@@ -294,6 +411,7 @@ function makeCreep(input: {
   pickupResult?: ScreepsReturnCode;
   transferResult?: ScreepsReturnCode;
   buildResult?: ScreepsReturnCode;
+  upgradeResult?: ScreepsReturnCode;
   moveToResult?: ScreepsReturnCode;
   freeCapacity?: number;
   controller?: StructureController;
@@ -314,14 +432,12 @@ function makeCreep(input: {
     room: {
       name: "W0N0",
       controller: input.controller ?? null,
-      find: vi.fn((type: FindConstant) => input.roomFind?.(type) ?? [])
+      find: vi.fn((type: FindConstant) => input.roomFind?.(type) ?? []),
+      getTerrain: vi.fn(() => ({
+        get: vi.fn(() => 0)
+      }))
     } as unknown as Room,
-    pos: {
-      x: input.x ?? 5,
-      y: input.y ?? 5,
-      roomName: input.roomName ?? "W0N0",
-      findClosestByPath: vi.fn((targets: object[] | number) => input.findClosestByPath?.(targets) ?? (Array.isArray(targets) ? targets[0] ?? null : null))
-    } as unknown as RoomPosition,
+    pos: makeRoomPosition(input.x ?? 5, input.y ?? 5, input.roomName ?? "W0N0", input.findClosestByPath),
     store: {
       [RESOURCE_ENERGY]: input.energy ?? 0,
       getFreeCapacity: vi.fn(() => input.freeCapacity ?? Math.max(0, 50 - (input.energy ?? 0)))
@@ -331,8 +447,39 @@ function makeCreep(input: {
     pickup: vi.fn(() => input.pickupResult ?? OK),
     withdraw: vi.fn(() => OK),
     build: vi.fn(() => input.buildResult ?? OK),
-    upgradeController: vi.fn(() => OK),
+    upgradeController: vi.fn(() => input.upgradeResult ?? OK),
     moveTo: vi.fn(() => input.moveToResult ?? OK),
     getActiveBodyparts: vi.fn((part: BodyPartConstant) => part === WORK ? input.activeWorkParts ?? 0 : 0)
   } as unknown as Creep;
+}
+
+function makeRoomPosition(
+  x: number,
+  y: number,
+  roomName = "W0N0",
+  findClosestByPath?: (targets: object[] | number) => unknown
+): RoomPosition {
+  return {
+    x,
+    y,
+    roomName,
+    findClosestByPath: vi.fn((targets: object[] | number) => findClosestByPath?.(targets) ?? (Array.isArray(targets) ? targets[0] ?? null : null)),
+    getRangeTo: vi.fn((targetOrX: number | RoomPosition | { pos: RoomPosition }, targetY?: number) => {
+      const target = typeof targetOrX === "number"
+        ? { x: targetOrX, y: targetY ?? 0 }
+        : "pos" in targetOrX
+          ? targetOrX.pos
+          : targetOrX;
+      return Math.max(Math.abs(x - target.x), Math.abs(y - target.y));
+    }),
+    isEqualTo: vi.fn((target: RoomPosition | { pos: RoomPosition }) => {
+      const position = "pos" in target ? target.pos : target;
+      return x === position.x && y === position.y && roomName === position.roomName;
+    }),
+    isNearTo: vi.fn((target: RoomPosition | { pos: RoomPosition }) => {
+      const position = "pos" in target ? target.pos : target;
+      return Math.max(Math.abs(x - position.x), Math.abs(y - position.y)) <= 1;
+    }),
+    lookFor: vi.fn(() => [])
+  } as unknown as RoomPosition;
 }

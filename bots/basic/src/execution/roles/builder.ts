@@ -1,5 +1,6 @@
 import { canWithdrawEnergy, findWithdrawTarget } from "./energy";
 import { updateWorkingState } from "./working-state";
+import { moveAwayFromSpawnAccess, moveToWithdrawTarget, moveToWorkTarget } from "../traffic";
 import { calculateBuildEnergy, calculateUpgradeEnergy, calculateWithdrawEnergy, createEnergyAccountingContext, reserveBuildEnergy, reserveUpgradeEnergy, reserveWithdrawEnergy, type EnergyAccountingContext } from "../energy-accounting";
 import { adjustRememberedCreepEnergy, recordBuiltEnergy, recordUpgradedEnergy, recordWithdrawnEnergy } from "../../state/telemetry";
 
@@ -27,14 +28,14 @@ function refillEnergy(creep: Creep, energyContext: EnergyAccountingContext): voi
   }
 
   if (!canWithdrawEnergy(withdrawTarget)) {
-    creep.moveTo(withdrawTarget, { visualizePathStyle: { stroke: "#ffaa00" } });
+    moveAwayFromSpawnAccess(creep, withdrawTarget, "#ffaa00");
     return;
   }
 
   const withdrawnEnergy = calculateWithdrawEnergy(energyContext, creep, withdrawTarget);
   const result = creep.withdraw(withdrawTarget, RESOURCE_ENERGY);
   if (result === ERR_NOT_IN_RANGE) {
-    creep.moveTo(withdrawTarget, { visualizePathStyle: { stroke: "#ffaa00" } });
+    moveToWithdrawTarget(creep, withdrawTarget, "#ffaa00");
     return;
   }
   if (result !== OK) {
@@ -59,7 +60,7 @@ function buildSite(creep: Creep, target: ConstructionSite, energyContext: Energy
   const builtEnergy = calculateBuildEnergy(energyContext, creep, target);
   const result = creep.build(target);
   if (result === ERR_NOT_IN_RANGE) {
-    creep.moveTo(target, { visualizePathStyle: { stroke: "#ffffff" } });
+    moveToWorkTarget(creep, target, 3, "#ffffff");
     return;
   }
   if (result !== OK) {
@@ -80,7 +81,7 @@ function upgradeController(creep: Creep, energyContext: EnergyAccountingContext)
   const upgradedEnergy = calculateUpgradeEnergy(energyContext, creep, controller);
   const result = creep.upgradeController(controller);
   if (result === ERR_NOT_IN_RANGE) {
-    creep.moveTo(controller, { visualizePathStyle: { stroke: "#ffffff" } });
+    moveToWorkTarget(creep, controller, 3, "#ffffff");
     return;
   }
   if (result !== OK) {

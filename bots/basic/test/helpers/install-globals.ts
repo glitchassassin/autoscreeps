@@ -1,4 +1,38 @@
 export function installScreepsGlobals(): void {
+  class TestRoomPosition {
+    constructor(
+      readonly x: number,
+      readonly y: number,
+      readonly roomName: string
+    ) {}
+
+    getRangeTo(targetOrX: number | RoomPosition | { pos: RoomPosition }, y?: number): number {
+      const target = typeof targetOrX === "number"
+        ? { x: targetOrX, y: y ?? 0 }
+        : "pos" in targetOrX
+          ? targetOrX.pos
+          : targetOrX;
+      return Math.max(Math.abs(this.x - target.x), Math.abs(this.y - target.y));
+    }
+
+    isEqualTo(target: RoomPosition | { pos: RoomPosition }): boolean {
+      const position = "pos" in target ? target.pos : target;
+      return this.x === position.x && this.y === position.y && this.roomName === position.roomName;
+    }
+
+    isNearTo(target: RoomPosition | { pos: RoomPosition }): boolean {
+      return this.getRangeTo(target) <= 1;
+    }
+
+    findClosestByPath<T>(targets: T[]): T | null {
+      return targets[0] ?? null;
+    }
+
+    lookFor(): unknown[] {
+      return [];
+    }
+  }
+
   Object.assign(globalThis, {
     OK: 0,
     ERR_TIRED: -11,
@@ -19,6 +53,7 @@ export function installScreepsGlobals(): void {
     FIND_DROPPED_RESOURCES: 5,
     FIND_MINERALS: 6,
     FIND_DEPOSITS: 7,
+    LOOK_CREEPS: "creep",
     STRUCTURE_SPAWN: "spawn",
     STRUCTURE_EXTENSION: "extension",
     STRUCTURE_TOWER: "tower",
@@ -39,6 +74,7 @@ export function installScreepsGlobals(): void {
     RawMemory: {
       segments: {},
       setActiveSegments: () => {}
-    }
+    },
+    RoomPosition: TestRoomPosition
   });
 }
