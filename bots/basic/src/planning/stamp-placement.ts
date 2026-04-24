@@ -123,6 +123,10 @@ type RoomFeatures = {
   reservedPathMasks: ReservedPathMasks;
   terrainDistanceTransform: ReturnType<typeof createTerrainDistanceTransform>;
   exitDistanceMap: DijkstraMap;
+  projectedNormalHubCandidates: Candidate[];
+  projectedTempleHubCandidates: Candidate[];
+  projectedFastfillerCandidates: Candidate[];
+  projectedLabCandidates: Candidate[];
 };
 
 type ReservedPathMasks = {
@@ -406,6 +410,10 @@ function searchStampPlacements(room: RoomPlanningRoomData, policy: RoomPlanningP
   let best: SearchResult | null = null;
 
   for (const hub of hubCandidates) {
+    if (best !== null && compareScorePrefix(hub.score, best.plan.score, hub.score.length) > 0) {
+      break;
+    }
+
     const hubState = placeStamp(baseState, hub);
     const pod1Candidates = generateFastfillerCandidates(features, hubState, hub, topK);
 
@@ -463,40 +471,37 @@ function searchStampPlacements(room: RoomPlanningRoomData, policy: RoomPlanningP
 }
 
 function generateHubCandidates(features: RoomFeatures, state: PlacementState, policy: RoomPlanningPolicy, topK: number): Candidate[] {
-  const template = policy === "temple" ? templeHubTemplate : normalHubTemplate;
+  const projectedCandidates = policy === "temple"
+    ? features.projectedTempleHubCandidates
+    : features.projectedNormalHubCandidates;
   const candidates: Candidate[] = [];
 
-  for (let y = 1; y < roomSize - 1; y += 1) {
-    for (let x = 1; x < roomSize - 1; x += 1) {
-      for (const rotation of template.rotations) {
-        const candidate = projectStamp(template, { x, y }, rotation, []);
-        if (!fitsStamp(features, state, candidate)) {
-          continue;
-        }
-
-        const center = candidate.anchors.hubCenter;
-        if (!center) {
-          continue;
-        }
-
-        if (range(center, features.controller) <= 4 || features.sources.some((source) => range(center, source) <= 4)) {
-          continue;
-        }
-
-        if (policy === "temple" && !satisfiesTempleHubConstraints(features, state, candidate)) {
-          continue;
-        }
-
-        if (!hasOpenNeighborAfterPlacement(features, state, candidate, getHubSpawnAnchor(candidate))) {
-          continue;
-        }
-
-        candidate.score = policy === "temple"
-          ? scoreTempleHub(features, candidate)
-          : scoreNormalHub(features, candidate);
-        candidates.push(candidate);
-      }
+  for (const candidate of projectedCandidates) {
+    if (!fitsStamp(state, candidate)) {
+      continue;
     }
+
+    const center = candidate.anchors.hubCenter;
+    if (!center) {
+      continue;
+    }
+
+    if (range(center, features.controller) <= 4 || features.sources.some((source) => range(center, source) <= 4)) {
+      continue;
+    }
+
+    if (policy === "temple" && !satisfiesTempleHubConstraints(features, state, candidate)) {
+      continue;
+    }
+
+    if (!hasOpenNeighborAfterPlacement(features, state, candidate, getHubSpawnAnchor(candidate))) {
+      continue;
+    }
+
+    candidate.score = policy === "temple"
+      ? scoreTempleHub(features, candidate)
+      : scoreNormalHub(features, candidate);
+    candidates.push(candidate);
   }
 
   return topCandidates(candidates, topK);
@@ -510,35 +515,30 @@ function generateFastfillerCandidates(features: RoomFeatures, state: PlacementSt
 
   const preliminary: Candidate[] = [];
 
-  for (let y = 1; y < roomSize - 1; y += 1) {
-    for (let x = 1; x < roomSize - 1; x += 1) {
-      for (const rotation of fastfillerTemplate.rotations) {
-        const candidate = projectStamp(fastfillerTemplate, { x, y }, rotation, []);
-        if (!fitsStamp(features, state, candidate)) {
-          continue;
-        }
-
-        if (!hasOpenNeighborAfterPlacement(features, state, candidate, candidate.anchor)) {
-          continue;
-        }
-
-        const metrics = scoreFastfillerWithPaths(paths, candidate);
-        if (metrics === null) {
-          continue;
-        }
-
-        const { storageDistance, sourceDetours } = metrics;
-        const bestSourceDetour = Math.min(sourceDetours[0], sourceDetours[1]);
-        if (bestSourceDetour === dijkstraUnreachable) {
-          continue;
-        }
-
-        candidate.storageDistance = storageDistance;
-        candidate.sourceDetours = sourceDetours;
-        candidate.score = [-storageDistance, -bestSourceDetour, -candidate.anchor.y, -candidate.anchor.x];
-        preliminary.push(candidate);
-      }
+  for (const candidate of features.projectedFastfillerCandidates) {
+    if (!fitsStamp(state, candidate)) {
+      continue;
     }
+
+    if (!hasOpenNeighborAfterPlacement(features, state, candidate, candidate.anchor)) {
+      continue;
+    }
+
+    const metrics = scoreFastfillerWithPaths(paths, candidate);
+    if (metrics === null) {
+      continue;
+    }
+
+    const { storageDistance, sourceDetours } = metrics;
+    const bestSourceDetour = Math.min(sourceDetours[0], sourceDetours[1]);
+    if (bestSourceDetour === dijkstraUnreachable) {
+      continue;
+    }
+
+    candidate.storageDistance = storageDistance;
+    candidate.sourceDetours = sourceDetours;
+    candidate.score = [-storageDistance, -bestSourceDetour, -candidate.anchor.y, -candidate.anchor.x];
+    preliminary.push(candidate);
   }
 
   preliminary.sort(compareCandidates);
@@ -583,24 +583,19 @@ function generateLabCandidates(features: RoomFeatures, state: PlacementState, hu
 
   const preliminary: Candidate[] = [];
 
-  for (let y = 1; y < roomSize - 1; y += 1) {
-    for (let x = 1; x < roomSize - 1; x += 1) {
-      for (const rotation of labTemplate.rotations) {
-        const candidate = projectStamp(labTemplate, { x, y }, rotation, []);
-        if (!fitsStamp(features, state, candidate)) {
-          continue;
-        }
-
-        const entrance = candidate.anchors.entrance ?? candidate.anchor;
-        const labScore = createDirectLabScore(paths, entrance);
-        if (labScore === null) {
-          continue;
-        }
-
-        assignLabScore(candidate, labScore);
-        preliminary.push(candidate);
-      }
+  for (const candidate of features.projectedLabCandidates) {
+    if (!fitsStamp(state, candidate)) {
+      continue;
     }
+
+    const entrance = candidate.anchors.entrance ?? candidate.anchor;
+    const labScore = createDirectLabScore(paths, entrance);
+    if (labScore === null) {
+      continue;
+    }
+
+    assignLabScore(candidate, labScore);
+    preliminary.push(candidate);
   }
 
   preliminary.sort(compareCandidates);
@@ -745,8 +740,13 @@ function scorePodSourceAssignment(first: [number, number], second: [number, numb
 }
 
 function scoreLabCandidate(features: RoomFeatures, state: PlacementState, hub: StampPlacement, labs: Candidate): LabScore | null {
-  const paths = createPathContext(features, state, hub);
-  return scoreLabAccess(features, state, paths.storageDistanceMap, paths.terminalDistanceMap, labs);
+  return scoreLabAccess(
+    features,
+    state,
+    createStorageDistanceMap(features, state, hub),
+    createTerminalDistanceMap(features, state, hub),
+    labs
+  );
 }
 
 function createDirectLabScore(paths: PathContext, entrance: RoomStampAnchor): LabScore | null {
@@ -949,13 +949,14 @@ function createRoomFeatures(room: RoomPlanningRoomData): RoomFeatures {
   if (exits.length === 0) {
     throw new Error(`Room '${room.roomName}' has no walkable exits.`);
   }
-  const reservedPathMasks = createReservedPathMasks(controller, [sources[0]!, sources[1]!]);
+  const sourcePair: [RoomPlanningObject, RoomPlanningObject] = [sources[0]!, sources[1]!];
+  const reservedPathMasks = createReservedPathMasks(controller, sourcePair);
 
   return {
     roomName: room.roomName,
     terrain: room.terrain,
     controller,
-    sources: [sources[0]!, sources[1]!],
+    sources: sourcePair,
     mineral: room.objects.find((object) => object.type === "mineral") ?? null,
     exits,
     baseOccupied,
@@ -964,7 +965,11 @@ function createRoomFeatures(room: RoomPlanningRoomData): RoomFeatures {
     terrainDistanceTransform: createTerrainDistanceTransform(room.terrain),
     exitDistanceMap: createDijkstraMap(room.terrain, exits, {
       costMatrix: new GridCostMatrix(basePathBlocked, reservedPathMasks.edgeOrigin)
-    })
+    }),
+    projectedNormalHubCandidates: createProjectedCandidates(room.terrain, controller, sourcePair, normalHubTemplate),
+    projectedTempleHubCandidates: createProjectedCandidates(room.terrain, controller, sourcePair, templeHubTemplate),
+    projectedFastfillerCandidates: createProjectedCandidates(room.terrain, controller, sourcePair, fastfillerTemplate),
+    projectedLabCandidates: createProjectedCandidates(room.terrain, controller, sourcePair, labTemplate)
   };
 }
 
@@ -999,23 +1004,12 @@ function placeStamp(state: PlacementState, placement: StampPlacement): Placement
   };
 }
 
-function fitsStamp(features: RoomFeatures, state: PlacementState, placement: StampPlacement): boolean {
+function fitsStamp(state: PlacementState, placement: StampPlacement): boolean {
   for (const tile of placement.blockedTiles) {
-    const { x, y } = fromIndex(tile);
-    if (!isValidIndex(tile) || !isRoadPlanningTerrain(features.terrain, x, y) || isReservedStampTileForFeatures(features, x, y) || state.occupied[tile] !== 0) {
+    if (state.occupied[tile] !== 0) {
       return false;
     }
   }
-  for (const constructionTile of getStampConstructionTiles(placement)) {
-    const { x, y } = fromIndex(constructionTile.tile);
-    if (
-      !isValidIndex(constructionTile.tile)
-      || !isConstructionSiteTerrainAllowed(features.terrain, constructionTile.type, x, y)
-    ) {
-      return false;
-    }
-  }
-
   return true;
 }
 
@@ -1046,6 +1040,51 @@ function projectStamp(template: StampTemplate, anchor: Coord, rotation: StampRot
     roadTiles,
     score
   };
+}
+
+function createProjectedCandidates(
+  terrain: string,
+  controller: RoomPlanningObject,
+  sources: [RoomPlanningObject, RoomPlanningObject],
+  template: StampTemplate
+): Candidate[] {
+  const candidates: Candidate[] = [];
+  for (let y = 1; y < roomSize - 1; y += 1) {
+    for (let x = 1; x < roomSize - 1; x += 1) {
+      for (const rotation of template.rotations) {
+        const candidate = projectStamp(template, { x, y }, rotation, []);
+        if (fitsStampStatic(terrain, controller, sources, candidate)) {
+          candidates.push(candidate);
+        }
+      }
+    }
+  }
+  return candidates;
+}
+
+function fitsStampStatic(
+  terrain: string,
+  controller: RoomPlanningObject,
+  sources: [RoomPlanningObject, RoomPlanningObject],
+  placement: StampPlacement
+): boolean {
+  for (const tile of placement.blockedTiles) {
+    const { x, y } = fromIndex(tile);
+    if (!isValidIndex(tile) || !isRoadPlanningTerrain(terrain, x, y) || isReservedStampTile(controller, sources, x, y)) {
+      return false;
+    }
+  }
+  for (const constructionTile of getStampConstructionTiles(placement)) {
+    const { x, y } = fromIndex(constructionTile.tile);
+    if (
+      !isValidIndex(constructionTile.tile)
+      || !isConstructionSiteTerrainAllowed(terrain, constructionTile.type, x, y)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function projectOffsets(offsets: Coord[], anchor: Coord, rotation: StampRotation): number[] {
@@ -1110,6 +1149,10 @@ function compareCandidates(left: Candidate, right: Candidate): number {
 
 function compareScore(left: number[], right: number[]): number {
   const length = Math.max(left.length, right.length);
+  return compareScorePrefix(left, right, length);
+}
+
+function compareScorePrefix(left: number[], right: number[], length: number): number {
   for (let index = 0; index < length; index += 1) {
     const leftScore = left[index] ?? 0;
     const rightScore = right[index] ?? 0;
@@ -1335,16 +1378,6 @@ function isNaturalBlocker(object: RoomPlanningObject): boolean {
   return object.type === "controller" || object.type === "source" || object.type === "mineral" || object.type === "deposit";
 }
 
-function isReservedStampTileForFeatures(features: RoomFeatures, x: number, y: number): boolean {
-  if (!isInRoom(x, y)) {
-    return false;
-  }
-
-  const coord = { x, y };
-  return range(coord, features.controller) <= controllerStampReserveRange
-    || features.sources.some((source) => range(coord, source) <= sourceStampReserveRange);
-}
-
 function isReservedStampTileForRoom(room: RoomPlanningRoomData, x: number, y: number): boolean {
   if (!isInRoom(x, y)) {
     return false;
@@ -1355,6 +1388,17 @@ function isReservedStampTileForRoom(room: RoomPlanningRoomData, x: number, y: nu
     (object.type === "controller" && range(coord, object) <= controllerStampReserveRange)
     || (object.type === "source" && range(coord, object) <= sourceStampReserveRange)
   ));
+}
+
+function isReservedStampTile(
+  controller: RoomPlanningObject,
+  sources: [RoomPlanningObject, RoomPlanningObject],
+  x: number,
+  y: number
+): boolean {
+  const coord = { x, y };
+  return range(coord, controller) <= controllerStampReserveRange
+    || sources.some((source) => range(coord, source) <= sourceStampReserveRange);
 }
 
 function createReservedPathMasks(controller: RoomPlanningObject, sources: [RoomPlanningObject, RoomPlanningObject]): ReservedPathMasks {
