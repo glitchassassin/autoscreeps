@@ -12,6 +12,7 @@ import type {
   RunMetrics,
   RunRecord,
   RunSample,
+  RunSampleRoomImage,
   RunSampleRoomMetrics,
   RunTerminationReason,
   TerminalOutcome,
@@ -29,6 +30,7 @@ import { createWorkspaceSnapshot, parseVariantSource, resolveRepoRoot, withGitWo
 import { appendEvent, appendIndexEntry, appendRunSample, createRunWorkspace, writeMetrics, writeRunRecord, writeVariantRecords } from "./history.ts";
 import { generateExperimentMap } from "./map-generator.ts";
 import { importMapFileOffline } from "./offline-map-import.ts";
+import { writeRoomImageArtifact } from "./room-image.ts";
 import { buildRunSummaryMetrics, shouldCaptureRunSample } from "./run-samples.ts";
 import { loadScenario } from "./scenario.ts";
 import type { ScenarioConfig, ScenarioRoomMutation, TerminalCondition, TerminalConditionSet } from "./scenario.ts";
@@ -381,6 +383,37 @@ async function runExperiment(input: ExperimentRunInput): Promise<RunDetails> {
 
     let lastProcessedGameTime = runRecord.run.startGameTime;
     let lastSampleGameTime: number | null = null;
+    const terrainByRoom = new Map<string, string>();
+    let roomImageCaptureFailed = false;
+
+    const attachRoomImages = async (sample: RunSample, gameTime: number, roomObjectsByRole: RoleRecord<RoomObjectsResponse>): Promise<void> => {
+      if (roomImageCaptureFailed) {
+        return;
+      }
+
+      try {
+        const roomImages = await captureRunRoomImages({
+          api,
+          runDir,
+          gameTime,
+          roles,
+          rooms: runRecord.rooms,
+          roomObjectsByRole,
+          terrainByRoom
+        });
+        if (Object.keys(roomImages).length > 0) {
+          sample.roomImages = roomImages;
+        }
+      } catch (error) {
+        if (!roomImageCaptureFailed) {
+          roomImageCaptureFailed = true;
+          await logEvent(runDir, "error", "roomImage.failed", "Failed to capture deterministic room images.", {
+            gameTime,
+            error: error instanceof Error ? error.stack ?? error.message : String(error)
+          });
+        }
+      }
+    };
 
     const waitResult = await waitForSimulation({
       cli,
@@ -458,6 +491,9 @@ async function runExperiment(input: ExperimentRunInput): Promise<RunDetails> {
 
         if (captureSample && stats) {
           const sample = buildRunSample(gameTime, stats, credentials, runRecord.rooms, reportsByRole, roomObjectsByRole, roles);
+          if (roomObjectsByRole) {
+            await attachRoomImages(sample, gameTime, roomObjectsByRole);
+          }
           samples.push(sample);
           lastSampleGameTime = gameTime;
           await appendRunSample(runDir, sample);
@@ -524,15 +560,17 @@ async function runExperiment(input: ExperimentRunInput): Promise<RunDetails> {
       const roomEntries = await Promise.all(
         roles.map(async (role) => [role, await api.getRoomObjects(runRecord.rooms[role]!)] as const)
       );
+      const finalRoomObjectsByRole = Object.fromEntries(roomEntries) as RoleRecord<RoomObjectsResponse>;
       const finalSample = buildRunSample(
         endGameTime,
         finalStats,
         credentials,
         runRecord.rooms,
         reportsByRole,
-        Object.fromEntries(roomEntries) as RoleRecord<RoomObjectsResponse>,
+        finalRoomObjectsByRole,
         roles
       );
+      await attachRoomImages(finalSample, endGameTime, finalRoomObjectsByRole);
       samples.push(finalSample);
       await appendRunSample(runDir, finalSample);
     }
@@ -798,6 +836,46 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+async function captureRunRoomImages(input: {
+  api: Pick<ScreepsApiClient, "getRoomTerrain">;
+  runDir: string;
+  gameTime: number;
+  roles: VariantRole[];
+  rooms: RoleRecord<string>;
+  roomObjectsByRole: RoleRecord<RoomObjectsResponse>;
+  terrainByRoom: Map<string, string>;
+}): Promise<RoleRecord<RunSampleRoomImage>> {
+  const entries = await Promise.all(
+    input.roles.map(async (role) => {
+      const room = input.rooms[role];
+      const roomObjects = input.roomObjectsByRole[role];
+      if (!room || !roomObjects) {
+        return null;
+      }
+
+      let terrain = input.terrainByRoom.get(room);
+      if (!terrain) {
+        terrain = await input.api.getRoomTerrain(room);
+        input.terrainByRoom.set(room, terrain);
+      }
+
+      return [
+        role,
+        await writeRoomImageArtifact({
+          runDir: input.runDir,
+          role,
+          gameTime: input.gameTime,
+          room,
+          terrain,
+          roomObjects
+        })
+      ] as const;
+    })
+  );
+
+  return Object.fromEntries(entries.filter((entry): entry is NonNullable<typeof entry> => entry !== null)) as RoleRecord<RunSampleRoomImage>;
 }
 
 function summarizeUserTerminalStats(

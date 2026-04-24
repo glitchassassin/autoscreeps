@@ -84,4 +84,28 @@ describe("ScreepsApiClient", () => {
     const request = fetchMock.mock.calls[0]?.[0] as Request;
     expect(request.url).toBe("http://127.0.0.1:21025/api/game/shards/info");
   });
+
+  it("reads encoded room terrain", async () => {
+    const encodedTerrain = "0".repeat(2500);
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        terrain: [
+          {
+            room: "W1N1",
+            type: "terrain",
+            terrain: encodedTerrain
+          }
+        ]
+      }), { status: 200 }));
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const api = new ScreepsApiClient("http://127.0.0.1:21025");
+
+    await expect(api.getRoomTerrain("W1N1")).resolves.toBe(encodedTerrain);
+
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    expect(request.url).toBe("http://127.0.0.1:21025/api/game/room-terrain?room=W1N1&encoded=1");
+  });
 });

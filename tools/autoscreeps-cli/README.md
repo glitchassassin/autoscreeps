@@ -47,3 +47,13 @@ node src/cli.ts experiment run suite \
 `autoscreeps experiment watch` follows the newest suite automatically and switches to a newer suite when one starts.
 
 `autoscreeps experiment watch <suite-id>` pins the watcher to a specific suite.
+
+## Room Images
+
+Sampled runs write deterministic room PNGs under each case directory:
+
+```text
+.autoscreeps/suites/<suite-id>/cases/<run-id>/room-images/<role>/<game-time>-<room>.png
+```
+
+Each image uses the server terrain palette as the base layer and overlays room objects. `RoomVisual` data is not rendered.

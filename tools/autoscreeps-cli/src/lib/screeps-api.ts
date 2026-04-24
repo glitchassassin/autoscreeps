@@ -33,6 +33,16 @@ export type RoomObjectsResponse = {
   users: Record<string, { username: string }>;
 };
 
+type RoomTerrainRecord = {
+  room?: string;
+  terrain?: string;
+  type?: string;
+};
+
+type RoomTerrainResponse = {
+  terrain?: string | RoomTerrainRecord | RoomTerrainRecord[];
+};
+
 export type StatsUserRecord = {
   username: string;
   rooms: number;
@@ -173,6 +183,17 @@ export class ScreepsApiClient {
     return await this.requestJson<RoomObjectsResponse>(`/api/game/room-objects?room=${encodeURIComponent(room)}`);
   }
 
+  async getRoomTerrain(room: string): Promise<string> {
+    const response = await this.requestJson<RoomTerrainResponse>(
+      `/api/game/room-terrain?room=${encodeURIComponent(room)}&encoded=1`
+    );
+    const terrain = extractEncodedTerrain(response, room);
+    if (!terrain) {
+      throw new Error(`Room terrain response did not include encoded terrain for '${room}'.`);
+    }
+    return terrain;
+  }
+
   async getStats(): Promise<StatsResponse> {
     return await this.requestJson<StatsResponse>("/stats");
   }
@@ -306,4 +327,20 @@ function delay(ms: number): Promise<void> {
 
 function hasNonEmptyModules(modules: Record<string, string>): boolean {
   return Object.values(modules).some((moduleSource) => moduleSource.length > 0);
+}
+
+function extractEncodedTerrain(response: RoomTerrainResponse, room: string): string | null {
+  if (typeof response.terrain === "string") {
+    return response.terrain;
+  }
+
+  if (!response.terrain) {
+    return null;
+  }
+
+  const records = Array.isArray(response.terrain) ? response.terrain : [response.terrain];
+  const record = records.find((item) => item.room === room && typeof item.terrain === "string")
+    ?? records.find((item) => typeof item.terrain === "string");
+
+  return typeof record?.terrain === "string" ? record.terrain : null;
 }

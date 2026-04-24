@@ -218,10 +218,20 @@ export type RunSampleRoomMetrics = {
   extensions: number | null;
 };
 
+export type RunSampleRoomImage = {
+  room: string;
+  path: string;
+  width: number;
+  height: number;
+  scale: number;
+  objects: number;
+};
+
 export type RunSample = {
   gameTime: number;
   users: RoleRecord<UserSampleMetrics>;
   rooms?: RoleRecord<RunSampleRoomMetrics>;
+  roomImages?: RoleRecord<RunSampleRoomImage>;
   reports?: RoleRecord<BotReport | null>;
 };
 
