@@ -12,6 +12,7 @@
     "visualizer:dev": "vite --config visualizer/vite.config.ts --host 0.0.0.0",
     "visualizer:build": "vite build --config visualizer/vite.config.ts",
     "benchmark:dijkstra": "node --expose-gc scripts/benchmark-dijkstra.ts",
+    "benchmark:repairable-dijkstra": "node --expose-gc scripts/benchmark-repairable-dijkstra.ts",
     "benchmark:distance-transform": "node --expose-gc scripts/benchmark-distance-transform.ts",
     "benchmark:stamp-placement": "node --expose-gc scripts/benchmark-stamp-placement.ts",
     "benchmark:road-planning": "node --expose-gc scripts/benchmark-road-planning.ts",

@@ -1,6 +1,13 @@
 import { createDijkstraMap, dijkstraUnreachable, type DijkstraMap } from "./dijkstra-map.ts";
 import { createTerrainDistanceTransform } from "./distance-transform.ts";
 import {
+  createRepairableDijkstraMap,
+  createRepairableDijkstraScratch,
+  getRepairedDijkstraDistance,
+  type RepairableDijkstraMap,
+  type RepairableDijkstraScratch
+} from "./repairable-dijkstra-map.ts";
+import {
   isConstructionSiteCoordinate,
   isConstructionSiteTerrainAllowed,
   isRoadPlanningTerrain,
@@ -147,10 +154,11 @@ type PlacementState = {
 };
 
 type PathContext = {
-  storageDistanceMap: DijkstraMap | null;
-  terminalDistanceMap: DijkstraMap | null;
+  storageDistanceMap: RepairableDijkstraMap | null;
+  terminalDistanceMap: RepairableDijkstraMap | null;
   sourceDistanceMaps: [DijkstraMap | null, DijkstraMap | null];
   storageToSourceDistances: [number, number];
+  repairScratch: RepairableDijkstraScratch;
 };
 
 type Candidate = StampPlacement & {
@@ -197,7 +205,9 @@ type FastfillerCandidateSet = ExpandableCandidateSet & {
   paths: PathContext;
 };
 
-type LabCandidateSet = ExpandableCandidateSet;
+type LabCandidateSet = ExpandableCandidateSet & {
+  paths: PathContext;
+};
 
 type CandidateGenerationCache = {
   fastfillers: Map<string, FastfillerCandidateSet>;
@@ -614,8 +624,7 @@ function expandFastfillerCandidateSet(
   for (const limit of candidateEvaluationLimits(candidateSet, topK)) {
     for (; candidateSet.evaluated < limit; candidateSet.evaluated += 1) {
       const candidate = candidateSet.preliminary[candidateSet.evaluated]!;
-      const candidateState = placeStamp(state, candidate);
-      const metrics = scoreFastfillerCandidate(features, candidateState, candidateSet.paths, hub, candidate);
+      const metrics = scoreFastfillerCandidate(candidateSet.paths, candidate);
       if (metrics === null) {
         continue;
       }
@@ -650,7 +659,7 @@ function generateLabCandidates(
   if (cache && !cached) {
     cache.labs.set(cacheKey, candidateSet);
   }
-  expandLabCandidateSet(features, state, hub, candidateSet, topK);
+  expandLabCandidateSet(features, state, candidateSet, topK);
   return topCandidates(getExactCandidatesForTopK(candidateSet, topK), topK);
 }
 
@@ -660,7 +669,8 @@ function createLabCandidateSet(features: RoomFeatures, state: PlacementState, hu
     return {
       preliminary: [],
       exactCandidates: [],
-      evaluated: 0
+      evaluated: 0,
+      paths
     };
   }
 
@@ -685,14 +695,14 @@ function createLabCandidateSet(features: RoomFeatures, state: PlacementState, hu
   return {
     preliminary,
     exactCandidates: [],
-    evaluated: 0
+    evaluated: 0,
+    paths
   };
 }
 
 function expandLabCandidateSet(
   features: RoomFeatures,
   state: PlacementState,
-  hub: StampPlacement,
   candidateSet: LabCandidateSet,
   topK: number
 ): void {
@@ -700,7 +710,7 @@ function expandLabCandidateSet(
     for (; candidateSet.evaluated < limit; candidateSet.evaluated += 1) {
       const candidate = candidateSet.preliminary[candidateSet.evaluated]!;
       const candidateState = placeStamp(state, candidate);
-      const labScore = scoreLabCandidate(features, candidateState, hub, candidate);
+      const labScore = scoreLabCandidate(features, candidateState, candidateSet.paths, candidate);
       if (labScore === null) {
         continue;
       }
@@ -794,14 +804,8 @@ function scoreCompleteLayout(
   ];
 }
 
-function scoreFastfillerCandidate(
-  features: RoomFeatures,
-  state: PlacementState,
-  previousPaths: PathContext,
-  hub: StampPlacement,
-  candidate: Candidate
-): FastfillerScore | null {
-  const storageDistance = scoreFastfillerStorageDistance(features, state, hub, candidate);
+function scoreFastfillerCandidate(previousPaths: PathContext, candidate: Candidate): FastfillerScore | null {
+  const storageDistance = scoreFastfillerStorageDistance(previousPaths, candidate);
   if (storageDistance === null) {
     return null;
   }
@@ -843,13 +847,17 @@ function scoreFastfillerWithPaths(paths: PathContext, candidate: Candidate): Fas
   };
 }
 
-function scoreFastfillerStorageDistance(features: RoomFeatures, state: PlacementState, hub: StampPlacement, candidate: Candidate): number | null {
-  const storageDistanceMap = createStorageDistanceMap(features, state, hub);
-  if (storageDistanceMap === null) {
+function scoreFastfillerStorageDistance(paths: PathContext, candidate: Candidate): number | null {
+  if (paths.storageDistanceMap === null) {
     return null;
   }
 
-  const storageDistance = storageDistanceMap.get(candidate.anchor.x, candidate.anchor.y);
+  const storageDistance = getRepairedDijkstraDistance(
+    paths.storageDistanceMap,
+    getAddedPathBlockedTiles(candidate),
+    [toIndex(candidate.anchor.x, candidate.anchor.y)],
+    paths.repairScratch
+  ).distance;
   return storageDistance === dijkstraUnreachable ? null : storageDistance;
 }
 
@@ -873,14 +881,30 @@ function scorePodSourceAssignment(first: [number, number], second: [number, numb
   return Math.min(first[0] + second[1], first[1] + second[0]);
 }
 
-function scoreLabCandidate(features: RoomFeatures, state: PlacementState, hub: StampPlacement, labs: Candidate): LabScore | null {
-  return scoreLabAccess(
-    features,
-    state,
-    createStorageDistanceMap(features, state, hub),
-    createTerminalDistanceMap(features, state, hub),
-    labs
-  );
+function scoreLabCandidate(features: RoomFeatures, state: PlacementState, paths: PathContext, labs: Candidate): LabScore | null {
+  if (paths.storageDistanceMap === null || paths.terminalDistanceMap === null) {
+    return null;
+  }
+
+  const entrance = labs.anchors.entrance ?? labs.anchor;
+  const accessGoals = getDirectPathGoals(features, state, entrance, features.reservedPathMasks.default);
+  if (accessGoals.length === 0) {
+    return null;
+  }
+
+  const addedBlockedTiles = getAddedPathBlockedTiles(labs);
+  const accessGoalTiles = accessGoals.map((goal) => toIndex(goal.x, goal.y));
+  const storageDistance = getRepairedDijkstraDistance(paths.storageDistanceMap, addedBlockedTiles, accessGoalTiles, paths.repairScratch).distance;
+  const terminalDistance = getRepairedDijkstraDistance(paths.terminalDistanceMap, addedBlockedTiles, accessGoalTiles, paths.repairScratch).distance;
+  if (storageDistance === dijkstraUnreachable || terminalDistance === dijkstraUnreachable) {
+    return null;
+  }
+
+  return {
+    storageDistance,
+    terminalDistance,
+    totalDistance: storageDistance + terminalDistance
+  };
 }
 
 function createDirectLabScore(paths: PathContext, entrance: RoomStampAnchor): LabScore | null {
@@ -1033,26 +1057,27 @@ function createPathContext(features: RoomFeatures, state: PlacementState, hub: S
       }
 
       return minDistance(sourceDistanceMap, storageGoals);
-    }) as [number, number]
+    }) as [number, number],
+    repairScratch: createRepairableDijkstraScratch()
   };
 }
 
-function createStorageDistanceMap(features: RoomFeatures, state: PlacementState, hub: StampPlacement): DijkstraMap | null {
+function createStorageDistanceMap(features: RoomFeatures, state: PlacementState, hub: StampPlacement): RepairableDijkstraMap | null {
   const storage = hub.anchors.storage ?? hub.anchor;
   const storageGoals = getPathGoals(features, state, storage, features.reservedPathMasks.default);
-  return storageGoals.length === 0 ? null : createDijkstraMap(features.terrain, storageGoals, {
+  return storageGoals.length === 0 ? null : createRepairableDijkstraMap(features.terrain, storageGoals, {
     costMatrix: new GridCostMatrix(state.pathBlocked, features.reservedPathMasks.default)
   });
 }
 
-function createTerminalDistanceMap(features: RoomFeatures, state: PlacementState, hub: StampPlacement): DijkstraMap | null {
+function createTerminalDistanceMap(features: RoomFeatures, state: PlacementState, hub: StampPlacement): RepairableDijkstraMap | null {
   const terminal = hub.anchors.terminal ?? null;
   if (terminal === null) {
     return null;
   }
 
   const terminalGoals = getPathGoals(features, state, terminal, features.reservedPathMasks.default);
-  return terminalGoals.length === 0 ? null : createDijkstraMap(features.terrain, terminalGoals, {
+  return terminalGoals.length === 0 ? null : createRepairableDijkstraMap(features.terrain, terminalGoals, {
     costMatrix: new GridCostMatrix(state.pathBlocked, features.reservedPathMasks.default)
   });
 }
@@ -1905,4 +1930,14 @@ const labTemplate: StampTemplate = {
 
 export function getStampPathBlockedTiles(stamp: StampPlacement): number[] {
   return stamp.pathBlockedTiles ?? stamp.blockedTiles;
+}
+
+function getAddedPathBlockedTiles(stamp: StampPlacement): number[] {
+  const pathBlockedTiles = getStampPathBlockedTiles(stamp);
+  if (stamp.kind !== "fastfiller") {
+    return pathBlockedTiles;
+  }
+
+  const anchorTile = toIndex(stamp.anchor.x, stamp.anchor.y);
+  return pathBlockedTiles.filter((tile) => tile !== anchorTile);
 }
