@@ -6,6 +6,7 @@ import type { RoomStampAnchor, RoomStampPlan, StampPlacement } from "./stamp-pla
 
 const roomSize = 50;
 const roomArea = roomSize * roomSize;
+const maxNeighbors = 8;
 const controllerReserveRange = 3;
 const sourceReserveRange = 2;
 const maxExtensions = 60;
@@ -68,17 +69,25 @@ type StructurePlanningContext = {
   controller: RoomPlanningObject;
   sources: [RoomPlanningObject, RoomPlanningObject];
   storage: RoomStampAnchor;
-  allowedMask: Uint8Array;
+  structureAllowed: Uint8Array;
+  accessRoadAllowed: Uint8Array;
   baseBlocked: Uint8Array;
   blocked: Uint8Array;
   roadMask: Uint8Array;
   roadDistances: Int32Array;
+  roadDistanceHistory: Int32Array[];
   accessRoadTiles: number[];
 };
 
 type Candidate = RoomStampAnchor & {
   tile: number;
   score: number[];
+};
+
+type CandidateScores = {
+  tiles: number[];
+  groups: Int16Array;
+  distances: Int32Array;
 };
 
 type PreRampartStructurePlanConfig = {
@@ -294,41 +303,49 @@ function growAccessRoads(
 }
 
 function scoreExtraStructureAllocation(context: StructurePlanningContext, targetCount: number): ExtensionAllocationScore {
-  const candidates = collectRoadAdjacentCandidates(context, structureRoadGroups);
+  const candidates = collectRoadAdjacentCandidateScores(context, structureRoadGroups, false);
+  const selectedTiles: number[] = [];
   let totalDistance = 0;
-  let selectedCount = 0;
 
-  for (const candidate of candidates) {
-    if (selectedCount >= targetCount) {
-      break;
-    }
-    totalDistance += candidate.score[1] ?? unreachableRoadDistance;
-    selectedCount += 1;
+  for (const tile of candidates.tiles) {
+    insertBestCandidateTile(selectedTiles, targetCount, tile, candidates.groups, candidates.distances);
+  }
+
+  for (const tile of selectedTiles) {
+    totalDistance += candidates.distances[tile] ?? unreachableRoadDistance;
   }
 
   return {
-    totalDistance: totalDistance + (targetCount - selectedCount) * unreachableRoadDistance,
-    selectedCount
+    totalDistance: totalDistance + (targetCount - selectedTiles.length) * unreachableRoadDistance,
+    selectedCount: selectedTiles.length
   };
 }
 
 function collectAccessRoadFrontier(context: StructurePlanningContext): number[] {
-  const frontier = new Set<number>();
+  const frontierMask = new Uint8Array(roomArea);
+  const frontierDistances = new Int32Array(roomArea);
+  const frontier: number[] = [];
 
   for (let tile = 0; tile < roomArea; tile += 1) {
     if (context.roadMask[tile] === 0) {
       continue;
     }
-    for (const coord of neighbors(fromIndex(tile))) {
-      if (isBuildableAccessRoadTile(context, coord.x, coord.y)) {
-        frontier.add(toIndex(coord.x, coord.y));
+    const neighborOffset = tile * maxNeighbors;
+    const neighborCount = neighborCounts[tile]!;
+    for (let neighborIndex = 0; neighborIndex < neighborCount; neighborIndex += 1) {
+      const neighborTile = neighborIndexes[neighborOffset + neighborIndex]!;
+      if (frontierMask[neighborTile] !== 0 || !isBuildableAccessRoadTileByIndex(context, neighborTile)) {
+        continue;
       }
+      frontierMask[neighborTile] = 1;
+      frontierDistances[neighborTile] = getRoadConnectionDistance(context, neighborTile);
+      frontier.push(neighborTile);
     }
   }
 
-  return [...frontier].sort((left, right) => {
-    const leftDistance = getRoadConnectionDistance(context, left);
-    const rightDistance = getRoadConnectionDistance(context, right);
+  return frontier.sort((left, right) => {
+    const leftDistance = frontierDistances[left]!;
+    const rightDistance = frontierDistances[right]!;
     if (leftDistance !== rightDistance) {
       return leftDistance - rightDistance;
     }
@@ -337,7 +354,15 @@ function collectAccessRoadFrontier(context: StructurePlanningContext): number[] 
 }
 
 function collectRoadAdjacentCandidates(context: StructurePlanningContext, groups: RoadPlanPathKind[][]): Candidate[] {
-  const bestByTile = new Map<number, Candidate>();
+  const candidates = collectRoadAdjacentCandidateScores(context, groups);
+  return candidates.tiles.map((tile) => createCandidateFromTile(tile, candidates.groups[tile]!, candidates.distances[tile]!));
+}
+
+function collectRoadAdjacentCandidateScores(context: StructurePlanningContext, groups: RoadPlanPathKind[][], sortCandidates = true): CandidateScores {
+  const bestGroup = new Int16Array(roomArea);
+  const bestDistance = new Int32Array(roomArea);
+  const candidateTiles: number[] = [];
+  bestGroup.fill(-1);
 
   for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
     for (const kind of groups[groupIndex]!) {
@@ -346,57 +371,146 @@ function collectRoadAdjacentCandidates(context: StructurePlanningContext, groups
         continue;
       }
 
-      collectPathAdjacentCandidates(context, path, groupIndex, bestByTile);
+      collectPathAdjacentCandidates(context, path, groupIndex, bestGroup, bestDistance, candidateTiles);
     }
   }
-  collectRoadTileAdjacentCandidates(context, context.accessRoadTiles, accessRoadGroupIndex, bestByTile);
+  collectRoadTileAdjacentCandidates(context, context.accessRoadTiles, accessRoadGroupIndex, bestGroup, bestDistance, candidateTiles);
 
-  return [...bestByTile.values()].sort(compareCandidates);
+  if (sortCandidates) {
+    candidateTiles.sort((left, right) => compareCandidateTiles(left, right, bestGroup, bestDistance));
+  }
+  return {
+    tiles: candidateTiles,
+    groups: bestGroup,
+    distances: bestDistance
+  };
+}
+
+function insertBestCandidateTile(
+  selectedTiles: number[],
+  targetCount: number,
+  tile: number,
+  bestGroup: Int16Array,
+  bestDistance: Int32Array
+): void {
+  if (targetCount <= 0) {
+    return;
+  }
+
+  if (
+    selectedTiles.length >= targetCount
+    && compareCandidateTiles(tile, selectedTiles[selectedTiles.length - 1]!, bestGroup, bestDistance) >= 0
+  ) {
+    return;
+  }
+
+  if (selectedTiles.length < targetCount) {
+    selectedTiles.push(tile);
+  } else {
+    selectedTiles[selectedTiles.length - 1] = tile;
+  }
+
+  for (let index = selectedTiles.length - 1; index > 0; index -= 1) {
+    if (compareCandidateTiles(selectedTiles[index]!, selectedTiles[index - 1]!, bestGroup, bestDistance) >= 0) {
+      break;
+    }
+    const previous = selectedTiles[index - 1]!;
+    selectedTiles[index - 1] = selectedTiles[index]!;
+    selectedTiles[index] = previous;
+  }
 }
 
 function collectPathAdjacentCandidates(
   context: StructurePlanningContext,
   path: RoadPlanPath,
   groupIndex: number,
-  bestByTile: Map<number, Candidate>
+  bestGroup: Int16Array,
+  bestDistance: Int32Array,
+  candidateTiles: number[]
 ): void {
-  collectRoadTileAdjacentCandidates(context, path.roadTiles, groupIndex, bestByTile);
+  collectRoadTileAdjacentCandidates(context, path.roadTiles, groupIndex, bestGroup, bestDistance, candidateTiles);
 }
 
 function collectRoadTileAdjacentCandidates(
   context: StructurePlanningContext,
   roadTiles: number[],
   groupIndex: number,
-  bestByTile: Map<number, Candidate>
+  bestGroup: Int16Array,
+  bestDistance: Int32Array,
+  candidateTiles: number[]
 ): void {
   for (const roadTile of roadTiles) {
     if (!isValidIndex(roadTile)) {
       continue;
     }
-    const roadCoord = fromIndex(roadTile);
-    for (const coord of neighbors(roadCoord)) {
-      if (!isBuildableStructureTile(context, coord.x, coord.y)) {
+    const roadDistance = context.roadDistances[roadTile]!;
+    const neighborOffset = roadTile * maxNeighbors;
+    const neighborCount = neighborCounts[roadTile]!;
+    for (let neighborIndex = 0; neighborIndex < neighborCount; neighborIndex += 1) {
+      const tile = neighborIndexes[neighborOffset + neighborIndex]!;
+      if (!isBuildableStructureTileByIndex(context, tile)) {
         continue;
       }
 
-      const tile = toIndex(coord.x, coord.y);
-      const roadDistance = context.roadDistances[roadTile]!;
-      const score = [
-        groupIndex,
-        roadDistance >= 0 ? roadDistance + 1 : unreachableRoadDistance + range(coord, context.storage),
-        coord.y,
-        coord.x
-      ];
-      const existing = bestByTile.get(tile);
-      if (!existing || compareScore(score, existing.score) < 0) {
-        bestByTile.set(tile, {
-          ...coord,
-          tile,
-          score
-        });
+      const scoreDistance = roadDistance >= 0 ? roadDistance + 1 : unreachableRoadDistance + rangeTileToCoord(tile, context.storage);
+      const previousGroup = bestGroup[tile]!;
+      if (previousGroup === -1) {
+        bestGroup[tile] = groupIndex;
+        bestDistance[tile] = scoreDistance;
+        candidateTiles.push(tile);
+        continue;
+      }
+
+      if (groupIndex < previousGroup || (groupIndex === previousGroup && scoreDistance < bestDistance[tile]!)) {
+        bestGroup[tile] = groupIndex;
+        bestDistance[tile] = scoreDistance;
       }
     }
   }
+}
+
+function compareCandidateTiles(left: number, right: number, bestGroup: Int16Array, bestDistance: Int32Array): number {
+  const leftGroup = bestGroup[left]!;
+  const rightGroup = bestGroup[right]!;
+  if (leftGroup !== rightGroup) {
+    return leftGroup - rightGroup;
+  }
+
+  const leftDistance = bestDistance[left]!;
+  const rightDistance = bestDistance[right]!;
+  if (leftDistance !== rightDistance) {
+    return leftDistance - rightDistance;
+  }
+
+  const leftY = tileYs[left]!;
+  const rightY = tileYs[right]!;
+  if (leftY !== rightY) {
+    return leftY - rightY;
+  }
+
+  const leftX = tileXs[left]!;
+  const rightX = tileXs[right]!;
+  if (leftX !== rightX) {
+    return leftX - rightX;
+  }
+
+  return left - right;
+}
+
+function createCandidateFromTile(tile: number, groupIndex: number, roadDistance: number): Candidate {
+  const x = tileXs[tile]!;
+  const y = tileYs[tile]!;
+  return {
+    x,
+    y,
+    tile,
+    score: [
+      groupIndex,
+      roadDistance,
+      y,
+      x
+    ]
+  };
 }
 
 function createStructurePlanningContext(
@@ -411,13 +525,24 @@ function createStructurePlanningContext(
   const sources = getSources(room);
   const storage = stampPlan.stamps.hub.anchors.storage ?? stampPlan.stamps.hub.anchor;
   const allowedMask = createAllowedMask(config.allowedTiles);
+  const structureAllowed = new Uint8Array(roomArea);
+  const accessRoadAllowed = new Uint8Array(roomArea);
   const baseBlocked = new Uint8Array(roomArea);
   const roadMask = new Uint8Array(roomArea);
 
   for (let tile = 0; tile < roomArea; tile += 1) {
     const coord = fromIndex(tile);
-    if (!isRoadPlanningTerrain(room.terrain, coord.x, coord.y)) {
+    const roadTerrainAllowed = isRoadPlanningTerrain(room.terrain, coord.x, coord.y);
+    if (!roadTerrainAllowed) {
       baseBlocked[tile] = 1;
+    }
+    if (allowedMask[tile] !== 0 && isOutsideReservedRanges(coord, controller, sources)) {
+      if (roadTerrainAllowed) {
+        accessRoadAllowed[tile] = 1;
+      }
+      if (isConstructionSiteTerrainAllowed(room.terrain, "extension", coord.x, coord.y)) {
+        structureAllowed[tile] = 1;
+      }
     }
   }
 
@@ -468,20 +593,23 @@ function createStructurePlanningContext(
     controller,
     sources,
     storage,
-    allowedMask,
+    structureAllowed,
+    accessRoadAllowed,
     baseBlocked,
     blocked,
     roadMask,
     roadDistances,
+    roadDistanceHistory: [],
     accessRoadTiles: []
   };
 }
 
 function addAccessRoadTile(context: StructurePlanningContext, tile: number): void {
+  context.roadDistanceHistory.push(context.roadDistances);
   context.accessRoadTiles.push(tile);
   context.roadMask[tile] = 1;
   context.blocked[tile] = 1;
-  context.roadDistances = createRoadDistanceMap(context.storage, context.roadMask);
+  context.roadDistances = extendRoadDistanceMap(context.storage, context.roadDistances, context.roadMask, tile);
 }
 
 function removeLastAccessRoadTile(context: StructurePlanningContext): void {
@@ -491,7 +619,7 @@ function removeLastAccessRoadTile(context: StructurePlanningContext): void {
   }
   context.roadMask[tile] = 0;
   context.blocked[tile] = context.baseBlocked[tile]!;
-  context.roadDistances = createRoadDistanceMap(context.storage, context.roadMask);
+  context.roadDistances = context.roadDistanceHistory.pop() ?? createRoadDistanceMap(context.storage, context.roadMask);
 }
 
 function createRoadDistanceMap(storage: RoomStampAnchor, roadMask: Uint8Array): Int32Array {
@@ -508,12 +636,14 @@ function createRoadDistanceMap(storage: RoomStampAnchor, roadMask: Uint8Array): 
     tail += 1;
   }
 
-  for (const coord of neighbors(storage)) {
-    const tile = toIndex(coord.x, coord.y);
+  const storageNeighborOffset = storageTile * maxNeighbors;
+  const storageNeighborCount = neighborCounts[storageTile]!;
+  for (let neighborIndex = 0; neighborIndex < storageNeighborCount; neighborIndex += 1) {
+    const tile = neighborIndexes[storageNeighborOffset + neighborIndex]!;
     if (roadMask[tile] === 0 || distances[tile] >= 0) {
       continue;
     }
-    distances[tile] = range(storage, coord);
+    distances[tile] = rangeTileToCoord(tile, storage);
     queue[tail] = tile;
     tail += 1;
   }
@@ -522,8 +652,10 @@ function createRoadDistanceMap(storage: RoomStampAnchor, roadMask: Uint8Array): 
     const tile = queue[head]!;
     head += 1;
     const nextDistance = distances[tile]! + 1;
-    for (const coord of neighbors(fromIndex(tile))) {
-      const neighborTile = toIndex(coord.x, coord.y);
+    const neighborOffset = tile * maxNeighbors;
+    const neighborCount = neighborCounts[tile]!;
+    for (let neighborIndex = 0; neighborIndex < neighborCount; neighborIndex += 1) {
+      const neighborTile = neighborIndexes[neighborOffset + neighborIndex]!;
       if (roadMask[neighborTile] === 0 || distances[neighborTile] >= 0) {
         continue;
       }
@@ -536,50 +668,99 @@ function createRoadDistanceMap(storage: RoomStampAnchor, roadMask: Uint8Array): 
   return distances;
 }
 
+function extendRoadDistanceMap(storage: RoomStampAnchor, currentDistances: Int32Array, roadMask: Uint8Array, addedTile: number): Int32Array {
+  const seedDistance = getRoadConnectionDistanceFromMap(storage, currentDistances, addedTile);
+  const distances = new Int32Array(currentDistances);
+  if (seedDistance < 0) {
+    return distances;
+  }
+
+  const queue = new Int16Array(roomArea);
+  let head = 0;
+  let tail = 0;
+  distances[addedTile] = seedDistance;
+  queue[tail] = addedTile;
+  tail += 1;
+
+  while (head < tail) {
+    const tile = queue[head]!;
+    head += 1;
+    const nextDistance = distances[tile]! + 1;
+    const neighborOffset = tile * maxNeighbors;
+    const neighborCount = neighborCounts[tile]!;
+    for (let neighborIndex = 0; neighborIndex < neighborCount; neighborIndex += 1) {
+      const neighborTile = neighborIndexes[neighborOffset + neighborIndex]!;
+      if (roadMask[neighborTile] === 0 || (distances[neighborTile]! >= 0 && distances[neighborTile]! <= nextDistance)) {
+        continue;
+      }
+      distances[neighborTile] = nextDistance;
+      queue[tail] = neighborTile;
+      tail += 1;
+    }
+  }
+
+  return distances;
+}
+
+function getRoadConnectionDistanceFromMap(storage: RoomStampAnchor, distances: Int32Array, tile: number): number {
+  const coord = fromIndex(tile);
+  if (coord.x === storage.x && coord.y === storage.y) {
+    return 0;
+  }
+
+  let best = -1;
+  if (range(storage, coord) <= 1) {
+    best = range(storage, coord);
+  }
+
+  const neighborOffset = tile * maxNeighbors;
+  const neighborCount = neighborCounts[tile]!;
+  for (let neighborIndex = 0; neighborIndex < neighborCount; neighborIndex += 1) {
+    const distance = distances[neighborIndexes[neighborOffset + neighborIndex]!]!;
+    if (distance >= 0 && (best < 0 || distance + 1 < best)) {
+      best = distance + 1;
+    }
+  }
+  return best;
+}
+
 function isBuildableStructureTile(context: StructurePlanningContext, x: number, y: number): boolean {
   if (!isInRoom(x, y)) {
     return false;
   }
-  const tile = toIndex(x, y);
-  if (context.allowedMask[tile] === 0) {
-    return false;
-  }
-  if (context.blocked[tile] !== 0) {
-    return false;
-  }
-  if (!isConstructionSiteTerrainAllowed(context.room.terrain, "extension", x, y)) {
-    return false;
-  }
+  return isBuildableStructureTileByIndex(context, toIndex(x, y));
+}
 
-  const coord = { x, y };
-  return range(coord, context.controller) > controllerReserveRange
-    && context.sources.every((source) => range(coord, source) > sourceReserveRange);
+function isBuildableStructureTileByIndex(context: StructurePlanningContext, tile: number): boolean {
+  return context.structureAllowed[tile] !== 0 && context.blocked[tile] === 0;
 }
 
 function isBuildableAccessRoadTile(context: StructurePlanningContext, x: number, y: number): boolean {
   if (!isInRoom(x, y)) {
     return false;
   }
-  const tile = toIndex(x, y);
-  if (context.allowedMask[tile] === 0) {
-    return false;
-  }
-  if (context.baseBlocked[tile] !== 0 || context.roadMask[tile] !== 0) {
-    return false;
-  }
-  if (!isRoadPlanningTerrain(context.room.terrain, x, y)) {
-    return false;
-  }
+  return isBuildableAccessRoadTileByIndex(context, toIndex(x, y));
+}
 
-  const coord = { x, y };
-  return range(coord, context.controller) > controllerReserveRange
-    && context.sources.every((source) => range(coord, source) > sourceReserveRange);
+function isBuildableAccessRoadTileByIndex(context: StructurePlanningContext, tile: number): boolean {
+  return context.accessRoadAllowed[tile] !== 0 && context.baseBlocked[tile] === 0 && context.roadMask[tile] === 0;
+}
+
+function isOutsideReservedRanges(
+  coord: RoomStampAnchor,
+  controller: RoomPlanningObject,
+  sources: [RoomPlanningObject, RoomPlanningObject]
+): boolean {
+  return range(coord, controller) > controllerReserveRange
+    && sources.every((source) => range(coord, source) > sourceReserveRange);
 }
 
 function getRoadConnectionDistance(context: StructurePlanningContext, tile: number): number {
   let best = unreachableRoadDistance;
-  for (const coord of neighbors(fromIndex(tile))) {
-    const distance = context.roadDistances[toIndex(coord.x, coord.y)]!;
+  const neighborOffset = tile * maxNeighbors;
+  const neighborCount = neighborCounts[tile]!;
+  for (let neighborIndex = 0; neighborIndex < neighborCount; neighborIndex += 1) {
+    const distance = context.roadDistances[neighborIndexes[neighborOffset + neighborIndex]!]!;
     if (distance >= 0) {
       best = Math.min(best, distance + 1);
     }
@@ -745,26 +926,6 @@ function neighbors(coord: RoomStampAnchor): RoomStampAnchor[] {
   return result;
 }
 
-function compareCandidates(left: Candidate, right: Candidate): number {
-  const scoreComparison = compareScore(left.score, right.score);
-  if (scoreComparison !== 0) {
-    return scoreComparison;
-  }
-  return left.tile - right.tile;
-}
-
-function compareScore(left: number[], right: number[]): number {
-  const length = Math.max(left.length, right.length);
-  for (let index = 0; index < length; index += 1) {
-    const leftScore = left[index] ?? 0;
-    const rightScore = right[index] ?? 0;
-    if (leftScore !== rightScore) {
-      return leftScore - rightScore;
-    }
-  }
-  return 0;
-}
-
 function comparePlacementsByTile(left: PreRampartStructurePlacement, right: PreRampartStructurePlacement): number {
   return left.tile - right.tile;
 }
@@ -787,6 +948,10 @@ function range(left: RoomStampAnchor, right: RoomStampAnchor): number {
   return Math.max(Math.abs(left.x - right.x), Math.abs(left.y - right.y));
 }
 
+function rangeTileToCoord(tile: number, coord: RoomStampAnchor): number {
+  return Math.max(Math.abs(tileXs[tile]! - coord.x), Math.abs(tileYs[tile]! - coord.y));
+}
+
 function isValidIndex(index: number): boolean {
   return Number.isInteger(index) && index >= 0 && index < roomArea;
 }
@@ -804,4 +969,36 @@ function fromIndex(index: number): RoomStampAnchor {
     x: index % roomSize,
     y: Math.floor(index / roomSize)
   };
+}
+
+const tileXs = new Uint8Array(roomArea);
+const tileYs = new Uint8Array(roomArea);
+const neighborIndexes = new Uint16Array(roomArea * maxNeighbors);
+const neighborCounts = new Uint8Array(roomArea);
+
+for (let y = 0; y < roomSize; y += 1) {
+  for (let x = 0; x < roomSize; x += 1) {
+    const index = toIndex(x, y);
+    const offset = index * maxNeighbors;
+    let count = 0;
+    tileXs[index] = x;
+    tileYs[index] = y;
+
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        if (dx === 0 && dy === 0) {
+          continue;
+        }
+
+        const neighborX = x + dx;
+        const neighborY = y + dy;
+        if (isInRoom(neighborX, neighborY)) {
+          neighborIndexes[offset + count] = toIndex(neighborX, neighborY);
+          count += 1;
+        }
+      }
+    }
+
+    neighborCounts[index] = count;
+  }
 }
