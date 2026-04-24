@@ -26,7 +26,7 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: "dist",
       emptyOutDir: true,
-      minify: false,
+      minify: true,
       sourcemap: true,
       target: "node24",
       lib: {

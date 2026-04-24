@@ -90,9 +90,14 @@ export class ScreepsApiClient {
         username: payload.username,
         email: "",
         password: payload.password,
-        modules: payload.modules
+        modules: { main: "" }
       })
     });
+
+    if (hasNonEmptyModules(payload.modules)) {
+      const session = await this.signIn(payload.username, payload.password);
+      await this.setUserCode(session, payload.modules);
+    }
   }
 
   async signIn(username: string, password: string): Promise<AuthSession> {
@@ -129,6 +134,16 @@ export class ScreepsApiClient {
     await this.requestAuthedJson(session, "/api/user/badge", {
       method: "POST",
       body: JSON.stringify({ badge })
+    });
+  }
+
+  async setUserCode(session: AuthSession, modules: Record<string, string>, branch = "$activeWorld"): Promise<void> {
+    await this.requestAuthedJson(session, "/api/user/code", {
+      method: "POST",
+      body: JSON.stringify({
+        branch,
+        modules
+      })
     });
   }
 
@@ -287,4 +302,8 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function hasNonEmptyModules(modules: Record<string, string>): boolean {
+  return Object.values(modules).some((moduleSource) => moduleSource.length > 0);
 }
