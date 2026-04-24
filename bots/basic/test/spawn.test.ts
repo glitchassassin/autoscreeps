@@ -248,8 +248,11 @@ function makeSource(id: string): Source {
       roomName: "W0N0"
     },
     room: {
-      name: "W0N0"
-    } as Room
+      name: "W0N0",
+      getTerrain: vi.fn(() => ({
+        get: vi.fn(() => 0)
+      }))
+    } as unknown as Room
   } as Source;
 }
 
@@ -288,7 +291,8 @@ function makeDemandWorld(input: { creeps: WorldSnapshot["creeps"] }): WorldSnaps
         energy: 3000,
         energyCapacity: 3000,
         ticksToRegeneration: 300,
-        pathLengthToPrimarySpawn: 5
+        pathLengthToPrimarySpawn: 5,
+        harvestSlots: makeHarvestSlots(5, 10)
       },
       {
         sourceId: "source-2",
@@ -298,12 +302,21 @@ function makeDemandWorld(input: { creeps: WorldSnapshot["creeps"] }): WorldSnaps
         energy: 3000,
         energyCapacity: 3000,
         ticksToRegeneration: 300,
-        pathLengthToPrimarySpawn: 5
+        pathLengthToPrimarySpawn: 5,
+        harvestSlots: makeHarvestSlots(15, 10)
       }
     ],
     primaryStructures: [],
     primaryConstructionSites: []
   };
+}
+
+function makeHarvestSlots(sourceX: number, sourceY: number): WorldSnapshot["sources"][number]["harvestSlots"] {
+  return [
+    { roomName: "W0N0", x: sourceX - 1, y: sourceY },
+    { roomName: "W0N0", x: sourceX, y: sourceY - 1 },
+    { roomName: "W0N0", x: sourceX + 1, y: sourceY }
+  ];
 }
 
 function makeDemandCreepSnapshot(

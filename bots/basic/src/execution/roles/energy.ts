@@ -1,5 +1,5 @@
 export type EnergyDeliveryTarget = StructureSpawn | StructureExtension;
-type EnergyPickupTarget = Resource<ResourceConstant>;
+export type EnergyPickupTarget = Resource<ResourceConstant>;
 type EnergyWithdrawTarget = StructureSpawn;
 
 export function findDeliveryTarget(creep: Creep): EnergyDeliveryTarget | null {
@@ -14,10 +14,13 @@ export function findDeliveryTarget(creep: Creep): EnergyDeliveryTarget | null {
 }
 
 export function findPickupTarget(creep: Creep): EnergyPickupTarget | null {
-  const dropped = creep.room.find(FIND_DROPPED_RESOURCES).filter(
+  return findClosestByPath(creep, findPickupTargets(creep));
+}
+
+export function findPickupTargets(creep: Creep): EnergyPickupTarget[] {
+  return creep.room.find(FIND_DROPPED_RESOURCES).filter(
     (resource) => resource.resourceType === RESOURCE_ENERGY && resource.amount > 0
   );
-  return findClosestByPath(creep, dropped);
 }
 
 export function findWithdrawTarget(creep: Creep): EnergyWithdrawTarget | null {

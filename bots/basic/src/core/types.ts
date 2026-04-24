@@ -19,6 +19,12 @@ export type CreepSnapshot = {
   bodyCost: number;
 };
 
+export type RoomPositionSnapshot = {
+  roomName: string;
+  x: number;
+  y: number;
+};
+
 export type SourceSnapshot = {
   sourceId: string;
   roomName: string;
@@ -28,6 +34,7 @@ export type SourceSnapshot = {
   energyCapacity: number;
   ticksToRegeneration: number | null;
   pathLengthToPrimarySpawn: number | null;
+  harvestSlots: RoomPositionSnapshot[];
 };
 
 export type StructureSnapshot = {
@@ -76,12 +83,14 @@ export type SitePlan = {
   plannedGrossEpt: number;
   assignedWorkParts: number;
   assignedHarvesterNames: string[];
+  harvesterSlots: RoomPositionSnapshot[];
 };
 
 export type CreepPlan = {
   creepName: string;
   role: WorkerRole;
   sourceId: string | null;
+  sourceSlot: RoomPositionSnapshot | null;
 };
 
 export type SpawnDemandInputs = {

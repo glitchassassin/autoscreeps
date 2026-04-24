@@ -1,5 +1,6 @@
 import { countActiveBodyParts } from "../core/body-parts";
 import type { ConstructionSiteSnapshot, CreepSnapshot, OwnedControllerSnapshot, SourceSnapshot, StructureSnapshot, WorldSnapshot } from "../core/types";
+import { getSourceHarvestSlots } from "./source-slots";
 
 export function observeWorld(): WorldSnapshot {
   const primarySpawn = Object.values(Game.spawns)[0] ?? null;
@@ -146,7 +147,8 @@ function snapshotPrimarySources(primaryRoom: Room | null, primarySpawn: Structur
     energy: source.energy,
     energyCapacity: source.energyCapacity,
     ticksToRegeneration: source.ticksToRegeneration ?? null,
-    pathLengthToPrimarySpawn: measurePathLength(source.pos, primarySpawn?.pos)
+    pathLengthToPrimarySpawn: measurePathLength(source.pos, primarySpawn?.pos),
+    harvestSlots: getSourceHarvestSlots(source)
   }));
 }
 

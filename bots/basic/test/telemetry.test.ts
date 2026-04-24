@@ -586,7 +586,10 @@ function makeSource(id: string): Source {
       roomName: "W0N0"
     },
     room: {
-      name: "W0N0"
-    } as Room
+      name: "W0N0",
+      getTerrain: vi.fn(() => ({
+        get: vi.fn(() => 0)
+      }))
+    } as unknown as Room
   } as Source;
 }

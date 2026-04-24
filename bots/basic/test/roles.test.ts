@@ -4,6 +4,7 @@ import { runHarvester } from "../src/execution/roles/harvester";
 import { runRecoveryWorker } from "../src/execution/roles/recovery-worker";
 import { runRunner } from "../src/execution/roles/runner";
 import { runUpgrader } from "../src/execution/roles/upgrader";
+import { createEnergyAccountingContext } from "../src/execution/energy-accounting";
 import { createEnergyLedgerState } from "../src/state/telemetry";
 import { installScreepsGlobals } from "./helpers/install-globals";
 
@@ -41,7 +42,8 @@ describe("role execution", () => {
     expect(runHarvester(creep, {
       creepName: "harvester-1",
       role: "harvester",
-      sourceId: "source-1"
+      sourceId: "source-1",
+      sourceSlot: null
     })).toEqual({
       sourceId: "source-1",
       harvestedEnergy: 4
@@ -53,6 +55,26 @@ describe("role execution", () => {
         "source-1": 4
       },
       dropped: 4
+    });
+  });
+
+  it("harvesters move to their assigned source slot before harvesting", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+    const source = { id: "source-1", energy: 8, pos: { x: 10, y: 10, roomName: "W0N0" } } as Source;
+    testGlobal.Game.getObjectById = vi.fn(() => source) as typeof Game.getObjectById;
+    const creep = makeCreep({ role: "harvester", activeWorkParts: 2, x: 5, y: 5 });
+
+    expect(runHarvester(creep, {
+      creepName: "harvester-1",
+      role: "harvester",
+      sourceId: "source-1",
+      sourceSlot: { roomName: "W0N0", x: 10, y: 9 }
+    })).toBeNull();
+
+    expect(creep.harvest).not.toHaveBeenCalled();
+    expect(creep.moveTo).toHaveBeenCalledWith(expect.objectContaining({ x: 10, y: 9, roomName: "W0N0" }), {
+      range: 0,
+      visualizePathStyle: { stroke: "#ffaa00" }
     });
   });
 
@@ -101,10 +123,65 @@ describe("role execution", () => {
 
     runRunner(creep);
 
-    expect(creep.moveTo).toHaveBeenCalledWith(resource, { visualizePathStyle: { stroke: "#ffaa00" } });
+    expect(creep.moveTo).toHaveBeenCalledWith(expect.objectContaining({ x: 10, y: 10, roomName: "W0N0" }), {
+      range: 0,
+      visualizePathStyle: { stroke: "#ffaa00" }
+    });
     expect(Memory.telemetry?.runnerMovement?.pickup.failedToPath).toBe(1);
     expect(Memory.telemetry?.runnerMovement?.total.failedToPath).toBe(1);
     expect(Memory.telemetry?.runnerMovement?.pickup.stuck).toBe(0);
+  });
+
+  it("runners reserve in-flight dropped energy while moving to pickup", () => {
+    const energyContext = createEnergyAccountingContext(1);
+    const resource = { resourceType: RESOURCE_ENERGY, amount: 50, pos: { x: 10, y: 10, roomName: "W0N0" } } as Resource<ResourceConstant>;
+    const firstRunner = makeCreep({
+      role: "runner",
+      working: false,
+      pickupResult: ERR_NOT_IN_RANGE,
+      moveToResult: OK,
+      roomFind: vi.fn((type: FindConstant) => type === FIND_DROPPED_RESOURCES ? [resource] : [])
+    });
+    const secondRunner = makeCreep({
+      role: "runner",
+      working: false,
+      roomFind: vi.fn((type: FindConstant) => type === FIND_DROPPED_RESOURCES ? [resource] : [])
+    });
+
+    runRunner(firstRunner, energyContext);
+    runRunner(secondRunner, energyContext);
+
+    expect(firstRunner.pickup).toHaveBeenCalledWith(resource);
+    expect(secondRunner.pickup).not.toHaveBeenCalled();
+    expect(Memory.telemetry?.runnerStateTicks?.movingToPickup).toBe(1);
+    expect(Memory.telemetry?.runnerStateTicks?.idleNoPickupTarget).toBe(1);
+  });
+
+  it("runners pick a pickup pad instead of occupying a source harvest slot", () => {
+    const source = makeSource({ x: 10, y: 10 });
+    const resource = { resourceType: RESOURCE_ENERGY, amount: 50, pos: makeRoomPosition(9, 9) } as Resource<ResourceConstant>;
+    const creep = makeCreep({
+      role: "runner",
+      working: false,
+      pickupResult: ERR_NOT_IN_RANGE,
+      roomFind: vi.fn((type: FindConstant) => {
+        if (type === FIND_DROPPED_RESOURCES) {
+          return [resource];
+        }
+        if (type === FIND_SOURCES) {
+          return [source];
+        }
+
+        return [];
+      })
+    });
+
+    runRunner(creep);
+
+    expect(creep.moveTo).toHaveBeenCalledWith(expect.objectContaining({ x: 9, y: 8, roomName: "W0N0" }), {
+      range: 0,
+      visualizePathStyle: { stroke: "#ffaa00" }
+    });
   });
 
   it("runners record tired ticks without recording stuck ticks", () => {
@@ -400,6 +477,22 @@ function makeConstructionSite(structureType: BuildableStructureConstant, x: numb
     progressTotal: 3000,
     pos: makeRoomPosition(x, y)
   } as ConstructionSite;
+}
+
+function makeSource(input: { x: number; y: number }): Source {
+  return {
+    id: `source-${input.x}-${input.y}` as Id<Source>,
+    energy: 3000,
+    energyCapacity: 3000,
+    ticksToRegeneration: 300,
+    pos: makeRoomPosition(input.x, input.y),
+    room: {
+      name: "W0N0",
+      getTerrain: vi.fn(() => ({
+        get: vi.fn(() => 0)
+      }))
+    } as unknown as Room
+  } as Source;
 }
 
 function makeCreep(input: {

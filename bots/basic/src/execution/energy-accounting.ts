@@ -13,9 +13,11 @@ type TickEnergyReservations = {
   freeCapacity: Record<string, number>;
   siteProgressRemaining: Record<string, number>;
   controllerProgressRemaining: Record<string, number>;
+  reservedPositions: Record<string, true>;
 };
 
 export type EnergyAccountingContext = TickEnergyReservations;
+type EnergyAmountReservationField = keyof Omit<TickEnergyReservations, "gameTime" | "reservedPositions">;
 
 type ReservationTarget = {
   id?: unknown;
@@ -41,7 +43,8 @@ export function createEnergyAccountingContext(gameTime = typeof Game === "undefi
     storedEnergy: {},
     freeCapacity: {},
     siteProgressRemaining: {},
-    controllerProgressRemaining: {}
+    controllerProgressRemaining: {},
+    reservedPositions: {}
   };
 }
 
@@ -139,7 +142,7 @@ function getSiteProgressRemaining(site: ConstructionSite): number {
 function getRemaining(
   context: EnergyAccountingContext,
   target: ReservationTarget,
-  field: keyof Omit<TickEnergyReservations, "gameTime">,
+  field: EnergyAmountReservationField,
   initialAmount: number
 ): number {
   const key = getReservationKey(target);
@@ -150,7 +153,7 @@ function getRemaining(
 function reserve(
   context: EnergyAccountingContext,
   target: ReservationTarget,
-  field: keyof Omit<TickEnergyReservations, "gameTime">,
+  field: EnergyAmountReservationField,
   initialAmount: number,
   amount: number
 ): void {

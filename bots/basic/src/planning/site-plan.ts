@@ -12,7 +12,8 @@ export function createSitePlans(world: WorldSnapshot): SitePlan[] {
       theoreticalGrossEpt: source.energyCapacity / sourceRegenTicks,
       plannedGrossEpt: 0,
       assignedWorkParts: 0,
-      assignedHarvesterNames: []
+      assignedHarvesterNames: [],
+      harvesterSlots: [...source.harvestSlots]
     }));
 
   const harvesters = world.creeps
@@ -35,19 +36,24 @@ export function createSitePlans(world: WorldSnapshot): SitePlan[] {
 
 export function createCreepPlans(world: WorldSnapshot, sites: SitePlan[]): Record<string, CreepPlan> {
   const creepPlans: Record<string, CreepPlan> = {};
-  const assignments = new Map<string, string>();
+  const assignments = new Map<string, { sourceId: string; sourceSlot: CreepPlan["sourceSlot"] }>();
 
   for (const site of sites) {
-    for (const creepName of site.assignedHarvesterNames) {
-      assignments.set(creepName, site.sourceId);
+    for (const [index, creepName] of site.assignedHarvesterNames.entries()) {
+      assignments.set(creepName, {
+        sourceId: site.sourceId,
+        sourceSlot: site.harvesterSlots[index % site.harvesterSlots.length] ?? null
+      });
     }
   }
 
   for (const creep of world.creeps) {
+    const assignment = assignments.get(creep.name);
     creepPlans[creep.name] = {
       creepName: creep.name,
       role: creep.role,
-      sourceId: assignments.get(creep.name) ?? null
+      sourceId: assignment?.sourceId ?? null,
+      sourceSlot: assignment?.sourceSlot ?? null
     };
   }
 
@@ -55,12 +61,13 @@ export function createCreepPlans(world: WorldSnapshot, sites: SitePlan[]): Recor
 }
 
 function chooseLeastStaffedSite(sites: SitePlan[]): SitePlan | null {
-  if (sites.length === 0) {
+  const candidates = sites.filter((site) => hasOpenHarvesterCapacity(site));
+  if (candidates.length === 0) {
     return null;
   }
 
-  let bestSite = sites[0]!;
-  for (const site of sites) {
+  let bestSite = candidates[0]!;
+  for (const site of candidates) {
     if (site.assignedWorkParts < bestSite.assignedWorkParts) {
       bestSite = site;
       continue;
@@ -72,4 +79,9 @@ function chooseLeastStaffedSite(sites: SitePlan[]): SitePlan | null {
   }
 
   return bestSite;
+}
+
+function hasOpenHarvesterCapacity(site: SitePlan): boolean {
+  return site.harvesterSlots.length > site.assignedHarvesterNames.length
+    && site.assignedWorkParts < Math.ceil(site.theoreticalGrossEpt / 2);
 }

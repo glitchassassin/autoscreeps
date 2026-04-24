@@ -22,7 +22,8 @@ describe("site planning", () => {
         theoreticalGrossEpt: 10,
         plannedGrossEpt: 4,
         assignedWorkParts: 2,
-        assignedHarvesterNames: ["harvester-a"]
+        assignedHarvesterNames: ["harvester-a"],
+        harvesterSlots: makeHarvestSlots(5, 10, 3)
       },
       {
         siteId: "source-2",
@@ -31,7 +32,8 @@ describe("site planning", () => {
         theoreticalGrossEpt: 10,
         plannedGrossEpt: 4,
         assignedWorkParts: 2,
-        assignedHarvesterNames: ["harvester-b"]
+        assignedHarvesterNames: ["harvester-b"],
+        harvesterSlots: makeHarvestSlots(15, 10, 3)
       }
     ]);
   });
@@ -51,23 +53,50 @@ describe("site planning", () => {
       "harvester-a": {
         creepName: "harvester-a",
         role: "harvester",
-        sourceId: "source-1"
+        sourceId: "source-1",
+        sourceSlot: makeHarvestSlots(5, 10, 3)[0]
       },
       "runner-a": {
         creepName: "runner-a",
         role: "runner",
-        sourceId: null
+        sourceId: null,
+        sourceSlot: null
       },
       "upgrader-a": {
         creepName: "upgrader-a",
         role: "upgrader",
-        sourceId: null
+        sourceId: null,
+        sourceSlot: null
       }
+    });
+  });
+
+  it("does not assign more harvesters than source access slots", () => {
+    const world = makeWorld({
+      sourceSlotCount: 1,
+      creeps: [
+        makeCreepSnapshot("harvester-a", "harvester", 2),
+        makeCreepSnapshot("harvester-b", "harvester", 2),
+        makeCreepSnapshot("harvester-c", "harvester", 2)
+      ]
+    });
+
+    const sites = createSitePlans(world);
+
+    expect(sites.map((site) => site.assignedHarvesterNames)).toEqual([
+      ["harvester-a"],
+      ["harvester-b"]
+    ]);
+    expect(createCreepPlans(world, sites)["harvester-c"]).toMatchObject({
+      sourceId: null,
+      sourceSlot: null
     });
   });
 });
 
-function makeWorld(input: { creeps: WorldSnapshot["creeps"] }): WorldSnapshot {
+function makeWorld(input: { creeps: WorldSnapshot["creeps"]; sourceSlotCount?: number }): WorldSnapshot {
+  const sourceSlotCount = input.sourceSlotCount ?? 3;
+
   return {
     gameTime: 1,
     primarySpawnName: "Spawn1",
@@ -102,7 +131,8 @@ function makeWorld(input: { creeps: WorldSnapshot["creeps"] }): WorldSnapshot {
         energy: 3000,
         energyCapacity: 3000,
         ticksToRegeneration: 300,
-        pathLengthToPrimarySpawn: 5
+        pathLengthToPrimarySpawn: 5,
+        harvestSlots: makeHarvestSlots(5, 10, sourceSlotCount)
       },
       {
         sourceId: "source-2",
@@ -112,12 +142,21 @@ function makeWorld(input: { creeps: WorldSnapshot["creeps"] }): WorldSnapshot {
         energy: 3000,
         energyCapacity: 3000,
         ticksToRegeneration: 300,
-        pathLengthToPrimarySpawn: 5
+        pathLengthToPrimarySpawn: 5,
+        harvestSlots: makeHarvestSlots(15, 10, sourceSlotCount)
       }
     ],
     primaryStructures: [],
     primaryConstructionSites: []
   };
+}
+
+function makeHarvestSlots(sourceX: number, sourceY: number, count: number): WorldSnapshot["sources"][number]["harvestSlots"] {
+  return [
+    { roomName: "W0N0", x: sourceX - 1, y: sourceY },
+    { roomName: "W0N0", x: sourceX, y: sourceY - 1 },
+    { roomName: "W0N0", x: sourceX + 1, y: sourceY }
+  ].slice(0, count);
 }
 
 function makeCreepSnapshot(name: string, role: WorkerRole, activeWorkParts: number): WorldSnapshot["creeps"][number] {

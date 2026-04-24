@@ -1,6 +1,6 @@
-import { findDeliveryTarget, findPickupTarget } from "./energy";
+import { findDeliveryTarget, findPickupTargets, type EnergyPickupTarget } from "./energy";
 import { updateWorkingState } from "./working-state";
-import { moveToRunnerDeliveryTarget } from "../traffic";
+import { moveToRunnerDeliveryTarget, moveToRunnerPickupTarget } from "../traffic";
 import { calculatePickupEnergy, calculateTransferEnergy, createEnergyAccountingContext, reservePickupEnergy, reserveTransferEnergy, type EnergyAccountingContext } from "../energy-accounting";
 import { adjustRememberedCreepEnergy, recordPickedUpEnergy, recordRunnerMovementTick, recordRunnerState, recordTransferredEnergy } from "../../state/telemetry";
 
@@ -17,17 +17,25 @@ export function runRunner(creep: Creep, energyContext: EnergyAccountingContext =
 }
 
 function pickupEnergy(creep: Creep, energyContext: EnergyAccountingContext): void {
-  const target = findPickupTarget(creep);
+  const target = findReservablePickupTarget(creep, energyContext);
   if (!target) {
     recordRunnerState("idleNoPickupTarget");
     return;
   }
 
   const pickedUpEnergy = calculatePickupEnergy(energyContext, creep, target);
+  if (pickedUpEnergy <= 0) {
+    recordRunnerState("idleNoPickupTarget");
+    return;
+  }
+
   const result = creep.pickup(target);
   if (result === ERR_NOT_IN_RANGE) {
     recordRunnerState("movingToPickup");
-    moveRunnerTo(creep, target, "pickup", "#ffaa00");
+    const moveResult = moveRunnerTo(creep, target, "pickup", "#ffaa00", energyContext);
+    if (moveResult === OK || moveResult === ERR_TIRED) {
+      reservePickupEnergy(energyContext, target, pickedUpEnergy);
+    }
     return;
   }
   if (result !== OK) {
@@ -52,7 +60,7 @@ function deliverEnergy(creep: Creep, energyContext: EnergyAccountingContext): vo
   const result = creep.transfer(target, RESOURCE_ENERGY);
   if (result === ERR_NOT_IN_RANGE) {
     recordRunnerState("movingToDelivery");
-    moveRunnerTo(creep, target, "delivery", "#ffffff");
+    moveRunnerTo(creep, target, "delivery", "#ffffff", energyContext);
     return;
   }
   if (result !== OK) {
@@ -66,20 +74,26 @@ function deliverEnergy(creep: Creep, energyContext: EnergyAccountingContext): vo
   adjustRememberedCreepEnergy(creep, -transferredEnergy);
 }
 
-function moveRunnerTo(creep: Creep, target: RoomObject, kind: RunnerMovementKind, stroke: string): void {
+function moveRunnerTo(
+  creep: Creep,
+  target: RoomObject,
+  kind: RunnerMovementKind,
+  stroke: string,
+  energyContext: EnergyAccountingContext
+): ReturnType<Creep["moveTo"]> {
   const result = kind === "delivery"
     ? moveToRunnerDeliveryTarget(creep, target, stroke)
-    : creep.moveTo(target, { visualizePathStyle: { stroke } });
+    : moveToRunnerPickupTarget(creep, target as EnergyPickupTarget, stroke, energyContext);
   if (result === ERR_NO_PATH) {
     recordRunnerMovementTick(kind, "failedToPath");
-    return;
+    return result;
   }
   if (result === ERR_TIRED) {
     recordRunnerMovementTick(kind, "tired");
-    return;
+    return result;
   }
   if (result !== OK) {
-    return;
+    return result;
   }
 
   creep.memory.lastRunnerMove = {
@@ -89,6 +103,7 @@ function moveRunnerTo(creep: Creep, target: RoomObject, kind: RunnerMovementKind
     roomName: creep.pos.roomName,
     tick: getGameTime()
   };
+  return result;
 }
 
 function recordPreviousRunnerMoveOutcome(creep: Creep): void {
@@ -113,4 +128,20 @@ function recordPreviousRunnerMoveOutcome(creep: Creep): void {
 
 function getGameTime(): number {
   return typeof Game === "undefined" ? 0 : Game.time;
+}
+
+function findReservablePickupTarget(creep: Creep, energyContext: EnergyAccountingContext): EnergyPickupTarget | null {
+  const targets = findPickupTargets(creep).filter((target) => calculatePickupEnergy(energyContext, creep, target) > 0);
+  if (targets.length === 0) {
+    return null;
+  }
+
+  return creep.pos.findClosestByPath(targets) ?? targets.toSorted(comparePickupTargets)[0] ?? null;
+}
+
+function comparePickupTargets(left: EnergyPickupTarget, right: EnergyPickupTarget): number {
+  return right.amount - left.amount
+    || left.pos.roomName.localeCompare(right.pos.roomName)
+    || left.pos.y - right.pos.y
+    || left.pos.x - right.pos.x;
 }

@@ -178,13 +178,14 @@ function summarizeNormalSpawnDemand(
     const grossEpt = site.theoreticalGrossEpt;
     const requiredHarvestWork = Math.ceil(grossEpt / harvestPowerPerWork);
     const coveredHarvestWork = Math.min(site.assignedWorkParts, requiredHarvestWork);
+    const siteHarvesterTargetCount = Math.min(calculateTargetCount(requiredHarvestWork, plannedHarvesterWork), site.harvesterSlots.length);
     const requiredCarryParts = Math.ceil(grossEpt * (2 * normalizePathLength(source?.pathLengthToPrimarySpawn ?? null) + 2) / carryCapacity);
 
     totalGrossEpt += grossEpt;
     totalRequiredHarvestWork += requiredHarvestWork;
     totalCoveredHarvestWork += coveredHarvestWork;
-    harvesterTargetCount += calculateTargetCount(requiredHarvestWork, plannedHarvesterWork);
-    harvesterDeficitCount += calculateTargetCount(Math.max(requiredHarvestWork - site.assignedWorkParts, 0), plannedHarvesterWork);
+    harvesterTargetCount += siteHarvesterTargetCount;
+    harvesterDeficitCount += Math.max(siteHarvesterTargetCount - site.assignedHarvesterNames.length, 0);
     totalRequiredCarryParts += requiredCarryParts;
   }
 

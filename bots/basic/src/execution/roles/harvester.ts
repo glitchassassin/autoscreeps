@@ -1,6 +1,7 @@
 import type { CreepPlan } from "../../core/types";
 import { calculateDroppedHarvestEnergy, calculateHarvestedEnergy, createEnergyAccountingContext, reserveHarvestedEnergy, type EnergyAccountingContext } from "../energy-accounting";
 import { adjustRememberedCreepEnergy, recordDroppedEnergy, recordHarvestedEnergy } from "../../state/telemetry";
+import { createRoomPositionFromSnapshot } from "../../world/source-slots";
 
 export type HarvesterExecution = {
   sourceId: string;
@@ -19,6 +20,14 @@ export function runHarvester(
   const source = resolveSource(plan.sourceId);
   if (!source) {
     return null;
+  }
+
+  if (plan.sourceSlot) {
+    const slot = createRoomPositionFromSnapshot(plan.sourceSlot);
+    if (!creep.pos.isEqualTo(slot)) {
+      creep.moveTo(slot, { range: 0, visualizePathStyle: { stroke: "#ffaa00" } });
+      return null;
+    }
   }
 
   const result = creep.harvest(source);

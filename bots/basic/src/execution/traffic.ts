@@ -1,4 +1,11 @@
+import type { RoomPositionSnapshot } from "../core/types";
+import { getSourceHarvestSlots } from "../world/source-slots";
+
 const spawnDeliveryPadCount = 2;
+
+type PositionReservationContext = {
+  reservedPositions: Record<string, true>;
+};
 
 const adjacentOffsets: Array<readonly [number, number]> = [
   [0, -1],
@@ -38,6 +45,30 @@ export function moveToRunnerDeliveryTarget(creep: Creep, target: RoomObject, str
   return creep.moveTo(target, { visualizePathStyle: { stroke } });
 }
 
+export function moveToRunnerPickupTarget(
+  creep: Creep,
+  target: Resource<ResourceConstant>,
+  stroke: string,
+  positionContext?: PositionReservationContext
+): ReturnType<Creep["moveTo"]> {
+  const pickupPad = getOpenRunnerPickupPad(creep, target, positionContext);
+  if (pickupPad) {
+    const result = creep.moveTo(pickupPad, {
+      range: 0,
+      visualizePathStyle: { stroke }
+    });
+    if (result === OK) {
+      reservePosition(positionContext, pickupPad);
+    }
+    return result;
+  }
+
+  return creep.moveTo(target, {
+    costCallback: createSourceHarvestSlotCostCallback(creep.room),
+    visualizePathStyle: { stroke }
+  });
+}
+
 export function moveAwayFromSpawnAccess(creep: Creep, spawn: StructureSpawn, stroke: string): ReturnType<Creep["moveTo"]> | null {
   if (!creep.pos.isNearTo(spawn)) {
     return null;
@@ -67,6 +98,30 @@ function getOpenRunnerDeliveryPad(creep: Creep, target: RoomObject): RoomPositio
   return creep.pos.findClosestByPath(openPads) ?? openPads[0] ?? null;
 }
 
+function getOpenRunnerPickupPad(
+  creep: Creep,
+  target: Resource<ResourceConstant>,
+  positionContext: PositionReservationContext | undefined
+): RoomPosition | null {
+  const reservedSourceSlotKeys = new Set(getReservedSourceHarvestSlotsForRoom(creep.room).map(getPositionSnapshotKey));
+  const candidates = [
+    createRoomPosition(target.pos.x, target.pos.y, target.pos.roomName),
+    ...adjacentOffsets.map(([dx, dy]) => createRoomPosition(target.pos.x + dx, target.pos.y + dy, target.pos.roomName))
+  ]
+    .filter((position) =>
+      isRoomInterior(position)
+      && isWalkable(creep.room, position)
+      && !reservedSourceSlotKeys.has(getPositionKey(position))
+      && (position.isEqualTo(creep.pos) || (!isPositionReserved(positionContext, position) && !hasCreep(position)))
+    );
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  return creep.pos.findClosestByPath(candidates) ?? candidates.toSorted(comparePositions)[0] ?? null;
+}
+
 function findReliefPosition(creep: Creep, spawn: StructureSpawn): RoomPosition | null {
   const reservedPadKeys = new Set(getReservedDeliveryPadsForRoom(creep.room).map(getPositionKey));
   const candidates = adjacentOffsets
@@ -90,6 +145,10 @@ function getReservedDeliveryPadsForRoom(room: Room): RoomPosition[] {
   return Object.values(Game.spawns)
     .filter((spawn) => spawn.room.name === room.name)
     .flatMap((spawn) => getSpawnDeliveryPads(spawn));
+}
+
+function getReservedSourceHarvestSlotsForRoom(room: Room): RoomPositionSnapshot[] {
+  return room.find(FIND_SOURCES).flatMap((source) => getSourceHarvestSlots(source));
 }
 
 function getSpawnDeliveryPads(spawn: StructureSpawn): RoomPosition[] {
@@ -136,6 +195,24 @@ function createReservedPadCostCallback(room: Room): MoveToOpts["costCallback"] |
   };
 }
 
+function createSourceHarvestSlotCostCallback(room: Room): MoveToOpts["costCallback"] | undefined {
+  const reservedSlots = getReservedSourceHarvestSlotsForRoom(room);
+  if (reservedSlots.length === 0) {
+    return undefined;
+  }
+
+  return (roomName, costMatrix) => {
+    if (roomName !== room.name) {
+      return costMatrix;
+    }
+
+    for (const position of reservedSlots) {
+      costMatrix.set(position.x, position.y, 255);
+    }
+    return costMatrix;
+  };
+}
+
 function getClosestRange(position: RoomPosition, targets: RoomObject[]): number {
   if (targets.length === 0) {
     return 0;
@@ -168,6 +245,22 @@ function getPositionKey(position: RoomPosition): string {
   return `${position.roomName}:${position.x}:${position.y}`;
 }
 
+function getPositionSnapshotKey(position: RoomPositionSnapshot): string {
+  return `${position.roomName}:${position.x}:${position.y}`;
+}
+
 function comparePositions(left: RoomPosition, right: RoomPosition): number {
   return left.y - right.y || left.x - right.x;
+}
+
+function isPositionReserved(context: PositionReservationContext | undefined, position: RoomPosition): boolean {
+  return Boolean(context?.reservedPositions[getPositionKey(position)]);
+}
+
+function reservePosition(context: PositionReservationContext | undefined, position: RoomPosition): void {
+  if (!context) {
+    return;
+  }
+
+  context.reservedPositions[getPositionKey(position)] = true;
 }
