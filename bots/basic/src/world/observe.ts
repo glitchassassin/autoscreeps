@@ -1,5 +1,5 @@
 import { countActiveBodyParts } from "../core/body-parts";
-import type { CreepSnapshot, OwnedControllerSnapshot, SourceSnapshot, WorldSnapshot } from "../core/types";
+import type { ConstructionSiteSnapshot, CreepSnapshot, OwnedControllerSnapshot, SourceSnapshot, StructureSnapshot, WorldSnapshot } from "../core/types";
 
 export function observeWorld(): WorldSnapshot {
   const primarySpawn = Object.values(Game.spawns)[0] ?? null;
@@ -7,13 +7,15 @@ export function observeWorld(): WorldSnapshot {
   const constructionSites = Object.values(Game.constructionSites ?? {});
   const creeps = snapshotCreeps();
   const sources = snapshotPrimarySources(primaryRoom, primarySpawn);
+  const primaryRoomName = primaryRoom?.name ?? null;
 
   return {
     gameTime: Game.time,
     primarySpawnName: primarySpawn?.name ?? null,
-    primarySpawnConstructionSiteCount: countPrimarySpawnConstructionSites(primaryRoom?.name ?? null, constructionSites),
+    primarySpawnConstructionSiteCount: countPrimarySpawnConstructionSites(primaryRoomName, constructionSites),
+    primaryConstructionSiteCount: countPrimaryConstructionSites(primaryRoomName, constructionSites),
     primarySpawnSpawning: primarySpawn ? primarySpawn.spawning !== null : null,
-    primaryRoomName: primaryRoom?.name ?? null,
+    primaryRoomName,
     primaryRoomEnergyAvailable: primaryRoom?.energyAvailable ?? null,
     primaryRoomEnergyCapacityAvailable: primaryRoom?.energyCapacityAvailable ?? null,
     primarySpawnToControllerPathLength: measurePathLength(primarySpawn?.pos, primaryRoom?.controller?.my ? primaryRoom.controller.pos : null),
@@ -22,7 +24,9 @@ export function observeWorld(): WorldSnapshot {
     totalCreeps: creeps.length,
     creepsByRole: countCreepsByRole(creeps),
     creeps,
-    sources
+    sources,
+    primaryStructures: snapshotPrimaryStructures(primaryRoom),
+    primaryConstructionSites: snapshotPrimaryConstructionSites(primaryRoomName, constructionSites)
   };
 }
 
@@ -32,6 +36,14 @@ function countPrimarySpawnConstructionSites(roomName: string | null, constructio
   }
 
   return constructionSites.filter((site) => site.pos.roomName === roomName && site.structureType === STRUCTURE_SPAWN).length;
+}
+
+function countPrimaryConstructionSites(roomName: string | null, constructionSites: ConstructionSite[]): number {
+  if (roomName === null) {
+    return 0;
+  }
+
+  return constructionSites.filter((site) => site.pos.roomName === roomName).length;
 }
 
 function snapshotOwnedController(controller: StructureController | undefined): OwnedControllerSnapshot | null {
@@ -61,6 +73,7 @@ function findMaxOwnedControllerLevel(): number {
 function countCreepsByRole(creeps: CreepSnapshot[]): Record<WorkerRole, number> {
   const counts: Record<WorkerRole, number> = {
     "recovery-worker": 0,
+    builder: 0,
     harvester: 0,
     runner: 0,
     upgrader: 0
@@ -86,6 +99,38 @@ function snapshotCreeps(): CreepSnapshot[] {
     freeCapacity: creep.store.getFreeCapacity(RESOURCE_ENERGY),
     bodyCost: calculateCreepBodyCost(creep)
   }));
+}
+
+function snapshotPrimaryStructures(primaryRoom: Room | null): StructureSnapshot[] {
+  if (primaryRoom === null || typeof FIND_STRUCTURES === "undefined") {
+    return [];
+  }
+
+  return primaryRoom.find(FIND_STRUCTURES).map((structure) => ({
+    structureId: "id" in structure ? String(structure.id) : null,
+    roomName: structure.room.name,
+    x: structure.pos.x,
+    y: structure.pos.y,
+    structureType: structure.structureType
+  }));
+}
+
+function snapshotPrimaryConstructionSites(roomName: string | null, constructionSites: ConstructionSite[]): ConstructionSiteSnapshot[] {
+  if (roomName === null) {
+    return [];
+  }
+
+  return constructionSites
+    .filter((site) => site.pos.roomName === roomName)
+    .map((site) => ({
+      siteId: String(site.id),
+      roomName: site.pos.roomName,
+      x: site.pos.x,
+      y: site.pos.y,
+      structureType: site.structureType,
+      progress: site.progress,
+      progressTotal: site.progressTotal
+    }));
 }
 
 function snapshotPrimarySources(primaryRoom: Room | null, primarySpawn: StructureSpawn | null): SourceSnapshot[] {

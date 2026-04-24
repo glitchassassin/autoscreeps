@@ -1,8 +1,17 @@
 import { canWithdrawEnergy, findWithdrawTarget } from "./energy";
+import { updateWorkingState } from "./working-state";
 
-export function runUpgrader(creep: Creep): void {
-  if (creep.store[RESOURCE_ENERGY] === 0) {
+export function runBuilder(creep: Creep): void {
+  updateWorkingState(creep);
+
+  if (!creep.memory.working) {
     refillEnergy(creep);
+    return;
+  }
+
+  const target = findBuildTarget(creep);
+  if (target) {
+    buildSite(creep, target);
     return;
   }
 
@@ -23,6 +32,22 @@ function refillEnergy(creep: Creep): void {
   const result = creep.withdraw(withdrawTarget, RESOURCE_ENERGY);
   if (result === ERR_NOT_IN_RANGE) {
     creep.moveTo(withdrawTarget, { visualizePathStyle: { stroke: "#ffaa00" } });
+  }
+}
+
+function findBuildTarget(creep: Creep): ConstructionSite | null {
+  const targets = creep.room.find(FIND_MY_CONSTRUCTION_SITES);
+  if (targets.length === 0) {
+    return null;
+  }
+
+  return creep.pos.findClosestByPath(targets) ?? targets[0] ?? null;
+}
+
+function buildSite(creep: Creep, target: ConstructionSite): void {
+  const result = creep.build(target);
+  if (result === ERR_NOT_IN_RANGE) {
+    creep.moveTo(target, { visualizePathStyle: { stroke: "#ffffff" } });
   }
 }
 

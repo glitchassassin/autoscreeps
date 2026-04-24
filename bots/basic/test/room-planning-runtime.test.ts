@@ -177,6 +177,7 @@ function createWorld(options: { gameTime?: number } = {}) {
     gameTime: options.gameTime ?? 100,
     primarySpawnName: null,
     primarySpawnConstructionSiteCount: 0,
+    primaryConstructionSiteCount: 0,
     primarySpawnSpawning: null,
     primaryRoomName: roomName,
     primaryRoomEnergyAvailable: 0,
@@ -187,12 +188,15 @@ function createWorld(options: { gameTime?: number } = {}) {
     totalCreeps: 0,
     creepsByRole: {
       "recovery-worker": 0,
+      builder: 0,
       harvester: 0,
       runner: 0,
       upgrader: 0
     },
     creeps: [],
-    sources: []
+    sources: [],
+    primaryStructures: [],
+    primaryConstructionSites: []
   };
 }
 

@@ -100,7 +100,7 @@ describe("telemetry", () => {
     }, Memory.telemetry!, cpu, null);
 
     expect(snapshot).toEqual({
-      schemaVersion: 17,
+      schemaVersion: 18,
       gameTime: 25,
       cpuGameTime: null,
       cpu: {
@@ -114,6 +114,7 @@ describe("telemetry", () => {
       mode: "normal",
       roleCounts: {
         "recovery-worker": 0,
+        builder: 0,
         harvester: 1,
         runner: 1,
         upgrader: 0
@@ -197,7 +198,7 @@ describe("telemetry", () => {
 
     expect(testGlobal.RawMemory.setActiveSegments).toHaveBeenCalledWith([telemetrySegmentId]);
     expect(JSON.parse(testGlobal.RawMemory.segments[telemetrySegmentId] as string)).toMatchObject({
-      schemaVersion: 17,
+      schemaVersion: 18,
       gameTime: 25,
       errors: [],
       telemetry: {
@@ -262,11 +263,11 @@ describe("telemetry", () => {
     }, createCpuProfiler());
 
     expect(JSON.parse(testGlobal.RawMemory.segments[telemetrySegmentId] as string)).toEqual({
-      schemaVersion: 17,
+      schemaVersion: 18,
       gameTime: 26,
       errors: [],
       telemetry: {
-        schemaVersion: 17,
+        schemaVersion: 18,
         gameTime: 26,
         cpuGameTime: 25,
         cpu: {
@@ -288,6 +289,7 @@ describe("telemetry", () => {
         mode: "normal",
         roleCounts: {
           "recovery-worker": 0,
+          builder: 0,
           harvester: 1,
           runner: 1,
           upgrader: 0

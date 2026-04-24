@@ -101,6 +101,32 @@ describe("buildMirroredMap", () => {
     expect(result.startRooms.candidate).toBe("E1S0");
   });
 
+  it("skips start rooms with a source within range 2 of an edge", () => {
+    const sourceRooms = [
+      makeRoom("W0N0", "out of borders", [], plainTerrain(0)),
+      makeRoom("E0S0", "normal", [
+        { type: "controller", x: 25, y: 25 },
+        { type: "source", x: 2, y: 43 },
+        { type: "source", x: 29, y: 13 }
+      ], plainTerrain(100)),
+      makeRoom("E1S0", "normal", [
+        { type: "controller", x: 25, y: 25 },
+        { type: "source", x: 3, y: 43 },
+        { type: "source", x: 29, y: 13 }
+      ], plainTerrain(25)),
+      makeRoom("W0S0", "out of borders", [], plainTerrain(0)),
+      makeRoom("E0N0", "out of borders", [], plainTerrain(0)),
+      makeRoom("E1N0", "out of borders", [], plainTerrain(0)),
+      makeRoom("E2S0", "out of borders", [], plainTerrain(0)),
+      makeRoom("E2N0", "out of borders", [], plainTerrain(0))
+    ];
+
+    const result = buildMirroredMap(sourceRooms);
+
+    expect(result.startRooms.baseline).toBe("W0S0");
+    expect(result.startRooms.candidate).toBe("E1S0");
+  });
+
   it("can use the center-most controller strategy when requested", () => {
     const sourceRooms = [
       makeRoom("W0N0", "out of borders", [], plainTerrain(0)),

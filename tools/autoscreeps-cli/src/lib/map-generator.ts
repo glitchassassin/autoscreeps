@@ -48,6 +48,7 @@ export type GeneratedExperimentMap = {
 
 const mapIndexUrl = "https://maps.screepspl.us/maps/index.json";
 const mapFileUrl = (mapId: string) => `https://maps.screepspl.us/maps/map-${mapId}.json`;
+const sourceEdgeExclusionRange = 2;
 
 export async function generateExperimentMap(config: MapGeneratorConfig, runDir: string): Promise<GeneratedExperimentMap> {
   if (config.type !== "mirrored-random-1x1") {
@@ -143,10 +144,11 @@ function selectMaxPlainsTwoSourceRoom(sourceRooms: MapRoom[]): string {
   const candidateRooms = sourceRooms
     .filter((room) => room.status === "normal")
     .filter((room) => countObjects(room, "controller") === 1)
-    .filter((room) => countObjects(room, "source") === 2);
+    .filter((room) => countObjects(room, "source") === 2)
+    .filter((room) => !hasSourceWithinRangeOfEdge(room, sourceEdgeExclusionRange));
 
   if (candidateRooms.length === 0) {
-    throw new Error("The generated source map did not contain any normal controller rooms with exactly two sources.");
+    throw new Error("The generated source map did not contain any normal controller rooms with exactly two sources and no source within range 2 of an edge.");
   }
 
   const controllerCoordinates = candidateRooms.map((room) => roomNameToXY(room.room));
@@ -174,10 +176,13 @@ function selectMaxPlainsTwoSourceRoom(sourceRooms: MapRoom[]): string {
 }
 
 function selectCenterMostControllerRoom(sourceRooms: MapRoom[]): string {
-  const controllerRooms = sourceRooms.filter((room) => room.status === "normal" && room.objects.some((object) => object.type === "controller"));
+  const controllerRooms = sourceRooms
+    .filter((room) => room.status === "normal")
+    .filter((room) => room.objects.some((object) => object.type === "controller"))
+    .filter((room) => !hasSourceWithinRangeOfEdge(room, sourceEdgeExclusionRange));
 
   if (controllerRooms.length === 0) {
-    throw new Error("The generated source map did not contain any controller rooms.");
+    throw new Error("The generated source map did not contain any controller rooms with no source within range 2 of an edge.");
   }
 
   const playableCoordinates = controllerRooms.map((room) => roomNameToXY(room.room));
@@ -202,6 +207,16 @@ function selectCenterMostControllerRoom(sourceRooms: MapRoom[]): string {
 
 function countObjects(room: MapRoom, type: string): number {
   return room.objects.filter((object) => object.type === type).length;
+}
+
+function hasSourceWithinRangeOfEdge(room: MapRoom, range: number): boolean {
+  return room.objects.some((object) => {
+    if (object.type !== "source" || typeof object.x !== "number" || typeof object.y !== "number") {
+      return false;
+    }
+
+    return object.x <= range || object.x >= 49 - range || object.y <= range || object.y >= 49 - range;
+  });
 }
 
 function countPlainTiles(terrain: string): number {

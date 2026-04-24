@@ -1,7 +1,8 @@
-import type { ColonyMode, SitePlan, SpawnDemandInputs, SpawnDemandSummary, SpawnPlan, SpawnRequestPlan, WorldSnapshot } from "../core/types";
+import type { ColonyMode, ConstructionPlan, SitePlan, SpawnDemandInputs, SpawnDemandSummary, SpawnPlan, SpawnRequestPlan, WorldSnapshot } from "../core/types";
 
 const roleBodyPatterns: Partial<Record<WorkerRole, BodyPartConstant[]>> = {
   "recovery-worker": ["work", "carry", "move"],
+  builder: ["work", "carry", "move"],
   runner: ["carry", "move"],
   upgrader: ["work", "carry", "move"]
 };
@@ -27,12 +28,14 @@ export function chooseBody(role: WorkerRole, availableEnergy: number): BodyPartC
 export function summarizeSpawnDemand(
   world: WorldSnapshot,
   mode: ColonyMode,
-  sites: SitePlan[]
+  sites: SitePlan[],
+  construction: Pick<ConstructionPlan, "backlogCount"> = { backlogCount: 0 }
 ): SpawnDemandSummary {
   switch (mode) {
     case "bootstrap":
       return createDemandSummary({
         "recovery-worker": 0,
+        builder: 0,
         harvester: 0,
         runner: 0,
         upgrader: 0
@@ -40,12 +43,12 @@ export function summarizeSpawnDemand(
     case "recovery":
       return summarizeFixedSpawnDemand(world, determineRecoveryTargets(sites.length), ["recovery-worker", "harvester", "runner", "upgrader"]);
     case "normal":
-      return summarizeNormalSpawnDemand(world, sites);
+      return summarizeNormalSpawnDemand(world, sites, construction);
   }
 }
 
-export function createSpawnPlan(world: WorldSnapshot, mode: ColonyMode, sites: SitePlan[]): SpawnPlan {
-  const demand = summarizeSpawnDemand(world, mode, sites);
+export function createSpawnPlan(world: WorldSnapshot, mode: ColonyMode, sites: SitePlan[], construction: ConstructionPlan): SpawnPlan {
+  const demand = summarizeSpawnDemand(world, mode, sites, construction);
   const request = buildSpawnRequest(world, demand);
 
   return {
@@ -88,7 +91,7 @@ function createCreepMemory(role: WorkerRole, homeRoom: string): CreepMemory {
 }
 
 function usesWorkingState(role: WorkerRole): boolean {
-  return role === "recovery-worker" || role === "runner";
+  return role === "recovery-worker" || role === "builder" || role === "runner";
 }
 
 function repeatPatternToEnergy(pattern: BodyPartConstant[], availableEnergy: number): BodyPartConstant[] | null {
@@ -125,6 +128,7 @@ function summarizeFixedSpawnDemand(
 ): SpawnDemandSummary {
   const unmetDemand: Record<WorkerRole, number> = {
     "recovery-worker": Math.max(targets["recovery-worker"] - world.creepsByRole["recovery-worker"], 0),
+    builder: Math.max(targets.builder - world.creepsByRole.builder, 0),
     harvester: Math.max(targets.harvester - world.creepsByRole.harvester, 0),
     runner: Math.max(targets.runner - world.creepsByRole.runner, 0),
     upgrader: Math.max(targets.upgrader - world.creepsByRole.upgrader, 0)
@@ -133,17 +137,23 @@ function summarizeFixedSpawnDemand(
   return createDemandSummary(unmetDemand, findNextRoleByCount(unmetDemand, priority), createEmptyDemandInputs());
 }
 
-function summarizeNormalSpawnDemand(world: WorldSnapshot, sites: SitePlan[]): SpawnDemandSummary {
+function summarizeNormalSpawnDemand(
+  world: WorldSnapshot,
+  sites: SitePlan[],
+  construction: Pick<ConstructionPlan, "backlogCount">
+): SpawnDemandSummary {
   const plannedHarvesterBody = choosePlanningBody(world, "harvester");
   const plannedRunnerBody = choosePlanningBody(world, "runner");
+  const plannedBuilderBody = choosePlanningBody(world, "builder");
   const plannedUpgraderBody = choosePlanningBody(world, "upgrader");
 
-  if (!plannedHarvesterBody || !plannedRunnerBody || !plannedUpgraderBody) {
+  if (!plannedHarvesterBody || !plannedRunnerBody || !plannedBuilderBody || !plannedUpgraderBody) {
     return createDemandSummary({
       "recovery-worker": 0,
+      builder: 0,
       harvester: 0,
       runner: 0,
-        upgrader: 0
+      upgrader: 0
     }, null, createEmptyDemandInputs());
   }
 
@@ -184,8 +194,12 @@ function summarizeNormalSpawnDemand(world: WorldSnapshot, sites: SitePlan[]): Sp
     .reduce((total, creep) => total + creep.activeCarryParts, 0);
   const runnerTargetCount = calculateTargetCount(totalRequiredCarryParts, plannedRunnerCarry);
   const runnerDeficitCount = calculateTargetCount(Math.max(totalRequiredCarryParts - currentCarryParts, 0), plannedRunnerCarry);
+  const builderTargetCount = construction.backlogCount > 0 ? 1 : 0;
+  const currentBuilderCount = localCreeps.filter((creep) => creep.role === "builder").length;
+  const builderDeficitCount = Math.max(builderTargetCount - currentBuilderCount, 0);
   const fixedUpkeepEpt = harvesterTargetCount * calculateBodyCost(plannedHarvesterBody) / creepLifetimeTicks
-    + runnerTargetCount * calculateBodyCost(plannedRunnerBody) / creepLifetimeTicks;
+    + runnerTargetCount * calculateBodyCost(plannedRunnerBody) / creepLifetimeTicks
+    + builderTargetCount * calculateBodyCost(plannedBuilderBody) / creepLifetimeTicks;
   const availableUpgraderBudgetEpt = Math.max(totalGrossEpt - fixedUpkeepEpt, 0);
   const currentUpgraderNetEpt = localCreeps
     .filter((creep) => creep.role === "upgrader")
@@ -195,6 +209,7 @@ function summarizeNormalSpawnDemand(world: WorldSnapshot, sites: SitePlan[]): Sp
 
   const unmetDemand: Record<WorkerRole, number> = {
     "recovery-worker": 0,
+    builder: builderDeficitCount,
     harvester: harvesterDeficitCount,
     runner: runnerDeficitCount,
     upgrader: upgraderDeficitCount
@@ -228,6 +243,7 @@ function summarizeNormalSpawnDemand(world: WorldSnapshot, sites: SitePlan[]): Sp
     harvesterDeficitCount,
     runnerCoverage: inputs.haul.coverage,
     runnerDeficitCount,
+    builderDeficitCount,
     upgraderCoverage: inputs.upgrade.coverage,
     upgraderDeficitCount
   }), inputs);
@@ -260,6 +276,7 @@ function chooseNextNormalRole(input: {
   harvesterDeficitCount: number;
   runnerCoverage: number;
   runnerDeficitCount: number;
+  builderDeficitCount: number;
   upgraderCoverage: number;
   upgraderDeficitCount: number;
 }): WorkerRole | null {
@@ -278,6 +295,10 @@ function chooseNextNormalRole(input: {
     });
 
     return logisticsCandidates[0]?.role ?? null;
+  }
+
+  if (input.builderDeficitCount > 0) {
+    return "builder";
   }
 
   if (input.upgraderDeficitCount > 0) {
@@ -370,6 +391,7 @@ function getBodyPartCost(part: BodyPartConstant): number {
 function determineRecoveryTargets(siteCount: number): Record<WorkerRole, number> {
   return {
     "recovery-worker": 1,
+    builder: 0,
     harvester: siteCount > 0 ? 1 : 0,
     runner: siteCount > 0 ? 1 : 0,
     upgrader: 0

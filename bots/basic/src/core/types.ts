@@ -30,10 +30,29 @@ export type SourceSnapshot = {
   pathLengthToPrimarySpawn: number | null;
 };
 
+export type StructureSnapshot = {
+  structureId: string | null;
+  roomName: string;
+  x: number;
+  y: number;
+  structureType: StructureConstant;
+};
+
+export type ConstructionSiteSnapshot = {
+  siteId: string;
+  roomName: string;
+  x: number;
+  y: number;
+  structureType: BuildableStructureConstant;
+  progress: number;
+  progressTotal: number;
+};
+
 export type WorldSnapshot = {
   gameTime: number;
   primarySpawnName: string | null;
   primarySpawnConstructionSiteCount: number;
+  primaryConstructionSiteCount: number;
   primarySpawnSpawning: boolean | null;
   primaryRoomName: string | null;
   primaryRoomEnergyAvailable: number | null;
@@ -45,6 +64,8 @@ export type WorldSnapshot = {
   creepsByRole: Record<WorkerRole, number>;
   creeps: CreepSnapshot[];
   sources: SourceSnapshot[];
+  primaryStructures: StructureSnapshot[];
+  primaryConstructionSites: ConstructionSiteSnapshot[];
 };
 
 export type SitePlan = {
@@ -107,9 +128,27 @@ export type SpawnPlan = {
   request: SpawnRequestPlan | null;
 };
 
+export type ConstructionSiteRequestPlan = {
+  roomName: string;
+  x: number;
+  y: number;
+  structureType: BuildableStructureConstant;
+  rcl: number;
+  label: string;
+};
+
+export type ConstructionPlan = {
+  roomName: string | null;
+  activeSiteCount: number;
+  placeableSiteCount: number;
+  backlogCount: number;
+  request: ConstructionSiteRequestPlan | null;
+};
+
 export type ColonyPlan = {
   mode: ColonyMode;
   spawn: SpawnPlan;
+  construction: ConstructionPlan;
   sites: SitePlan[];
   creeps: Record<string, CreepPlan>;
 };

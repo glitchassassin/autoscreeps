@@ -5,7 +5,7 @@ import { createEmptyCpuTelemetrySnapshot, type CpuTelemetrySnapshot } from "./cp
 
 export const telemetrySegmentId = 42;
 export const telemetrySampleEveryTicks = 25;
-export const telemetrySchemaVersion = 17;
+export const telemetrySchemaVersion = 18;
 
 export type SourceTelemetrySnapshot = {
   sourceId: string;

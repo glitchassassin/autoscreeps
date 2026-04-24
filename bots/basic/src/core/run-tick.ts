@@ -1,4 +1,5 @@
 import type { TickResult } from "./types";
+import { executeConstructionPlan } from "../execution/construction";
 import { executeCreepRoles } from "../execution/creeps";
 import { executeSpawnPlan } from "../execution/spawn";
 import { createColonyPlan } from "../planning/colony-plan";
@@ -15,6 +16,7 @@ export function runTick(profiler?: CpuProfiler): TickResult {
   const plan = measureCpu(profiler, "plan", () => createColonyPlan(world));
 
   measureCpu(profiler, "spawn", () => executeSpawnPlan(plan.spawn));
+  measureCpu(profiler, "construction", () => executeConstructionPlan(plan.construction));
   const execution = measureCpu(profiler, "creeps", () => executeCreepRoles(plan));
   advanceRoomPlanning(world, profiler);
 

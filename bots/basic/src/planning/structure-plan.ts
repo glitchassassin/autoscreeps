@@ -29,14 +29,15 @@ export function planRoomStructures(
 ): RoomStructurePlan {
   validateInputs(room, stampPlan, roadPlan, sourceSinkPlan, rampartPlan);
   const stampStructures = createStampStructurePlacements(stampPlan);
+  const extensionRcls = assignExtensionRcls(stampPlan, stampStructures, rampartPlan);
   const structures = sortPlacements(dedupePlacements([
-    ...stampStructures,
+    ...applyExtensionRcls(stampStructures, extensionRcls),
     ...sourceSinkPlan.structures,
     ...createRoadPlacements(roadPlan, rampartPlan),
     ...createRampartPlacements(rampartPlan),
     ...rampartPlan.towers.map((tower, index) => createPlacement("tower", tower, 3, `tower-${index + 1}`)),
     ...(rampartPlan.nuker ? [createPlacement("nuker", rampartPlan.nuker, 8, "nuker")] : []),
-    ...rampartPlan.extensions.map((extension, index) => createPlacement("extension", extension, 8, `extension-${index + 1}`)),
+    ...rampartPlan.extensions.map((extension, index) => createPlacement("extension", extension, extensionRcls.get(extension.tile) ?? 8, `extension-${index + 1}`)),
     ...(rampartPlan.observer ? [createPlacement("observer", rampartPlan.observer, 8, "observer")] : [])
   ]));
 
@@ -147,6 +148,92 @@ function createRampartPlacements(rampartPlan: RampartPlan): PlannedStructurePlac
   return rampartPlan.rampartTiles.map((tile) => createPlacement("rampart", fromIndex(tile), 2, "rampart"));
 }
 
+function assignExtensionRcls(
+  stampPlan: RoomStampPlan,
+  stampStructures: PlannedStructurePlacement[],
+  rampartPlan: RampartPlan
+): Map<number, number> {
+  const podA = collectFastfillerExtensions(stampStructures, "pod1-", stampPlan.stamps.fastfillers[0]);
+  const podB = collectFastfillerExtensions(stampStructures, "pod2-", stampPlan.stamps.fastfillers[1]);
+  const spare = [...rampartPlan.extensions].sort(compareSpareExtensions);
+  const orderedExtensions = [
+    ...podA,
+    ...podB,
+    ...spare.map((extension) => ({ tile: extension.tile }))
+  ];
+  const rcls = new Map<number, number>();
+
+  orderedExtensions.forEach((extension, index) => {
+    rcls.set(extension.tile, getExtensionRcl(index + 1));
+  });
+
+  return rcls;
+}
+
+function applyExtensionRcls(
+  placements: PlannedStructurePlacement[],
+  extensionRcls: Map<number, number>
+): PlannedStructurePlacement[] {
+  return placements.map((placement) => {
+    if (placement.type !== "extension") {
+      return placement;
+    }
+
+    return {
+      ...placement,
+      rcl: extensionRcls.get(placement.tile) ?? placement.rcl
+    };
+  });
+}
+
+function collectFastfillerExtensions(
+  placements: PlannedStructurePlacement[],
+  labelPrefix: string,
+  pod: RoomStampPlan["stamps"]["fastfillers"][number]
+): PlannedStructurePlacement[] {
+  const container = pod.anchors.container ?? pod.anchor;
+  return placements
+    .filter((placement) => placement.type === "extension" && placement.label.startsWith(labelPrefix))
+    .sort((left, right) => compareFastfillerExtensions(left, right, container));
+}
+
+function compareFastfillerExtensions(
+  left: PlannedStructurePlacement,
+  right: PlannedStructurePlacement,
+  container: RoomStampAnchor
+): number {
+  const leftRange = range(left, container);
+  const rightRange = range(right, container);
+  if (leftRange !== rightRange) {
+    return leftRange - rightRange;
+  }
+
+  return compareCoordinates(left, right);
+}
+
+function compareSpareExtensions(
+  left: RampartPlan["extensions"][number],
+  right: RampartPlan["extensions"][number]
+): number {
+  const leftDistance = left.score[1] ?? Number.MAX_SAFE_INTEGER;
+  const rightDistance = right.score[1] ?? Number.MAX_SAFE_INTEGER;
+  if (leftDistance !== rightDistance) {
+    return leftDistance - rightDistance;
+  }
+
+  return compareCoordinates(left, right);
+}
+
+function getExtensionRcl(rank: number): number {
+  if (rank <= 5) return 2;
+  if (rank <= 10) return 3;
+  if (rank <= 20) return 4;
+  if (rank <= 30) return 5;
+  if (rank <= 40) return 6;
+  if (rank <= 50) return 7;
+  return 8;
+}
+
 function createPlacement(type: PlannedStructureType, coord: RoomStampAnchor, rcl: number, label: string): PlannedStructurePlacement {
   return {
     type,
@@ -229,6 +316,20 @@ function isPlannedStructureTerrainAllowed(terrain: string, structure: PlannedStr
 
 function compareNumbers(left: number, right: number): number {
   return left - right;
+}
+
+function compareCoordinates(left: RoomStampAnchor, right: RoomStampAnchor): number {
+  if (left.y !== right.y) {
+    return left.y - right.y;
+  }
+  if (left.x !== right.x) {
+    return left.x - right.x;
+  }
+  return toIndex(left.x, left.y) - toIndex(right.x, right.y);
+}
+
+function range(left: RoomStampAnchor, right: RoomStampAnchor): number {
+  return Math.max(Math.abs(left.x - right.x), Math.abs(left.y - right.y));
 }
 
 function isValidIndex(index: number): boolean {

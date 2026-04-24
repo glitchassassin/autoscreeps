@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { runBuilder } from "../src/execution/roles/builder";
 import { runHarvester } from "../src/execution/roles/harvester";
 import { runRecoveryWorker } from "../src/execution/roles/recovery-worker";
 import { runRunner } from "../src/execution/roles/runner";
@@ -107,6 +108,68 @@ describe("role execution", () => {
     expect(creep.withdraw).not.toHaveBeenCalled();
     expect(creep.pickup).not.toHaveBeenCalled();
   });
+
+  it("builders withdraw from a full spawn while gathering", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+    const spawn = makeSpawn({ freeCapacity: 0, storedEnergy: 300 });
+    const creep = makeCreep({ role: "builder", working: false, energy: 0 });
+    testGlobal.Game.spawns = { Spawn1: spawn } as Game["spawns"];
+
+    runBuilder(creep);
+
+    expect(creep.withdraw).toHaveBeenCalledWith(spawn, RESOURCE_ENERGY);
+  });
+
+  it("builders move to the spawn while waiting for it to fill", () => {
+    const testGlobal = globalThis as typeof globalThis & { Game: Game };
+    const spawn = makeSpawn({ freeCapacity: 300, storedEnergy: 0 });
+    const creep = makeCreep({ role: "builder", working: false, energy: 0 });
+    testGlobal.Game.spawns = { Spawn1: spawn } as Game["spawns"];
+
+    runBuilder(creep);
+
+    expect(creep.withdraw).not.toHaveBeenCalled();
+    expect(creep.moveTo).toHaveBeenCalledWith(spawn, { visualizePathStyle: { stroke: "#ffaa00" } });
+  });
+
+  it("builders build the closest owned construction site while working", () => {
+    const site = makeConstructionSite("extension", 20, 20);
+    const creep = makeCreep({
+      role: "builder",
+      working: true,
+      energy: 50,
+      roomFind: vi.fn((type: FindConstant) => type === FIND_MY_CONSTRUCTION_SITES ? [site] : [])
+    });
+
+    runBuilder(creep);
+
+    expect(creep.build).toHaveBeenCalledWith(site);
+  });
+
+  it("builders move toward out-of-range construction sites", () => {
+    const site = makeConstructionSite("extension", 20, 20);
+    const creep = makeCreep({
+      role: "builder",
+      working: true,
+      energy: 50,
+      buildResult: ERR_NOT_IN_RANGE,
+      roomFind: vi.fn((type: FindConstant) => type === FIND_MY_CONSTRUCTION_SITES ? [site] : [])
+    });
+
+    runBuilder(creep);
+
+    expect(creep.moveTo).toHaveBeenCalledWith(site, { visualizePathStyle: { stroke: "#ffffff" } });
+  });
+
+  it("builders upgrade only when no construction target exists", () => {
+    const controller = { my: true, pos: { x: 15, y: 15, roomName: "W0N0" } } as StructureController;
+    const creep = makeCreep({ role: "builder", working: true, energy: 50, controller });
+
+    runBuilder(creep);
+
+    expect(creep.build).not.toHaveBeenCalled();
+    expect(creep.upgradeController).toHaveBeenCalledWith(controller);
+  });
 });
 
 function makeSpawn(input: { freeCapacity: number; storedEnergy?: number }): StructureSpawn {
@@ -123,12 +186,23 @@ function makeSpawn(input: { freeCapacity: number; storedEnergy?: number }): Stru
   } as unknown as StructureSpawn;
 }
 
+function makeConstructionSite(structureType: BuildableStructureConstant, x: number, y: number): ConstructionSite {
+  return {
+    id: `${structureType}-${x}-${y}` as Id<ConstructionSite>,
+    structureType,
+    progress: 0,
+    progressTotal: 3000,
+    pos: { x, y, roomName: "W0N0" }
+  } as ConstructionSite;
+}
+
 function makeCreep(input: {
   role: WorkerRole;
   working?: boolean;
   energy?: number;
   activeWorkParts?: number;
   harvestResult?: ScreepsReturnCode;
+  buildResult?: ScreepsReturnCode;
   controller?: StructureController;
   roomFind?: (type: FindConstant) => unknown[];
   findClosestByPath?: (targets: object[] | number) => unknown;
@@ -157,6 +231,7 @@ function makeCreep(input: {
     transfer: vi.fn(() => OK),
     pickup: vi.fn(() => OK),
     withdraw: vi.fn(() => OK),
+    build: vi.fn(() => input.buildResult ?? OK),
     upgradeController: vi.fn(() => OK),
     moveTo: vi.fn(),
     getActiveBodyparts: vi.fn((part: BodyPartConstant) => part === WORK ? input.activeWorkParts ?? 0 : 0)

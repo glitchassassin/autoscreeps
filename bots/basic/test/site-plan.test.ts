@@ -72,6 +72,7 @@ function makeWorld(input: { creeps: WorldSnapshot["creeps"] }): WorldSnapshot {
     gameTime: 1,
     primarySpawnName: "Spawn1",
     primarySpawnConstructionSiteCount: 0,
+    primaryConstructionSiteCount: 0,
     primarySpawnSpawning: false,
     primaryRoomName: "W0N0",
     primaryRoomEnergyAvailable: 300,
@@ -86,6 +87,7 @@ function makeWorld(input: { creeps: WorldSnapshot["creeps"] }): WorldSnapshot {
     totalCreeps: input.creeps.length,
     creepsByRole: {
       "recovery-worker": input.creeps.filter((creep) => creep.role === "recovery-worker").length,
+      builder: input.creeps.filter((creep) => creep.role === "builder").length,
       harvester: input.creeps.filter((creep) => creep.role === "harvester").length,
       runner: input.creeps.filter((creep) => creep.role === "runner").length,
       upgrader: input.creeps.filter((creep) => creep.role === "upgrader").length
@@ -112,7 +114,9 @@ function makeWorld(input: { creeps: WorldSnapshot["creeps"] }): WorldSnapshot {
         ticksToRegeneration: 300,
         pathLengthToPrimarySpawn: 5
       }
-    ]
+    ],
+    primaryStructures: [],
+    primaryConstructionSites: []
   };
 }
 

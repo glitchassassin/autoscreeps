@@ -17,12 +17,12 @@ export function findPickupTarget(creep: Creep): EnergyPickupTarget | null {
 }
 
 export function findWithdrawTarget(creep: Creep): EnergyWithdrawTarget | null {
-  const spawns = Object.values(Game.spawns).filter(
-    (spawn) => spawn.room.name === creep.room.name
-      && getStoredEnergy(spawn) > 0
-      && getFreeEnergyCapacity(spawn) === 0
-  );
+  const spawns = Object.values(Game.spawns).filter((spawn) => spawn.room.name === creep.room.name);
   return findClosestByPath(creep, spawns);
+}
+
+export function canWithdrawEnergy(target: EnergyWithdrawTarget): boolean {
+  return getStoredEnergy(target) > 0 && getFreeEnergyCapacity(target) === 0;
 }
 
 export function getStoredEnergy(target: { store?: StoreDefinition; energy?: number }): number {

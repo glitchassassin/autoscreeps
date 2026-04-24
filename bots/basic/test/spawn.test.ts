@@ -33,6 +33,7 @@ describe("spawn manager", () => {
     expect(chooseBody("harvester", 500)).toEqual([WORK, WORK, WORK, WORK, MOVE, MOVE]);
     expect(chooseBody("harvester", 650)).toEqual([WORK, WORK, WORK, WORK, WORK, MOVE, MOVE, MOVE]);
     expect(chooseBody("runner", 300)).toEqual([CARRY, MOVE, CARRY, MOVE, CARRY, MOVE]);
+    expect(chooseBody("builder", 600)).toEqual([WORK, CARRY, MOVE, WORK, CARRY, MOVE, WORK, CARRY, MOVE]);
     expect(chooseBody("upgrader", 600)).toEqual([WORK, CARRY, MOVE, WORK, CARRY, MOVE, WORK, CARRY, MOVE]);
   });
 
@@ -101,6 +102,7 @@ describe("spawn manager", () => {
       },
       unmetDemand: {
         "recovery-worker": 0,
+        builder: 0,
         harvester: 3,
         runner: 1,
         upgrader: 8
@@ -108,6 +110,24 @@ describe("spawn manager", () => {
       nextRole: "runner",
       totalUnmetDemand: 12
     });
+  });
+
+  it("prioritizes a builder before discretionary upgraders when construction backlog exists", () => {
+    const world = makeDemandWorld({
+      creeps: [
+        makeDemandCreepSnapshot("harvester-a", "harvester", { activeWorkParts: 4, bodyCost: 500 }),
+        makeDemandCreepSnapshot("harvester-b", "harvester", { activeWorkParts: 4, bodyCost: 500 }),
+        makeDemandCreepSnapshot("harvester-c", "harvester", { activeWorkParts: 4, bodyCost: 500 }),
+        makeDemandCreepSnapshot("harvester-d", "harvester", { activeWorkParts: 4, bodyCost: 500 }),
+        makeDemandCreepSnapshot("runner-a", "runner", { activeCarryParts: 5, bodyCost: 500 }),
+        makeDemandCreepSnapshot("runner-b", "runner", { activeCarryParts: 5, bodyCost: 500 })
+      ]
+    });
+
+    const demand = summarizeSpawnDemand(world, "normal", createSitePlans(world), { backlogCount: 1 });
+
+    expect(demand.unmetDemand.builder).toBe(1);
+    expect(demand.nextRole).toBe("builder");
   });
 
   it("delegates to spawnCreep for the planned recovery worker", () => {
@@ -228,6 +248,7 @@ function makeDemandWorld(input: { creeps: WorldSnapshot["creeps"] }): WorldSnaps
     gameTime: 1,
     primarySpawnName: "Spawn1",
     primarySpawnConstructionSiteCount: 0,
+    primaryConstructionSiteCount: 0,
     primarySpawnSpawning: false,
     primaryRoomName: "W0N0",
     primaryRoomEnergyAvailable: 600,
@@ -242,6 +263,7 @@ function makeDemandWorld(input: { creeps: WorldSnapshot["creeps"] }): WorldSnaps
     totalCreeps: input.creeps.length,
     creepsByRole: {
       "recovery-worker": input.creeps.filter((creep) => creep.role === "recovery-worker").length,
+      builder: input.creeps.filter((creep) => creep.role === "builder").length,
       harvester: input.creeps.filter((creep) => creep.role === "harvester").length,
       runner: input.creeps.filter((creep) => creep.role === "runner").length,
       upgrader: input.creeps.filter((creep) => creep.role === "upgrader").length
@@ -268,7 +290,9 @@ function makeDemandWorld(input: { creeps: WorldSnapshot["creeps"] }): WorldSnaps
         ticksToRegeneration: 300,
         pathLengthToPrimarySpawn: 5
       }
-    ]
+    ],
+    primaryStructures: [],
+    primaryConstructionSites: []
   };
 }
 

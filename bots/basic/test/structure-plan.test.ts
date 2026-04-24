@@ -29,6 +29,18 @@ describe("structure planning", () => {
 
     expect(validateRoomStructurePlan(testCase.room, testCase.plan, roadPlan, sourceSinkPlan, rampartPlan, structurePlan)).toEqual([]);
     expect(counts.get("extension")).toBe(60);
+    expect(countExtensionsAvailableByRcl(structurePlan)).toEqual({
+      2: 5,
+      3: 10,
+      4: 20,
+      5: 30,
+      6: 40,
+      7: 50,
+      8: 60
+    });
+    expectFastfillerExtensionsToUnlockByContainerRange(structurePlan, testCase.plan, 0);
+    expectFastfillerExtensionsToUnlockByContainerRange(structurePlan, testCase.plan, 1);
+    expectSpareExtensionsToUnlockByStorageDistance(structurePlan, rampartPlan);
     expect(counts.get("tower")).toBe(6);
     expect(counts.get("spawn")).toBe(3);
     expect(counts.get("lab")).toBe(10);
@@ -130,6 +142,85 @@ function countByType(plan: RoomStructurePlan): Map<string, number> {
   return counts;
 }
 
+function countExtensionsAvailableByRcl(plan: RoomStructurePlan): Record<number, number> {
+  const extensions = plan.structures.filter((structure) => structure.type === "extension");
+  return {
+    2: extensions.filter((structure) => structure.rcl <= 2).length,
+    3: extensions.filter((structure) => structure.rcl <= 3).length,
+    4: extensions.filter((structure) => structure.rcl <= 4).length,
+    5: extensions.filter((structure) => structure.rcl <= 5).length,
+    6: extensions.filter((structure) => structure.rcl <= 6).length,
+    7: extensions.filter((structure) => structure.rcl <= 7).length,
+    8: extensions.filter((structure) => structure.rcl <= 8).length
+  };
+}
+
+function expectFastfillerExtensionsToUnlockByContainerRange(
+  structurePlan: RoomStructurePlan,
+  stampPlan: RoomStampPlan,
+  podIndex: 0 | 1
+): void {
+  const labelPrefix = `pod${podIndex + 1}-`;
+  const container = stampPlan.stamps.fastfillers[podIndex].anchors.container ?? stampPlan.stamps.fastfillers[podIndex].anchor;
+  const extensions = structurePlan.structures.filter((structure) => structure.type === "extension" && structure.label.startsWith(labelPrefix));
+
+  expect(extensions).toHaveLength(12);
+  for (const left of extensions) {
+    for (const right of extensions) {
+      if (compareFastfillerUnlockOrder(left, right, container) < 0) {
+        expect(left.rcl).toBeLessThanOrEqual(right.rcl);
+      }
+    }
+  }
+}
+
+function expectSpareExtensionsToUnlockByStorageDistance(
+  structurePlan: RoomStructurePlan,
+  rampartPlan: ReturnType<typeof planRamparts>
+): void {
+  const rclByTile = new Map(
+    structurePlan.structures
+      .filter((structure) => structure.type === "extension" && structure.label.startsWith("extension-"))
+      .map((structure) => [structure.tile, structure.rcl])
+  );
+
+  expect(rclByTile.size).toBe(rampartPlan.extensions.length);
+  for (const left of rampartPlan.extensions) {
+    for (const right of rampartPlan.extensions) {
+      if (compareSpareUnlockOrder(left, right) < 0) {
+        expect(rclByTile.get(left.tile)).toBeLessThanOrEqual(rclByTile.get(right.tile)!);
+      }
+    }
+  }
+}
+
+function compareFastfillerUnlockOrder(
+  left: RoomStructurePlan["structures"][number],
+  right: RoomStructurePlan["structures"][number],
+  container: RoomStampAnchor
+): number {
+  const leftRange = range(left, container);
+  const rightRange = range(right, container);
+  if (leftRange !== rightRange) {
+    return leftRange - rightRange;
+  }
+
+  return compareCoordinates(left, right);
+}
+
+function compareSpareUnlockOrder(
+  left: ReturnType<typeof planRamparts>["extensions"][number],
+  right: ReturnType<typeof planRamparts>["extensions"][number]
+): number {
+  const leftDistance = left.score[1] ?? Number.MAX_SAFE_INTEGER;
+  const rightDistance = right.score[1] ?? Number.MAX_SAFE_INTEGER;
+  if (leftDistance !== rightDistance) {
+    return leftDistance - rightDistance;
+  }
+
+  return compareCoordinates(left, right);
+}
+
 function getLabRoadTiles(plan: RoomStampPlan): number[] {
   if (plan.stamps.labs === null) {
     return [];
@@ -139,6 +230,20 @@ function getLabRoadTiles(plan: RoomStampPlan): number[] {
     const coord = applyStampOffset(plan.stamps.labs!, offset);
     return coord.y * 50 + coord.x;
   });
+}
+
+function compareCoordinates(left: RoomStampAnchor, right: RoomStampAnchor): number {
+  if (left.y !== right.y) {
+    return left.y - right.y;
+  }
+  if (left.x !== right.x) {
+    return left.x - right.x;
+  }
+  return left.y * roomSize + left.x - (right.y * roomSize + right.x);
+}
+
+function range(left: RoomStampAnchor, right: RoomStampAnchor): number {
+  return Math.max(Math.abs(left.x - right.x), Math.abs(left.y - right.y));
 }
 
 function getLabStructurePattern(structurePlan: RoomStructurePlan, plan: RoomStampPlan): string[] {

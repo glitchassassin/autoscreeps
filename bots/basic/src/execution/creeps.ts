@@ -1,4 +1,5 @@
 import type { ColonyPlan, ExecutionSummary } from "../core/types";
+import { runBuilder } from "./roles/builder";
 import { runHarvester } from "./roles/harvester";
 import { runRecoveryWorker } from "./roles/recovery-worker";
 import { runRunner } from "./roles/runner";
@@ -11,6 +12,9 @@ export function executeCreepRoles(plan: ColonyPlan): ExecutionSummary {
     const creepPlan = plan.creeps[creep.name];
 
     switch (creep.memory.role) {
+      case "builder":
+        runBuilder(creep);
+        break;
       case "recovery-worker":
         runRecoveryWorker(creep);
         break;
