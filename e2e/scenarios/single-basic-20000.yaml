@@ -1,0 +1,16 @@
+version: 1
+name: single-basic-20000
+description: Run a single basic bot on a random 1x1 sector for 20000 ticks to verify longer-term room planning and extension construction.
+reset: full
+mapGenerator:
+  type: mirrored-random-1x1
+run:
+  tickDuration: 25
+  maxTicks: 20000
+  pollIntervalMs: 1000
+  maxWallClockMs: 9000000
+  maxStalledPolls: 60
+  terminalConditions:
+    win: []
+    fail:
+      - type: no-owned-controllers
