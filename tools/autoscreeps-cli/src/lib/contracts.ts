@@ -30,6 +30,8 @@ export type VariantBuildRecord = {
   nodeVersion: string;
 };
 
+export type ScreepsModule = string | { binary: string };
+
 export type VariantRecord = {
   role: VariantRole;
   snapshot: VariantSnapshot;

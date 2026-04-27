@@ -1,4 +1,4 @@
-import type { AuthSession, RoomSummary, UserBadge, UserWorldStatus } from "./contracts.ts";
+import type { AuthSession, RoomSummary, ScreepsModule, UserBadge, UserWorldStatus } from "./contracts.ts";
 
 type ScreepsApiClientOptions = {
   requestTimeoutMs?: number;
@@ -7,7 +7,7 @@ type ScreepsApiClientOptions = {
 type RegisterPayload = {
   username: string;
   password: string;
-  modules: Record<string, string>;
+  modules: Record<string, ScreepsModule>;
 };
 
 export type RoomObjectRecord = {
@@ -147,7 +147,7 @@ export class ScreepsApiClient {
     });
   }
 
-  async setUserCode(session: AuthSession, modules: Record<string, string>, branch = "$activeWorld"): Promise<void> {
+  async setUserCode(session: AuthSession, modules: Record<string, ScreepsModule>, branch = "$activeWorld"): Promise<void> {
     await this.requestAuthedJson(session, "/api/user/code", {
       method: "POST",
       body: JSON.stringify({
@@ -325,8 +325,13 @@ function delay(ms: number): Promise<void> {
   });
 }
 
-function hasNonEmptyModules(modules: Record<string, string>): boolean {
-  return Object.values(modules).some((moduleSource) => moduleSource.length > 0);
+function hasNonEmptyModules(modules: Record<string, ScreepsModule>): boolean {
+  return Object.values(modules).some((moduleSource) => {
+    if (typeof moduleSource === "string") {
+      return moduleSource.length > 0;
+    }
+    return moduleSource.binary.length > 0;
+  });
 }
 
 function extractEncodedTerrain(response: RoomTerrainResponse, room: string): string | null {

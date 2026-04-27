@@ -22,7 +22,8 @@ import type {
   UserWorldStatus,
   VariantInput,
   VariantRecord,
-  VariantRole
+  VariantRole,
+  ScreepsModule
 } from "./contracts.ts";
 import { autoscreepsReportSegmentId, inspectReportsByRole, type BotReportInspection } from "./bot-telemetry.ts";
 import { resetPrivateServer, restartScreepsService, startScreepsService, stopScreepsService } from "./docker.ts";
@@ -103,7 +104,7 @@ type ExperimentRunInput = {
 
 type PreparedVariant = {
   record: VariantRecord;
-  modules: Record<string, string>;
+  modules: Record<string, ScreepsModule>;
 };
 
 const spectatorCredentials = {
@@ -678,7 +679,7 @@ async function prepareVariant(input: {
   if (parsedSource.kind === "workspace") {
     const patchPath = path.join(input.runDir, `${input.role}.patch`);
     const snapshot = await createWorkspaceSnapshot(input.repoRoot, patchPath);
-    const { bundle, record } = await buildVariantPackage(input.repoRoot, input.packagePath, "auto");
+    const { modules, record } = await buildVariantPackage(input.repoRoot, input.packagePath, "auto");
 
     return {
       record: {
@@ -686,14 +687,12 @@ async function prepareVariant(input: {
         snapshot,
         build: record
       },
-      modules: {
-        main: bundle
-      }
+      modules
     };
   }
 
   return await withGitWorktree(input.repoRoot, parsedSource.ref, async (worktreeRoot, resolvedSha) => {
-    const { bundle, record } = await buildVariantPackage(worktreeRoot, input.packagePath, "ci");
+    const { modules, record } = await buildVariantPackage(worktreeRoot, input.packagePath, "ci");
     return {
       record: {
         role: input.role,
@@ -705,9 +704,7 @@ async function prepareVariant(input: {
         },
         build: record
       },
-      modules: {
-        main: bundle
-      }
+      modules
     };
   });
 }
