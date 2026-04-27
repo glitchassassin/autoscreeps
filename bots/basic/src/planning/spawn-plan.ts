@@ -11,6 +11,11 @@ const creepLifetimeTicks = 1500;
 const carryCapacity = 50;
 const harvestPowerPerWork = 2;
 const maxBodyPatterns = 5;
+const extensionBuilderTargetCount = 3;
+const constructionBuilderTargetCount = 1;
+const extensionBacklogUpgraderFloorCount = 1;
+
+type ConstructionDemandInput = Pick<ConstructionPlan, "backlogCount"> & Partial<Pick<ConstructionPlan, "extensionBacklogCount">>;
 
 export function chooseBody(role: WorkerRole, availableEnergy: number): BodyPartConstant[] | null {
   if (role === "harvester") {
@@ -29,7 +34,7 @@ export function summarizeSpawnDemand(
   world: WorldSnapshot,
   mode: ColonyMode,
   sites: SitePlan[],
-  construction: Pick<ConstructionPlan, "backlogCount"> = { backlogCount: 0 }
+  construction: ConstructionDemandInput = { backlogCount: 0 }
 ): SpawnDemandSummary {
   switch (mode) {
     case "bootstrap":
@@ -140,7 +145,7 @@ function summarizeFixedSpawnDemand(
 function summarizeNormalSpawnDemand(
   world: WorldSnapshot,
   sites: SitePlan[],
-  construction: Pick<ConstructionPlan, "backlogCount">
+  construction: ConstructionDemandInput
 ): SpawnDemandSummary {
   const plannedHarvesterBody = choosePlanningBody(world, "harvester");
   const plannedRunnerBody = choosePlanningBody(world, "runner");
@@ -195,7 +200,7 @@ function summarizeNormalSpawnDemand(
     .reduce((total, creep) => total + creep.activeCarryParts, 0);
   const runnerTargetCount = calculateTargetCount(totalRequiredCarryParts, plannedRunnerCarry);
   const runnerDeficitCount = calculateTargetCount(Math.max(totalRequiredCarryParts - currentCarryParts, 0), plannedRunnerCarry);
-  const builderTargetCount = construction.backlogCount > 0 ? 1 : 0;
+  const builderTargetCount = getBuilderTargetCount(construction);
   const currentBuilderCount = localCreeps.filter((creep) => creep.role === "builder").length;
   const builderDeficitCount = Math.max(builderTargetCount - currentBuilderCount, 0);
   const fixedUpkeepEpt = harvesterTargetCount * calculateBodyCost(plannedHarvesterBody) / creepLifetimeTicks
@@ -205,8 +210,14 @@ function summarizeNormalSpawnDemand(
   const currentUpgraderNetEpt = localCreeps
     .filter((creep) => creep.role === "upgrader")
     .reduce((total, creep) => total + calculateObservedUpgraderNetEpt(creep, normalizePathLength(world.primarySpawnToControllerPathLength)), 0);
-  const upgraderTargetCount = calculateTargetCount(availableUpgraderBudgetEpt, plannedUpgraderNetEpt);
-  const upgraderDeficitCount = calculateTargetCount(Math.max(availableUpgraderBudgetEpt - currentUpgraderNetEpt, 0), plannedUpgraderNetEpt);
+  const currentUpgraderCount = localCreeps.filter((creep) => creep.role === "upgrader").length;
+  const budgetedUpgraderTargetCount = calculateTargetCount(availableUpgraderBudgetEpt, plannedUpgraderNetEpt);
+  const upgraderTargetCount = hasExtensionBacklog(construction)
+    ? Math.min(budgetedUpgraderTargetCount, extensionBacklogUpgraderFloorCount)
+    : budgetedUpgraderTargetCount;
+  const upgraderDeficitCount = hasExtensionBacklog(construction)
+    ? Math.max(extensionBacklogUpgraderFloorCount - currentUpgraderCount, 0)
+    : calculateTargetCount(Math.max(availableUpgraderBudgetEpt - currentUpgraderNetEpt, 0), plannedUpgraderNetEpt);
 
   const unmetDemand: Record<WorkerRole, number> = {
     "recovery-worker": 0,
@@ -307,6 +318,18 @@ function chooseNextNormalRole(input: {
   }
 
   return null;
+}
+
+function getBuilderTargetCount(construction: ConstructionDemandInput): number {
+  if (hasExtensionBacklog(construction)) {
+    return Math.min(extensionBuilderTargetCount, construction.extensionBacklogCount ?? extensionBuilderTargetCount);
+  }
+
+  return construction.backlogCount > 0 ? constructionBuilderTargetCount : 0;
+}
+
+function hasExtensionBacklog(construction: ConstructionDemandInput): boolean {
+  return (construction.extensionBacklogCount ?? 0) > 0;
 }
 
 function normalizePathLength(pathLength: number | null): number {

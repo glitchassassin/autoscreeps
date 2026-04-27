@@ -46,6 +46,8 @@ describe("construction planning", () => {
     expect(plan).toMatchObject({
       activeSiteCount: 0,
       placeableSiteCount: 4,
+      backlogCount: 4,
+      extensionBacklogCount: 3,
       request: {
         roomName: "W0N0",
         x: 10,
@@ -85,6 +87,7 @@ describe("construction planning", () => {
       activeSiteCount: 1,
       placeableSiteCount: 2,
       backlogCount: 3,
+      extensionBacklogCount: 2,
       request: null
     });
   });
@@ -108,6 +111,7 @@ describe("construction planning", () => {
       activeSiteCount: 1,
       placeableSiteCount: 4,
       backlogCount: 5,
+      extensionBacklogCount: 3,
       request: null
     });
   });
@@ -121,6 +125,7 @@ describe("construction planning", () => {
       activeSiteCount: 0,
       placeableSiteCount: 0,
       backlogCount: 0,
+      extensionBacklogCount: 0,
       request: null
     });
   });

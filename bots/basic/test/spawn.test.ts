@@ -139,6 +139,31 @@ describe("spawn manager", () => {
     expect(demand.nextRole).toBe("builder");
   });
 
+  it("prioritizes extension backlog over discretionary upgrader growth", () => {
+    const world = makeDemandWorld({
+      creeps: [
+        makeDemandCreepSnapshot("harvester-a", "harvester", { activeWorkParts: 4, bodyCost: 500 }),
+        makeDemandCreepSnapshot("harvester-b", "harvester", { activeWorkParts: 4, bodyCost: 500 }),
+        makeDemandCreepSnapshot("harvester-c", "harvester", { activeWorkParts: 4, bodyCost: 500 }),
+        makeDemandCreepSnapshot("harvester-d", "harvester", { activeWorkParts: 4, bodyCost: 500 }),
+        makeDemandCreepSnapshot("runner-a", "runner", { activeCarryParts: 5, bodyCost: 500 }),
+        makeDemandCreepSnapshot("runner-b", "runner", { activeCarryParts: 5, bodyCost: 500 })
+      ]
+    });
+
+    const demand = summarizeSpawnDemand(world, "normal", createSitePlans(world), {
+      backlogCount: 5,
+      extensionBacklogCount: 5
+    });
+
+    expect(demand.inputs.upgrade.targetCount).toBe(1);
+    expect(demand.unmetDemand).toMatchObject({
+      builder: 3,
+      upgrader: 1
+    });
+    expect(demand.nextRole).toBe("builder");
+  });
+
   it("delegates to spawnCreep for the planned recovery worker", () => {
     const testGlobal = globalThis as typeof globalThis & { Game: Game };
     const spawn = makeSpawn();

@@ -14,11 +14,15 @@ export function createConstructionPlan(world: WorldSnapshot): ConstructionPlan {
   }
 
   const candidates = collectPlaceableConstructionSites(world, roomName, controllerLevel);
+  const activeExtensionSiteCount = world.primaryConstructionSites.filter((site) => site.structureType === STRUCTURE_EXTENSION).length;
+  const placeableExtensionSiteCount = candidates.filter((candidate) => candidate.structureType === STRUCTURE_EXTENSION).length;
+
   return {
     roomName,
     activeSiteCount,
     placeableSiteCount: candidates.length,
     backlogCount: activeSiteCount + candidates.length,
+    extensionBacklogCount: activeExtensionSiteCount + placeableExtensionSiteCount,
     request: activeSiteCount >= activeConstructionSiteTarget ? null : candidates[0] ?? null
   };
 }
@@ -29,6 +33,7 @@ function createEmptyConstructionPlan(roomName: string | null, activeSiteCount: n
     activeSiteCount,
     placeableSiteCount: 0,
     backlogCount: activeSiteCount,
+    extensionBacklogCount: 0,
     request: null
   };
 }

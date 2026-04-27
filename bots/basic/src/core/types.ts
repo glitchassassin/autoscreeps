@@ -151,6 +151,7 @@ export type ConstructionPlan = {
   activeSiteCount: number;
   placeableSiteCount: number;
   backlogCount: number;
+  extensionBacklogCount: number;
   request: ConstructionSiteRequestPlan | null;
 };
 
