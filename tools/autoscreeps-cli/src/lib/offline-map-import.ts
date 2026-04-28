@@ -21,26 +21,32 @@ type GeneratedMapRoom = {
   bus?: boolean;
   openTime?: number;
   sourceKeepers?: boolean;
-  novice?: boolean;
-  respawnArea?: boolean;
+  novice?: boolean | number;
+  respawnArea?: boolean | number;
   depositType?: string;
 };
 
-type RoomDoc = {
+export type RoomDoc = {
   _id: string;
   name: string;
   status: string;
   bus?: boolean;
   openTime?: number;
   sourceKeepers?: boolean;
-  novice?: boolean;
-  respawnArea?: boolean;
+  novice?: boolean | number;
+  respawnArea?: boolean | number;
   depositType?: string;
 };
 
 type TerrainDoc = {
   room: string;
   terrain: string;
+};
+
+type RoomStatusData = {
+  novice: Record<string, number>;
+  respawn: Record<string, number>;
+  closed: Record<string, number | null>;
 };
 
 type PendingRedisReply = {
@@ -74,6 +80,7 @@ export async function importMapFileOffline(hostFilePath: string, mapUrl: string)
   const accessibleRooms = roomDocs
     .filter((room) => room.status === "normal" && (!room.openTime || room.openTime < Date.now()))
     .map((room) => room._id);
+  const roomStatusData = buildRoomStatusData(roomDocs);
   const compressedTerrainData = zlib.deflateSync(JSON.stringify(buildTerrainData(roomDocs, terrainDocs))).toString("base64");
 
   const mongoClient = new MongoClient(mongoUri, { ignoreUndefined: true });
@@ -100,6 +107,7 @@ export async function importMapFileOffline(hostFilePath: string, mapUrl: string)
     await redis.command(["SET", "mainLoopPaused", "1"]);
     await redis.command(["SET", "gameTime", "1"]);
     await redis.command(["SET", "accessibleRooms", JSON.stringify(accessibleRooms)]);
+    await redis.command(["SET", "roomStatusData", JSON.stringify(roomStatusData)]);
     await redis.command(["SET", "mapUrl", mapUrl]);
     await redis.command(["SET", "terrainData", compressedTerrainData]);
     await redis.command(["SET", "databaseVersion", databaseVersion]);
@@ -115,6 +123,43 @@ export async function importMapFileOffline(hostFilePath: string, mapUrl: string)
       redis.close()
     ]);
   }
+}
+
+export function buildRoomStatusData(roomDocs: RoomDoc[], now = Date.now()): RoomStatusData {
+  const statusData: RoomStatusData = {
+    novice: {},
+    respawn: {},
+    closed: {}
+  };
+
+  for (const room of roomDocs) {
+    const noviceUntil = getFutureTimestamp(room.novice, now);
+    if (noviceUntil !== null) {
+      statusData.novice[room._id] = noviceUntil;
+      continue;
+    }
+
+    const respawnUntil = getFutureTimestamp(room.respawnArea, now);
+    if (respawnUntil !== null) {
+      statusData.respawn[room._id] = respawnUntil;
+      continue;
+    }
+
+    if (room.openTime && room.openTime > now) {
+      statusData.closed[room._id] = room.openTime;
+      continue;
+    }
+
+    if (room.status === "out of borders") {
+      statusData.closed[room._id] = null;
+    }
+  }
+
+  return statusData;
+}
+
+function getFutureTimestamp(value: boolean | number | undefined, now: number): number | null {
+  return typeof value === "number" && value > now ? value : null;
 }
 
 function parseGeneratedMap(input: string): GeneratedMapFile {

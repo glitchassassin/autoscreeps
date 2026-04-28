@@ -1,0 +1,16 @@
+version: 1
+name: duel-basic-20000
+description: Run a basic head-to-head experiment on mirrored copies of a random 1x1 sector until each bot reaches a terminal condition, up to 20000 ticks.
+reset: full
+mapGenerator:
+  type: mirrored-random-1x1
+run:
+  tickDuration: 25
+  maxTicks: 20000
+  pollIntervalMs: 1000
+  maxWallClockMs: 9000000
+  maxStalledPolls: 120
+  terminalConditions:
+    win: []
+    fail:
+      - type: no-owned-controllers
