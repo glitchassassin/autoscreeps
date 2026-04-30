@@ -1,16 +1,16 @@
 import { createRoomPlanningVisualization, type RoomPlanningVisualization } from "../../src/planning/room-planning-visualization.ts";
-import type { RoomPlanningPolicy } from "../../src/planning/room-plan.ts";
-import { loadBrowserPlanningFixture } from "./fixture.ts";
+import type { RoomPlanningPolicy, RoomPlanningRoomData } from "../../src/planning/room-plan.ts";
 
 export type PlannerWorkerRequest = {
-  roomName: string;
+  requestId: number;
+  room: RoomPlanningRoomData;
   policy: RoomPlanningPolicy;
   topK?: number;
 };
 
 export type PlannerWorkerResponse =
-  | { ok: true; visualization: RoomPlanningVisualization }
-  | { ok: false; error: string };
+  | { ok: true; requestId: number; visualization: RoomPlanningVisualization }
+  | { ok: false; requestId: number; error: string };
 
 self.addEventListener("message", (event: MessageEvent<PlannerWorkerRequest>) => {
   void handleRequest(event.data);
@@ -18,19 +18,14 @@ self.addEventListener("message", (event: MessageEvent<PlannerWorkerRequest>) => 
 
 async function handleRequest(request: PlannerWorkerRequest): Promise<void> {
   try {
-    const fixture = await loadBrowserPlanningFixture();
-    const room = fixture.map.getRoom(request.roomName);
-    if (room === null) {
-      throw new Error(`Room '${request.roomName}' is not available in the bundled fixture.`);
-    }
-
-    const visualization = createRoomPlanningVisualization(room, request.policy, {
+    const visualization = createRoomPlanningVisualization(request.room, request.policy, {
       topK: request.topK
     });
-    postMessage({ ok: true, visualization } satisfies PlannerWorkerResponse);
+    postMessage({ ok: true, requestId: request.requestId, visualization } satisfies PlannerWorkerResponse);
   } catch (error) {
     postMessage({
       ok: false,
+      requestId: request.requestId,
       error: error instanceof Error ? error.stack ?? error.message : String(error)
     } satisfies PlannerWorkerResponse);
   }

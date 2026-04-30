@@ -1,5 +1,7 @@
 import type { RoomPlanningMap, RoomPlanningObject, RoomPlanningRoomData } from "../../src/planning/room-plan.ts";
 import { isHighwayRoom, isSourceKeeperRoom } from "../../src/world/room-topology.ts";
+import botarena212Map from "../../test/fixtures/maps/map-botarena-212.json";
+import mmoShard1PlannerSampleMap from "../../test/fixtures/maps/map-mmo-shard1-planner-sample.json";
 
 type RawMapFile = {
   rooms: RawMapRoom[];
@@ -23,24 +25,59 @@ type RawMapObject = {
 };
 
 export type BrowserPlanningFixture = {
+  id: string;
+  label: string;
+  description: string;
   map: RoomPlanningMap;
   rooms: Map<string, RoomPlanningRoomData>;
   candidateRooms: string[];
 };
 
-let cachedFixture: BrowserPlanningFixture | null = null;
+export type BrowserPlanningFixtureOption = {
+  id: string;
+  label: string;
+  description: string;
+};
 
-export async function loadBrowserPlanningFixture(): Promise<BrowserPlanningFixture> {
-  if (cachedFixture !== null) {
-    return cachedFixture;
+type BrowserPlanningFixtureDescriptor = BrowserPlanningFixtureOption & {
+  rawMap: unknown;
+};
+
+const fixtureDescriptors = [
+  {
+    id: "botarena-212",
+    label: "Botarena 212",
+    description: "Bundled 2x1 botarena map fixture",
+    rawMap: botarena212Map
+  },
+  {
+    id: "mmo-shard1-planner-sample",
+    label: "MMO shard1 sample",
+    description: "Bundled shard1 planner-room sample",
+    rawMap: mmoShard1PlannerSampleMap
+  }
+] satisfies BrowserPlanningFixtureDescriptor[];
+
+export const defaultBrowserPlanningFixtureId = fixtureDescriptors[0]!.id;
+
+const fixtureCache = new Map<string, BrowserPlanningFixture>();
+
+export function getBrowserPlanningFixtureOptions(): BrowserPlanningFixtureOption[] {
+  return fixtureDescriptors.map(({ id, label, description }) => ({ id, label, description }));
+}
+
+export async function loadBrowserPlanningFixture(fixtureId = defaultBrowserPlanningFixtureId): Promise<BrowserPlanningFixture> {
+  const cached = fixtureCache.get(fixtureId);
+  if (cached) {
+    return cached;
   }
 
-  const response = await fetch(new URL("../../test/fixtures/maps/map-botarena-212.json", import.meta.url));
-  if (!response.ok) {
-    throw new Error(`Failed to load bundled map fixture: ${response.status} ${response.statusText}`);
+  const descriptor = fixtureDescriptors.find((fixture) => fixture.id === fixtureId);
+  if (!descriptor) {
+    throw new Error(`Unknown room planning fixture '${fixtureId}'.`);
   }
 
-  const rawMap = parseRawMap(await response.json());
+  const rawMap = parseRawMap(descriptor.rawMap);
   const rooms = new Map<string, RoomPlanningRoomData>();
   const candidateRooms: string[] = [];
 
@@ -53,7 +90,10 @@ export async function loadBrowserPlanningFixture(): Promise<BrowserPlanningFixtu
   }
 
   candidateRooms.sort((left, right) => left.localeCompare(right));
-  cachedFixture = {
+  const fixture = {
+    id: descriptor.id,
+    label: descriptor.label,
+    description: descriptor.description,
     rooms,
     candidateRooms,
     map: {
@@ -62,7 +102,8 @@ export async function loadBrowserPlanningFixture(): Promise<BrowserPlanningFixtu
       }
     }
   };
-  return cachedFixture;
+  fixtureCache.set(fixtureId, fixture);
+  return fixture;
 }
 
 function parseRawMap(input: unknown): RawMapFile {

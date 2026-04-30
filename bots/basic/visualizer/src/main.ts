@@ -7,7 +7,12 @@ import type {
 import type { RoomPlanningPolicy, RoomPlanningRoomData } from "../../src/planning/room-plan.ts";
 import { compareStructureDrawOrder, renderPlannedStructureSvg } from "../../src/planning/structure-svg.ts";
 import type { PlannedStructurePlacement } from "../../src/planning/structure-layout.ts";
-import { loadBrowserPlanningFixture, type BrowserPlanningFixture } from "./fixture.ts";
+import {
+  defaultBrowserPlanningFixtureId,
+  getBrowserPlanningFixtureOptions,
+  loadBrowserPlanningFixture,
+  type BrowserPlanningFixture
+} from "./fixture.ts";
 import type { PlannerWorkerRequest, PlannerWorkerResponse } from "./planner-worker.ts";
 import "./styles.css";
 
@@ -16,6 +21,7 @@ const terrainMaskWall = 1;
 const terrainMaskSwamp = 2;
 
 type AppState = {
+  fixtureId: string;
   fixture: BrowserPlanningFixture | null;
   room: RoomPlanningRoomData | null;
   visualization: RoomPlanningVisualization | null;
@@ -27,6 +33,7 @@ type AppState = {
 };
 
 const state: AppState = {
+  fixtureId: defaultBrowserPlanningFixtureId,
   fixture: null,
   room: null,
   visualization: null,
@@ -38,7 +45,9 @@ const state: AppState = {
 };
 
 const worker = new Worker(new URL("./planner-worker.ts", import.meta.url), { type: "module" });
+let nextPlanRequestId = 1;
 
+const fixtureSelect = getElement<HTMLSelectElement>("fixture-select");
 const roomSelect = getElement<HTMLSelectElement>("room-select");
 const randomRoomButton = getElement<HTMLButtonElement>("random-room");
 const policySelect = getElement<HTMLSelectElement>("policy-select");
@@ -58,6 +67,10 @@ const layerList = getElement<HTMLElement>("layer-list");
 const validationList = getElement<HTMLElement>("validation-list");
 
 worker.addEventListener("message", (event: MessageEvent<PlannerWorkerResponse>) => {
+  if (event.data.requestId !== nextPlanRequestId - 1) {
+    return;
+  }
+
   state.loading = false;
   if (!event.data.ok) {
     state.visualization = null;
@@ -73,6 +86,10 @@ worker.addEventListener("message", (event: MessageEvent<PlannerWorkerResponse>) 
   state.error = null;
   state.room = state.fixture?.map.getRoom(event.data.visualization.roomName) ?? null;
   render();
+});
+
+fixtureSelect.addEventListener("change", () => {
+  void selectFixture(fixtureSelect.value);
 });
 
 roomSelect.addEventListener("change", () => {
@@ -151,9 +168,33 @@ void init();
 
 async function init(): Promise<void> {
   try {
-    setLoading("Loading bundled room fixture");
-    const fixture = await loadBrowserPlanningFixture();
+    fixtureSelect.innerHTML = getBrowserPlanningFixtureOptions()
+      .map((fixture) => `<option value="${escapeAttr(fixture.id)}">${escapeHtml(fixture.label)}</option>`)
+      .join("");
+    fixtureSelect.value = state.fixtureId;
+    await selectFixture(state.fixtureId);
+  } catch (error) {
+    state.loading = false;
+    state.error = error instanceof Error ? error.stack ?? error.message : String(error);
+    render();
+  }
+}
+
+async function selectFixture(fixtureId: string): Promise<void> {
+  try {
+    const option = getBrowserPlanningFixtureOptions().find((fixture) => fixture.id === fixtureId);
+    setLoading(option ? `Loading ${option.label}` : "Loading room fixture");
+    state.fixtureId = fixtureId;
+    state.fixture = null;
+    state.room = null;
+    state.visualization = null;
+    state.layerVisibility = new Map();
+    state.hoveredCandidateId = null;
+    render();
+
+    const fixture = await loadBrowserPlanningFixture(fixtureId);
     state.fixture = fixture;
+    fixtureSelect.value = fixture.id;
     roomSelect.innerHTML = fixture.candidateRooms
       .map((roomName) => `<option value="${escapeAttr(roomName)}">${escapeHtml(roomName)}</option>`)
       .join("");
@@ -172,13 +213,25 @@ function requestPlan(): void {
   const policy = policySelect.value as RoomPlanningPolicy;
   const topK = parseTopK(topKSelect.value);
   state.room = state.fixture?.map.getRoom(roomName) ?? null;
+  if (!state.room) {
+    state.loading = false;
+    state.error = state.fixture
+      ? `Fixture '${state.fixture.label}' does not contain any planner candidate rooms.`
+      : "No room planning fixture is loaded.";
+    state.visualization = null;
+    render();
+    return;
+  }
+
   state.loading = true;
   state.error = null;
   state.visualization = null;
   render();
 
+  const requestId = nextPlanRequestId++;
   const request: PlannerWorkerRequest = {
-    roomName,
+    requestId,
+    room: state.room,
     policy,
     topK: Number.isFinite(topK) ? topK : undefined
   };
@@ -218,6 +271,7 @@ function render(): void {
 }
 
 function renderStatus(): void {
+  fixtureSelect.disabled = state.loading;
   roomSelect.disabled = state.loading || state.fixture === null;
   randomRoomButton.disabled = state.loading || state.fixture === null || state.fixture.candidateRooms.length === 0;
   policySelect.disabled = state.loading;
@@ -232,9 +286,10 @@ function renderStatus(): void {
     return;
   }
   if (state.visualization) {
+    const fixtureLabel = state.fixture?.label ?? "Unknown fixture";
     statusText.textContent = state.visualization.error
-      ? `${state.visualization.roomName} / ${state.visualization.policy} / incomplete`
-      : `${state.visualization.roomName} / ${state.visualization.policy}`;
+      ? `${fixtureLabel} / ${state.visualization.roomName} / ${state.visualization.policy} / incomplete`
+      : `${fixtureLabel} / ${state.visualization.roomName} / ${state.visualization.policy}`;
     return;
   }
   statusText.textContent = "Ready";
@@ -264,6 +319,7 @@ function renderRoomFacts(): void {
   const swampCount = countTerrain(room, "swamp");
   const wallCount = countTerrain(room, "wall");
   roomFacts.innerHTML = [
+    ...(state.fixture ? [fact("Fixture", state.fixture.label)] : []),
     fact("Room", room.roomName),
     fact("Sources", String(counts.source ?? 0)),
     fact("Minerals", String(counts.mineral ?? 0)),
