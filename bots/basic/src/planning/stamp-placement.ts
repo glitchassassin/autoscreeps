@@ -15,6 +15,7 @@ import {
   type ConstructionSiteStructureType
 } from "./construction-rules.ts";
 import type { RoomPlanningObject, RoomPlanningPolicy, RoomPlanningRoomData } from "./room-plan.ts";
+import { solveWeightedMinCut, type WeightedMinCutEdge } from "./weighted-min-cut.ts";
 
 const roomSize = 50;
 const roomArea = roomSize * roomSize;
@@ -23,6 +24,7 @@ const fallbackTopKs = [3, 5, 8] as const;
 const exactCandidateWindowMultiplier = 24;
 const controllerStampReserveRange = 3;
 const sourceStampReserveRange = 2;
+const provisionalCutImpossibleCapacity = 1_000_000;
 
 export type StampKind = "hub" | "fastfiller" | "labs";
 export type StampRotation = 0 | 90 | 180 | 270;
@@ -46,6 +48,7 @@ export type StampPlacement = {
 
 export type StampSearchOptions = {
   topK?: number;
+  validateCompleteLayout?: (plan: RoomStampPlan) => boolean;
 };
 
 export type PlanningBudget = {
@@ -464,6 +467,7 @@ class ResumableRoomStampPlanningJob implements RoomStampPlanningJob {
 
   private readonly features: RoomFeatures;
   private readonly baseState: PlacementState;
+  private readonly options: StampSearchOptions;
   private readonly topKs: number[];
   private readonly cache = createCandidateGenerationCache();
   private readonly exploredLayouts = new Set<string>();
@@ -474,6 +478,7 @@ class ResumableRoomStampPlanningJob implements RoomStampPlanningJob {
   constructor(room: RoomPlanningRoomData, policy: RoomPlanningPolicy, options: StampSearchOptions) {
     this.roomName = room.roomName;
     this.policy = policy;
+    this.options = options;
     this.features = createRoomFeatures(room);
     this.baseState = createBaseState(this.features);
     this.topKs = options.topK === undefined ? [...fallbackTopKs] : [normalizeTopK(options.topK)];
@@ -487,7 +492,7 @@ class ResumableRoomStampPlanningJob implements RoomStampPlanningJob {
     while (this.topKIndex < this.topKs.length) {
       this.stage = `stamp:topK-${this.topKs[this.topKIndex]!}`;
       this.search ??= createTopKSearchState(this.features, this.baseState, this.policy, this.topKs[this.topKIndex]!);
-      const result = advanceStampSearchAtTopK(this.search, this.cache, this.exploredLayouts, budget);
+      const result = advanceStampSearchAtTopK(this.search, this.cache, this.exploredLayouts, this.options.validateCompleteLayout, budget);
       if (result === "yield") {
         return null;
       }
@@ -548,6 +553,7 @@ function advanceStampSearchAtTopK(
   state: TopKSearchState,
   cache: CandidateGenerationCache,
   exploredLayouts: Set<string>,
+  validateCompleteLayout: StampSearchOptions["validateCompleteLayout"],
   budget: PlanningBudget | null
 ): SearchResult | null | "yield" {
   while (state.hubIndex < state.hubCandidates.length) {
@@ -621,13 +627,17 @@ function advanceStampSearchAtTopK(
             plan,
             branch: { hub, pod1, pod2, labs }
           };
-
-          if (state.best === null || compareScore(candidate.plan.score, state.best.plan.score) < 0 || (
+          const isBestCandidate = state.best === null || compareScore(candidate.plan.score, state.best.plan.score) < 0 || (
             compareScore(candidate.plan.score, state.best.plan.score) === 0
             && layoutKey(candidate.plan).localeCompare(layoutKey(state.best.plan)) < 0
-          )) {
-            state.best = candidate;
+          );
+          if (!isBestCandidate) {
+            continue;
           }
+          if (validateCompleteLayout && !validateCompleteLayout(plan)) {
+            continue;
+          }
+          state.best = candidate;
         }
 
         state.labCandidates = null;
@@ -675,8 +685,12 @@ function generateHubCandidates(features: RoomFeatures, state: PlacementState, po
 
     candidate.score = policy === "temple"
       ? scoreTempleHub(features, candidate)
-      : scoreNormalHub(features, candidate);
+      : scoreNormalHubPreliminary(features, candidate);
     candidates.push(candidate);
+  }
+
+  if (policy === "normal") {
+    return refineNormalHubCandidates(features, candidates, topK);
   }
 
   return topCandidates(candidates, topK);
@@ -1040,6 +1054,9 @@ function scoreCompleteLayout(
   const labDistance = policy === "normal" && labs !== null
     ? labScore?.totalDistance ?? dijkstraUnreachable
     : 0;
+  if (policy === "normal" && !hasTerminalMineralAccess(features, finalState, hub)) {
+    return null;
+  }
 
   return [
     ...hub.score,
@@ -1048,6 +1065,24 @@ function scoreCompleteLayout(
     -labDistance,
     -(hub.blockedTiles.length + pod1.blockedTiles.length + pod2.blockedTiles.length + (labs?.blockedTiles.length ?? 0))
   ];
+}
+
+function hasTerminalMineralAccess(features: RoomFeatures, state: PlacementState, hub: StampPlacement): boolean {
+  const terminal = hub.anchors.terminal ?? null;
+  if (features.mineral === null || terminal === null) {
+    return false;
+  }
+
+  const terminalGoals = getPathGoals(features, state, terminal, null);
+  const mineralGoals = getPathGoals(features, state, features.mineral, null);
+  if (terminalGoals.length === 0 || mineralGoals.length === 0) {
+    return false;
+  }
+
+  const terminalDistanceMap = createDijkstraMap(features.terrain, terminalGoals, {
+    costMatrix: new GridCostMatrix(state.pathBlocked)
+  });
+  return minDistance(terminalDistanceMap, mineralGoals) !== dijkstraUnreachable;
 }
 
 function scoreFastfillerCandidate(previousPaths: PathContext, candidate: Candidate): FastfillerScore | null {
@@ -1214,17 +1249,37 @@ function assignLabScore(candidate: Candidate, labScore: LabScore): void {
   ];
 }
 
-function scoreNormalHub(features: RoomFeatures, candidate: StampPlacement): number[] {
+function refineNormalHubCandidates(features: RoomFeatures, candidates: Candidate[], topK: number): Candidate[] {
+  const preliminaryLimit = Math.min(candidates.length, topK);
+  const preliminaryTop = [...candidates].sort(compareCandidates).slice(0, preliminaryLimit);
+  for (const candidate of preliminaryTop) {
+    const center = candidate.anchors.hubCenter ?? candidate.anchor;
+    candidate.score = scoreNormalHub(features, candidate, estimateProvisionalDefenseCutSize(features, center));
+  }
+
+  return topCandidates(preliminaryTop, topK);
+}
+
+function scoreNormalHubPreliminary(features: RoomFeatures, candidate: StampPlacement): number[] {
   const center = candidate.anchors.hubCenter ?? candidate.anchor;
   const exitDistance = features.exitDistanceMap.get(center.x, center.y);
   const clearance = features.terrainDistanceTransform.get(center.x, center.y);
-  const provisionalCutSize = estimateProvisionalDefenseCutSize(features, center);
   return [
     exitDistance === dijkstraUnreachable ? 0 : exitDistance,
     clearance,
-    -provisionalCutSize,
     -candidate.anchor.y,
     -candidate.anchor.x
+  ];
+}
+
+function scoreNormalHub(features: RoomFeatures, candidate: StampPlacement, provisionalCutSize: number): number[] {
+  const preliminary = scoreNormalHubPreliminary(features, candidate);
+  return [
+    preliminary[0]!,
+    preliminary[1]!,
+    -provisionalCutSize,
+    preliminary[2]!,
+    preliminary[3]!
   ];
 }
 
@@ -1596,31 +1651,110 @@ function normalizeTopK(topK: number): number {
 }
 
 function estimateProvisionalDefenseCutSize(features: RoomFeatures, center: Coord): number {
+  const protectedTiles = createProvisionalDefenseProtectedTileMask(features, center);
+  if (!protectedTiles.hasProtectedTile) {
+    return 0;
+  }
+
+  return solveProvisionalDefenseCut(features, protectedTiles.mask);
+}
+
+function createProvisionalDefenseProtectedTileMask(features: RoomFeatures, center: Coord): {
+  mask: Uint8Array;
+  hasProtectedTile: boolean;
+} {
   const left = Math.max(1, center.x - 5);
   const right = Math.min(roomSize - 2, center.x + 4);
   const top = Math.max(1, center.y - 5);
   const bottom = Math.min(roomSize - 2, center.y + 4);
-  let openings = 0;
+  const protectedTiles = new Uint8Array(roomArea);
+  let hasProtectedTile = false;
 
-  for (let x = left; x <= right; x += 1) {
-    if (isWalkableTerrain(features.terrain, x, top)) {
-      openings += 1;
-    }
-    if (bottom !== top && isWalkableTerrain(features.terrain, x, bottom)) {
-      openings += 1;
+  for (let y = top; y <= bottom; y += 1) {
+    for (let x = left; x <= right; x += 1) {
+      const tile = toIndex(x, y);
+      if (!isProvisionalCutWalkableTile(features, tile)) {
+        continue;
+      }
+      protectedTiles[tile] = 1;
+      hasProtectedTile = true;
     }
   }
 
-  for (let y = top + 1; y < bottom; y += 1) {
-    if (isWalkableTerrain(features.terrain, left, y)) {
-      openings += 1;
+  return { mask: protectedTiles, hasProtectedTile };
+}
+
+function solveProvisionalDefenseCut(features: RoomFeatures, protectedTiles: Uint8Array): number {
+  const source = 0;
+  const sink = 1;
+  const tileInNodes = new Int32Array(roomArea);
+  const tileOutNodes = new Int32Array(roomArea);
+  const edges: WeightedMinCutEdge[] = [];
+  let nodeCount = 2;
+
+  tileInNodes.fill(-1);
+  tileOutNodes.fill(-1);
+
+  for (let tile = 0; tile < roomArea; tile += 1) {
+    if (!isProvisionalCutWalkableTile(features, tile)) {
+      continue;
     }
-    if (right !== left && isWalkableTerrain(features.terrain, right, y)) {
-      openings += 1;
+    tileInNodes[tile] = nodeCount;
+    nodeCount += 1;
+    tileOutNodes[tile] = nodeCount;
+    nodeCount += 1;
+  }
+
+  for (let tile = 0; tile < roomArea; tile += 1) {
+    if (tileInNodes[tile] < 0) {
+      continue;
+    }
+
+    const tileCutCapacity = protectedTiles[tile] !== 0 ? provisionalCutImpossibleCapacity : 1;
+    edges.push({ from: tileInNodes[tile]!, to: tileOutNodes[tile]!, capacity: tileCutCapacity });
+
+    const coord = fromIndex(tile);
+    for (const neighbor of neighbors(coord)) {
+      const neighborTile = toIndex(neighbor.x, neighbor.y);
+      if (tileInNodes[neighborTile] < 0) {
+        continue;
+      }
+      edges.push({
+        from: tileOutNodes[tile]!,
+        to: tileInNodes[neighborTile]!,
+        capacity: provisionalCutImpossibleCapacity
+      });
     }
   }
 
-  return openings;
+  for (const exit of features.exits) {
+    const exitTile = toIndex(exit.x, exit.y);
+    if (tileInNodes[exitTile] >= 0) {
+      edges.push({ from: source, to: tileInNodes[exitTile]!, capacity: provisionalCutImpossibleCapacity });
+    }
+  }
+
+  for (let tile = 0; tile < roomArea; tile += 1) {
+    if (protectedTiles[tile] !== 0 && tileOutNodes[tile] >= 0) {
+      edges.push({ from: tileOutNodes[tile]!, to: sink, capacity: provisionalCutImpossibleCapacity });
+    }
+  }
+
+  const result = solveWeightedMinCut({
+    nodeCount,
+    source,
+    sink,
+    edges
+  });
+  return result.maxFlow >= provisionalCutImpossibleCapacity / 2 ? roomArea : result.maxFlow;
+}
+
+function isProvisionalCutWalkableTile(features: RoomFeatures, tile: number): boolean {
+  if (!isValidIndex(tile) || features.basePathBlocked[tile] !== 0) {
+    return false;
+  }
+  const coord = fromIndex(tile);
+  return isWalkableTerrain(features.terrain, coord.x, coord.y);
 }
 
 function createUpgradingMask(features: RoomFeatures): Uint8Array {
@@ -1729,11 +1863,11 @@ function hasFiniteAccessDistance(features: RoomFeatures, state: PlacementState, 
   return minDistance(map, getPathGoals(features, state, target, features.reservedPathMasks.default)) !== dijkstraUnreachable;
 }
 
-function getPathGoals(features: RoomFeatures, state: PlacementState, target: Coord, reservedPathMask: Uint8Array): Coord[] {
+function getPathGoals(features: RoomFeatures, state: PlacementState, target: Coord, reservedPathMask: Uint8Array | null): Coord[] {
   return neighbors(target).filter((coord) => (
     isWalkableTerrain(features.terrain, coord.x, coord.y)
     && state.pathBlocked[toIndex(coord.x, coord.y)] === 0
-    && reservedPathMask[toIndex(coord.x, coord.y)] === 0
+    && (reservedPathMask === null || reservedPathMask[toIndex(coord.x, coord.y)] === 0)
   ));
 }
 

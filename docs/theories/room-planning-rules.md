@@ -9,7 +9,7 @@
 
 The hub is a `3x3` cluster around a central stationary manager creep. This is the economic center of the room.
 
-In `temple` mode, the hub expands to a `3x4` cluster and includes an additional stationary lab creep. This deprioritizes the full `RCL8` lab layout, since temple rooms will rarely hit `RCL8`, and focuses on boosting upgraders.
+In `temple` mode, the hub expands to a `4x3` cluster and includes an additional stationary lab creep. This deprioritizes the full `RCL8` lab layout, since temple rooms will rarely hit `RCL8`, and focuses on boosting upgraders.
 
 - In a normal room, the hub SHOULD be positioned defensively.
 - In a temple room, the hub SHOULD be positioned to maximize pre-`RCL8` upgrading throughput.
@@ -42,9 +42,9 @@ Hub candidates are scored primarily by the hub center, plus the induced arrangem
 - In `temple` mode, the hub center MUST be in range `5` of the controller.
 - In `temple` mode, `storage` MUST be adjacent to at least one controller range `3` tile.
 - In `temple` mode, `terminal` MUST be adjacent to at least one controller range `3` tile.
-- In `temple` mode, `storage` MUST have a path to at least one room exit tile.
-- In `temple` mode, `terminal` MUST have a path to at least one room exit tile.
-- For those temple path checks, the planner MUST treat the `manager` tile as blocked, occupied hub structure tiles as blocked, and empty hub tiles as walkable.
+- In `temple` mode, `storage` MUST have at least one adjacent walkable access tile with a path to at least one room exit tile.
+- In `temple` mode, `terminal` MUST have at least one adjacent walkable access tile with a path to at least one room exit tile.
+- For those temple path checks, the planner MUST treat the temple hub's path-blocked footprint as blocked. Since the temple hub has no custom path-blocked mask, this currently means the whole `4x3` hub footprint is blocked for the exit-access search.
 
 #### Scoring
 
@@ -79,12 +79,14 @@ The fastfiller pods are minimal extension stamps with a shared container and spa
 - The scorer SHOULD minimize the distance to `storage`.
 - The scorer SHOULD minimize the detour from source path.
   - Detour from source MUST be computed by `dStorage(tile) + dSource(tile) - dStorageToSource`.
+- Complete-layout scoring MUST assign the two fastfiller pods to separate sources by using the lower total detour of `pod1 -> source1 + pod2 -> source2` and `pod1 -> source2 + pod2 -> source1`.
 
 ## Labs
 
 - The planner MUST use a standard `4x4` lab stamp.
 - The lab stamp entrance MUST be the top-left tile.
 - The lab stamp MUST reserve a road diagonal from the entrance corner to the opposite corner.
+- The non-entrance diagonal lab road tiles are internal lab-stamp roads and MUST remain excluded from primary road routing.
 - The other two corners MUST be empty.
 - Every other lab stamp tile MUST contain a lab:
 
@@ -105,11 +107,16 @@ Stamps MUST be selected sequentially so each placement accounts for pathing arou
 
 ### Search
 
+- Unless a caller provides an explicit `topK`, the planner MUST retry stamp search with `topK` values `[3, 5, 8]` until it finds a complete viable layout.
 - The planner MUST compute the top `K` hub candidates.
+- In `normal` rooms, hub search MUST first rank candidates by preliminary defensive heuristics, then compute the exact provisional defense min-cut only for those top `K` hub candidates before the final hub ordering.
 - For each hub candidate, the planner MUST recompute path-distance maps and compute the top `K` first fastfiller pod candidates.
 - For each `hub + pod1` candidate, the planner MUST recompute path-distance maps and compute the top `K` second fastfiller pod candidates.
 - For each `hub + pod1 + pod2` candidate, the planner MUST recompute path-distance maps and compute the top `K` lab stamp candidates in `normal` rooms only.
 - All stamp candidates MUST fit without overlapping previously placed stamps.
+- All stamp candidates MUST avoid controller range `3`, source range `2`, room-edge construction-prohibited coordinates, natural blocker objects, unbuildable road terrain for blocked stamp footprint tiles, and invalid terrain for each planned structure type.
+- In `normal` rooms, complete stamp layouts MUST preserve terminal access to a mineral-adjacent road goal.
+- Complete room planning MAY reject a complete stamp layout after running downstream road, source/sink, rampart, and final structure planning. When that happens, stamp search MUST continue with the next best complete stamp layout instead of returning the failed layout.
 - The planner MUST score complete layouts and keep the best arrangement.
 
 ## Road Planning
@@ -120,12 +127,14 @@ Roads other than `storage -> controller` SHOULD prefer to avoid controller range
 
 ### Paths
 
+- When choosing between alternate path ordering for a path group, the planner MUST prefer the order with the fewest unique road tiles, then lower total pathfinding cost for the group, then the first listed order.
 - The planner MUST plan `hub spawn -> storage`, targeting any tile in range `1` of `storage` without crossing the blocked hub stamp footprint.
 - The planner MUST plan paths for `storage -> pod1 container` and then `storage -> pod2 container`. The planner MUST then reverse the order (`pod2` first) and plan again. The planner MUST keep the plan with the fewest unique road tiles.
 - In `normal` rooms, the planner MUST plan paths for `terminal -> lab entrance` and `storage -> lab entrance`. The planner MUST then reverse the order and keep the plan with the fewest unique road tiles.
 - The planner MUST plan a path for `terminal -> mineral`, targeting any tile in range `1` of the mineral.
 - The planner MUST plan paths for `storage -> source1` and `storage -> source2`, targeting any tile in range `1` of the source. The planner MUST then reverse the order (`source2` first) and plan again. The planner MUST keep the plan with the fewest unique road tiles.
 - The planner MUST plan `storage -> controller`, targeting any tile in range `3` of the controller.
+- While routing `storage -> source` and `storage -> controller` roads, the planner MUST choose endpoints that preserve a valid adjacent future link tile and MUST reserve that future link tile against later road routing. Source road endpoints MUST also be reserved as future source container tiles.
 
 ## Sources and Sinks
 
@@ -160,6 +169,9 @@ Expansion candidates SHOULD be populated along roads close to `storage` for easy
 
 - The planner MUST reserve the remaining RCL8 extensions not already supplied by fastfiller pods.
 - The planner MUST reserve up to six additional slots for towers.
+- The planner MUST reserve up to one additional slot for a nuker.
+- The planner MUST reserve up to one additional slot for an observer.
+- The planner MUST reserve at least enough candidate slots to cover extensions, towers, the nuker, and the observer.
 - The planner MAY reserve additional buffer candidates beyond the exact final structure need when a first pass does not leave enough defended buildable space after post-rampart road routing.
 - The planner SHOULD grow a bounded number of extra access road tiles before placing candidates when those roads reduce the selected candidates' total planned-road path distance from `storage`.
 - Extra access roads MUST be connected to the planned road network and MUST avoid reserved source, controller, edge, and stamp areas.
@@ -210,7 +222,7 @@ Expansion candidates SHOULD be populated along roads close to `storage` for easy
 
 ### Post-Processing
 
-- The planner MUST add roads under ramparts.
+- The planner MUST add roads under ramparts unless the rampart tile contains a blocking protected structure.
 - The planner MUST add roads from the interior to each connected rampart group.
 - When plotting post-rampart roads, the planner MUST ignore provisional expansion candidates and provisional access roads as blockers.
 - After plotting post-rampart roads, the planner MUST recompute defended expansion candidates against the augmented defended road network.
@@ -228,12 +240,13 @@ Expansion candidates SHOULD be populated along roads close to `storage` for easy
 
 ## Extensions
 
-- The planner MUST assign spare extensions after tower placement.
+- The planner MUST assign spare extensions after tower and nuker placement, and before observer placement.
 - Extensions MUST fill the remaining post-rampart expansion candidates in the slot planner's ranked order.
 
 ## Remaining Structures
 
 ### Placement
 
-- The planner MUST repeat the process to select a spot for the `nuker`.
-- The planner MUST repeat the process to select a spot for the `observer`.
+- The planner MUST assign extra structures in this order: towers, `nuker`, spare extensions, `observer`.
+- The planner MUST select the first valid defended extra-structure slot for the `nuker` after tower placement.
+- The planner MUST select the first valid defended extra-structure slot for the `observer` after spare extension placement.

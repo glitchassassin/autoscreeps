@@ -1397,15 +1397,13 @@ function planTowers(
   const defendedMask = createTileMask(defendedTiles);
   const coverage = new Int32Array(rampartTiles.length);
   const towers: RampartTowerPlacement[] = [];
-  const preferredCandidateTiles = expansionPlan.extraStructures.map((structure) => structure.tile);
-  const fallbackCandidateTiles = collectFallbackTowerCandidateTiles(preferredCandidateTiles);
+  const candidateTiles = expansionPlan.extraStructures.map((structure) => structure.tile);
 
   while (towers.length < targetTowers) {
-    const best = chooseBestTowerCandidate(context, preferredCandidateTiles, defendedMask, roadMask, blocked, rampartTiles, coverage, towers)
-      ?? chooseBestTowerCandidate(context, fallbackCandidateTiles, defendedMask, roadMask, blocked, rampartTiles, coverage, towers);
+    const best = chooseBestTowerCandidate(context, candidateTiles, defendedMask, roadMask, blocked, rampartTiles, coverage, towers);
 
     if (best === null) {
-      throw new Error(`Only resolved ${towers.length} of ${targetTowers} required tower placements for room '${context.room.roomName}'.`);
+      throw new Error(`Only resolved ${towers.length} of ${targetTowers} required tower placements from defended expansion slots for room '${context.room.roomName}'.`);
     }
 
     coverage.set(best.coverage);
@@ -1420,17 +1418,6 @@ function planTowers(
   }
 
   return towers;
-}
-
-function collectFallbackTowerCandidateTiles(preferredCandidateTiles: number[]): number[] {
-  const preferred = new Set(preferredCandidateTiles);
-  const candidates: number[] = [];
-  for (let tile = 0; tile < roomArea; tile += 1) {
-    if (!preferred.has(tile)) {
-      candidates.push(tile);
-    }
-  }
-  return candidates;
 }
 
 function chooseBestTowerCandidate(

@@ -227,13 +227,27 @@ function createJob(key: string, room: RoomPlanningRoomData, policy: RoomPlanning
     ticksSpent: 0,
     stage: "stamp",
     room,
-    stampJob: createRoomStampPlanningJob(room, policy),
+    stampJob: createRoomStampPlanningJob(room, policy, {
+      validateCompleteLayout: (stampPlan) => canCreateCompleteRoomPlan(room, stampPlan)
+    }),
     stampPlan: null,
     roadPlan: null,
     sourceSinkPlan: null,
     rampartPlan: null,
     structurePlan: null
   };
+}
+
+function canCreateCompleteRoomPlan(room: RoomPlanningRoomData, stampPlan: RoomStampPlan): boolean {
+  try {
+    const roadPlan = planRoads(room, stampPlan);
+    const sourceSinkPlan = planSourceSinkStructures(room, stampPlan, roadPlan);
+    const rampartPlan = planRamparts(room, stampPlan, roadPlan, sourceSinkPlan);
+    planRoomStructures(room, stampPlan, roadPlan, sourceSinkPlan, rampartPlan);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function persistComplete(job: RoomPlanningJob, gameTime: number): void {

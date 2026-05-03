@@ -64,15 +64,34 @@ export function planCompleteRoom(request: RoomPlanRequest): CompleteRoomPlan {
     throw new Error(`Room '${request.roomName}' is not available for planning.`);
   }
 
-  const stampPlan = planRoomStamps(room, request.policy);
+  let completePlan: CompleteRoomPlan | null = null;
+  const stampPlan = planRoomStamps(room, request.policy, {
+    validateCompleteLayout: (candidate) => {
+      try {
+        completePlan = createCompleteRoomPlan(room, request.policy, candidate);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  });
+
+  return completePlan ?? createCompleteRoomPlan(room, request.policy, stampPlan);
+}
+
+function createCompleteRoomPlan(
+  room: RoomPlanningRoomData,
+  policy: RoomPlanningPolicy,
+  stampPlan: RoomStampPlan
+): CompleteRoomPlan {
   const roadPlan = planRoads(room, stampPlan);
   const sourceSinkPlan = planSourceSinkStructures(room, stampPlan, roadPlan);
   const rampartPlan = planRamparts(room, stampPlan, roadPlan, sourceSinkPlan);
   const structurePlan = planRoomStructures(room, stampPlan, roadPlan, sourceSinkPlan, rampartPlan);
 
   return {
-    roomName: request.roomName,
-    policy: request.policy,
+    roomName: room.roomName,
+    policy,
     stampPlan,
     roadPlan,
     sourceSinkPlan,
