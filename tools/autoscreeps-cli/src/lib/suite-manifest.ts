@@ -2,12 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
-import { loadScenario, mapGeneratorSchema, roomSelectionStrategySchema, scenarioSchema, terminalConditionSetSchema, type ScenarioConfig } from "./scenario.ts";
+import { highwayPortalsSchema, loadScenario, mapGeneratorSchema, roomSelectionStrategySchema, scenarioSchema, terminalConditionSetSchema, type ScenarioConfig } from "./scenario.ts";
 
 const mapGeneratorOverrideSchema = z.object({
   type: z.literal("mirrored-random-1x1").optional(),
   sourceMapId: z.string().min(1).optional(),
-  roomSelectionStrategy: roomSelectionStrategySchema.optional()
+  roomSelectionStrategy: roomSelectionStrategySchema.optional(),
+  highwayPortals: highwayPortalsSchema.optional()
 });
 
 const scenarioRunOverrideSchema = z.object({
@@ -110,7 +111,8 @@ function mergeMapGenerator(base: ScenarioConfig["mapGenerator"], override: z.inf
     return mapGeneratorSchema.parse({
       type: override.type ?? "mirrored-random-1x1",
       sourceMapId: override.sourceMapId,
-      roomSelectionStrategy: override.roomSelectionStrategy
+      roomSelectionStrategy: override.roomSelectionStrategy,
+      highwayPortals: override.highwayPortals
     });
   }
 

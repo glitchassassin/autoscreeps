@@ -177,15 +177,95 @@ describe("buildMirroredMap", () => {
     expect(Number(leftJoinRoom?.terrain[49] ?? "0") & 1).toBe(1);
     expect(Number(rightJoinRoom?.terrain[0] ?? "0") & 1).toBe(1);
   });
+
+  it("can add wraparound highway portals to each mirrored arena", () => {
+    const sourceRooms = [
+      makeRoom("W0S0", "out of borders", [], plainTerrain(0)),
+      makeRoom("E11S0", "out of borders", [], plainTerrain(0)),
+      makeRoom("E0S0", "normal", [], plainTerrain(0)),
+      makeRoom("E1S0", "normal", [], plainTerrain(0)),
+      makeRoom("E10S0", "normal", [], plainTerrain(0)),
+      makeRoom("E0S1", "normal", [], plainTerrain(0)),
+      makeRoom("E1S1", "normal", [{ type: "controller" }, { type: "source" }, { type: "source" }], plainTerrain(100)),
+      makeRoom("E10S1", "normal", [], plainTerrain(0)),
+      makeRoom("E0S10", "normal", [], plainTerrain(0)),
+      makeRoom("E1S10", "normal", [], plainTerrain(0)),
+      makeRoom("E10S10", "normal", [], plainTerrain(0))
+    ];
+
+    const result = buildMirroredMap(
+      sourceRooms,
+      { type: "max-plains-two-sources" },
+      { type: "wraparound", forcePlainEndpoints: true, excludeCorners: true }
+    );
+
+    const candidateTop = result.rooms.find((room) => room.room === "E1S0");
+    const candidateBottom = result.rooms.find((room) => room.room === "E1S10");
+    const candidateLeft = result.rooms.find((room) => room.room === "E0S1");
+    const candidateRight = result.rooms.find((room) => room.room === "E10S1");
+    const baselineTop = result.rooms.find((room) => room.room === "W9S0");
+    const baselineBottom = result.rooms.find((room) => room.room === "W9S10");
+    const baselineLeft = result.rooms.find((room) => room.room === "W10S1");
+    const baselineRight = result.rooms.find((room) => room.room === "W0S1");
+
+    expect(findPortal(candidateTop, 12, 0)?.destination).toEqual({ x: 12, y: 49, room: "E1S10" });
+    expect(findPortal(candidateBottom, 12, 49)?.destination).toEqual({ x: 12, y: 0, room: "E1S0" });
+    expect(findPortal(candidateLeft, 0, 12)?.destination).toEqual({ x: 49, y: 12, room: "E10S1" });
+    expect(findPortal(candidateRight, 49, 12)?.destination).toEqual({ x: 0, y: 12, room: "E0S1" });
+    expect(findPortal(baselineLeft, 0, 12)?.destination).toEqual({ x: 49, y: 12, room: "W0S1" });
+    expect(findPortal(baselineRight, 49, 12)?.destination).toEqual({ x: 0, y: 12, room: "W10S1" });
+    expect(findPortal(candidateTop, 0, 0)).toBeUndefined();
+    expect(findPortal(candidateTop, 49, 0)).toBeUndefined();
+    expect(findPortal(baselineTop, 12, 0)?.destination).toEqual({ x: 12, y: 49, room: "W9S10" });
+    expect(findPortal(baselineBottom, 12, 49)?.destination).toEqual({ x: 12, y: 0, room: "W9S0" });
+    expect(candidateTop?.terrain[12]).toBe("0");
+    expect(candidateBottom?.terrain[49 * 50 + 12]).toBe("0");
+    expect(Number(candidateLeft?.terrain[12 * 50] ?? "0") & 1).toBe(1);
+    expect(Number(baselineRight?.terrain[12 * 50 + 49] ?? "0") & 1).toBe(1);
+    expect(candidateRight?.terrain[12 * 50 + 49]).toBe("0");
+    expect(baselineLeft?.terrain[12 * 50]).toBe("0");
+  });
+
+  it("uses highway rows instead of ordinary playable edges", () => {
+    const sourceRooms = [
+      makeRoom("E0S8", "normal", [], plainTerrain(0)),
+      makeRoom("E12S22", "normal", [], plainTerrain(0)),
+      makeRoom("E1S9", "normal", [{ type: "controller" }, { type: "source" }, { type: "source" }], plainTerrain(100)),
+      makeRoom("E10S8", "normal", [], plainTerrain(0)),
+      makeRoom("E10S10", "normal", [], plainTerrain(0)),
+      makeRoom("E10S20", "normal", [], plainTerrain(0)),
+      makeRoom("E10S22", "normal", [], plainTerrain(0))
+    ];
+
+    const result = buildMirroredMap(
+      sourceRooms,
+      { type: "max-plains-two-sources" },
+      { type: "wraparound", forcePlainEndpoints: true, excludeCorners: true }
+    );
+
+    const ordinaryTop = result.rooms.find((room) => room.room === "E10S8");
+    const topHighway = result.rooms.find((room) => room.room === "E10S10");
+    const bottomHighway = result.rooms.find((room) => room.room === "E10S20");
+    const ordinaryBottom = result.rooms.find((room) => room.room === "E10S22");
+
+    expect(findPortal(ordinaryTop, 12, 0)).toBeUndefined();
+    expect(findPortal(topHighway, 12, 0)?.destination).toEqual({ x: 12, y: 49, room: "E10S20" });
+    expect(findPortal(bottomHighway, 12, 49)?.destination).toEqual({ x: 12, y: 0, room: "E10S10" });
+    expect(findPortal(ordinaryBottom, 12, 49)).toBeUndefined();
+  });
 });
 
-function makeRoom(room: string, status: string, objects: Array<{ type: string }>, terrain: string) {
+function makeRoom(room: string, status: string, objects: Array<{ type: string; x?: number; y?: number; destination?: unknown }>, terrain: string) {
   return {
     room,
     status,
     terrain,
     objects: objects.map((object) => ({ ...object, room }))
   };
+}
+
+function findPortal(room: ReturnType<typeof makeRoom> | undefined, x: number, y: number) {
+  return room?.objects.find((object) => object.type === "portal" && object.x === x && object.y === y);
 }
 
 function mirroredSourceRooms() {

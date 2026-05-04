@@ -81,6 +81,41 @@ describe("loadScenario", () => {
     });
   });
 
+  it("parses highway portal augmentation defaults", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "autoscreeps-scenario-"));
+    tempPaths.push(tempDir);
+    const scenarioPath = path.join(tempDir, "scenario.yaml");
+
+    await fs.writeFile(
+      scenarioPath,
+      [
+        "version: 1",
+        "name: portal-duel",
+        "mapGenerator:",
+        "  type: mirrored-random-1x1",
+        "  highwayPortals:",
+        "    type: wraparound",
+        "run:",
+        "  maxTicks: 200",
+        "  terminalConditions:",
+        "    fail:",
+        "      - type: no-owned-controllers"
+      ].join("\n"),
+      "utf8"
+    );
+
+    const scenario = await loadScenario(scenarioPath);
+
+    expect(scenario.config.mapGenerator).toEqual({
+      type: "mirrored-random-1x1",
+      highwayPortals: {
+        type: "wraparound",
+        forcePlainEndpoints: false,
+        excludeCorners: true
+      }
+    });
+  });
+
   it("rejects empty terminal conditions", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "autoscreeps-scenario-"));
     tempPaths.push(tempDir);

@@ -7,10 +7,17 @@ export const roomSelectionStrategySchema = z.object({
   type: z.enum(["max-plains-two-sources", "center-most-controller"])
 });
 
+export const highwayPortalsSchema = z.object({
+  type: z.literal("wraparound"),
+  forcePlainEndpoints: z.boolean().default(false),
+  excludeCorners: z.boolean().default(true)
+});
+
 export const mapGeneratorSchema = z.object({
   type: z.literal("mirrored-random-1x1"),
   sourceMapId: z.string().min(1).optional(),
-  roomSelectionStrategy: roomSelectionStrategySchema.optional()
+  roomSelectionStrategy: roomSelectionStrategySchema.optional(),
+  highwayPortals: highwayPortalsSchema.optional()
 });
 
 export const terminalConditionSchema = z.discriminatedUnion("type", [

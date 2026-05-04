@@ -1,0 +1,21 @@
+version: 1
+name: duel-basic-portal-wrap-5000
+description: Run a basic head-to-head experiment on mirrored random 1x1 maps augmented with shard0-style highway wrap portals.
+reset: full
+mapGenerator:
+  type: mirrored-random-1x1
+  highwayPortals:
+    type: wraparound
+    forcePlainEndpoints: true
+    excludeCorners: true
+run:
+  tickDuration: 25
+  maxTicks: 5000
+  sampleEveryTicks: 25
+  pollIntervalMs: 1000
+  maxWallClockMs: 2250000
+  maxStalledPolls: 60
+  terminalConditions:
+    win: []
+    fail:
+      - type: no-owned-controllers

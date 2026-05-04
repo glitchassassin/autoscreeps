@@ -5,6 +5,13 @@ export type MapGeneratorConfig = {
   type: "mirrored-random-1x1";
   sourceMapId?: string;
   roomSelectionStrategy?: RoomSelectionStrategy;
+  highwayPortals?: HighwayPortalConfig;
+};
+
+export type HighwayPortalConfig = {
+  type: "wraparound";
+  forcePlainEndpoints?: boolean;
+  excludeCorners?: boolean;
 };
 
 export type RoomSelectionStrategy = {
@@ -46,6 +53,13 @@ export type GeneratedExperimentMap = {
   };
 };
 
+type ArenaBounds = {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+};
+
 const mapIndexUrl = "https://maps.screepspl.us/maps/index.json";
 const mapFileUrl = (mapId: string) => `https://maps.screepspl.us/maps/map-${mapId}.json`;
 const sourceEdgeExclusionRange = 2;
@@ -57,7 +71,7 @@ export async function generateExperimentMap(config: MapGeneratorConfig, runDir: 
 
   const mapId = config.sourceMapId ?? await pickRandomMapId(1, 1);
   const remoteMap = await fetchJson<RemoteMapFile>(mapFileUrl(mapId));
-  const generatedMap = buildMirroredMap(remoteMap.rooms, config.roomSelectionStrategy);
+  const generatedMap = buildMirroredMap(remoteMap.rooms, config.roomSelectionStrategy, config.highwayPortals);
   const hostFilePath = path.join(runDir, "generated-map.json");
 
   await fs.writeFile(hostFilePath, `${JSON.stringify({ rooms: generatedMap.rooms }, null, 2)}\n`, "utf8");
@@ -71,7 +85,8 @@ export async function generateExperimentMap(config: MapGeneratorConfig, runDir: 
 
 export function buildMirroredMap(
   sourceRooms: MapRoom[],
-  roomSelectionStrategy: RoomSelectionStrategy = { type: "max-plains-two-sources" }
+  roomSelectionStrategy: RoomSelectionStrategy = { type: "max-plains-two-sources" },
+  highwayPortals?: HighwayPortalConfig
 ): { rooms: MapRoom[]; startRooms: { baseline: string; candidate: string } } {
   const bounds = getMapBounds(sourceRooms);
   const rightShiftX = -bounds.minPlayableX;
@@ -89,6 +104,7 @@ export function buildMirroredMap(
       .filter((room) => roomNameToXY(room.room)[0] !== bounds.minX)
       .map((room) => cloneRoom(room, rightShiftX, 0))
   ];
+  const blockedPortalEndpoints = new Set<string>();
 
   const leftJoinX = leftShiftX + bounds.maxPlayableX;
   const rightJoinX = rightShiftX + bounds.minPlayableX;
@@ -96,10 +112,37 @@ export function buildMirroredMap(
     const [x] = roomNameToXY(room.room);
     if (x === leftJoinX) {
       blockRoomEdge(room, "right");
+      markBlockedPortalEdge(blockedPortalEndpoints, room, "right");
     }
     if (x === rightJoinX) {
       blockRoomEdge(room, "left");
+      markBlockedPortalEdge(blockedPortalEndpoints, room, "left");
     }
+  }
+
+  if (highwayPortals?.type === "wraparound") {
+    addHighwayWraparoundPortals(
+      rooms,
+      {
+        minX: leftShiftX + bounds.minPlayableX,
+        maxX: leftShiftX + bounds.maxPlayableX,
+        minY: bounds.minPlayableY,
+        maxY: bounds.maxPlayableY
+      },
+      highwayPortals,
+      blockedPortalEndpoints
+    );
+    addHighwayWraparoundPortals(
+      rooms,
+      {
+        minX: rightShiftX + bounds.minPlayableX,
+        maxX: rightShiftX + bounds.maxPlayableX,
+        minY: bounds.minPlayableY,
+        maxY: bounds.maxPlayableY
+      },
+      highwayPortals,
+      blockedPortalEndpoints
+    );
   }
 
   return {
@@ -240,6 +283,8 @@ function getMapBounds(sourceRooms: MapRoom[]): {
   maxX: number;
   minPlayableX: number;
   maxPlayableX: number;
+  minPlayableY: number;
+  maxPlayableY: number;
   playableWidth: number;
 } {
   const coordinates = sourceRooms.map((room) => roomNameToXY(room.room));
@@ -255,14 +300,163 @@ function getMapBounds(sourceRooms: MapRoom[]): {
   const maxX = Math.max(...coordinates.map(([x]) => x));
   const minPlayableX = Math.min(...playableCoordinates.map(([x]) => x));
   const maxPlayableX = Math.max(...playableCoordinates.map(([x]) => x));
+  const minPlayableY = Math.min(...playableCoordinates.map(([, y]) => y));
+  const maxPlayableY = Math.max(...playableCoordinates.map(([, y]) => y));
 
   return {
     minX,
     maxX,
     minPlayableX,
     maxPlayableX,
+    minPlayableY,
+    maxPlayableY,
     playableWidth: maxPlayableX - minPlayableX + 1
   };
+}
+
+function addHighwayWraparoundPortals(
+  rooms: MapRoom[],
+  arena: ArenaBounds,
+  config: HighwayPortalConfig,
+  blockedPortalEndpoints: Set<string>
+): void {
+  const roomByName = new Map(rooms.map((room) => [room.room, room]));
+  const tiles = edgeTiles(config.excludeCorners ?? true);
+  const topY = findHighwayRow(arena, "top");
+  const bottomY = findHighwayRow(arena, "bottom");
+
+  if (topY !== undefined && bottomY !== undefined && topY !== bottomY) {
+    for (let x = arena.minX; x <= arena.maxX; x += 1) {
+      const topRoom = roomByName.get(roomNameFromXY(x, topY));
+      const bottomRoom = roomByName.get(roomNameFromXY(x, bottomY));
+      if (!isPortalEndpointRoom(topRoom) || !isPortalEndpointRoom(bottomRoom)) {
+        continue;
+      }
+
+      for (const tileX of tiles) {
+        addPortalPair(topRoom, tileX, 0, bottomRoom, tileX, 49, config, blockedPortalEndpoints);
+      }
+    }
+  }
+
+  const leftX = findHighwayColumn(arena, "left");
+  const rightX = findHighwayColumn(arena, "right");
+  if (leftX !== undefined && rightX !== undefined && leftX !== rightX) {
+    for (let y = arena.minY; y <= arena.maxY; y += 1) {
+      const leftRoom = roomByName.get(roomNameFromXY(leftX, y));
+      const rightRoom = roomByName.get(roomNameFromXY(rightX, y));
+      if (!isPortalEndpointRoom(leftRoom) || !isPortalEndpointRoom(rightRoom)) {
+        continue;
+      }
+
+      for (const tileY of tiles) {
+        addPortalPair(leftRoom, 0, tileY, rightRoom, 49, tileY, config, blockedPortalEndpoints);
+      }
+    }
+  }
+}
+
+function findHighwayRow(arena: ArenaBounds, side: "top" | "bottom"): number | undefined {
+  const step = side === "top" ? 1 : -1;
+  const end = side === "top" ? arena.maxY : arena.minY;
+
+  for (let y = side === "top" ? arena.minY : arena.maxY; ; y += step) {
+    if (isHighwayRow(y)) {
+      return y;
+    }
+    if (y === end) {
+      return undefined;
+    }
+  }
+}
+
+function findHighwayColumn(arena: ArenaBounds, side: "left" | "right"): number | undefined {
+  const step = side === "left" ? 1 : -1;
+  const end = side === "left" ? arena.maxX : arena.minX;
+
+  for (let x = side === "left" ? arena.minX : arena.maxX; ; x += step) {
+    if (isHighwayColumn(x)) {
+      return x;
+    }
+    if (x === end) {
+      return undefined;
+    }
+  }
+}
+
+function isPortalEndpointRoom(room: MapRoom | undefined): room is MapRoom {
+  return room?.status === "normal" && isHighwayRoom(room.room);
+}
+
+function edgeTiles(excludeCorners: boolean): number[] {
+  const start = excludeCorners ? 1 : 0;
+  const end = excludeCorners ? 48 : 49;
+  const tiles: number[] = [];
+
+  for (let tile = start; tile <= end; tile += 1) {
+    tiles.push(tile);
+  }
+
+  return tiles;
+}
+
+function markBlockedPortalEdge(blockedPortalEndpoints: Set<string>, room: MapRoom, side: "left" | "right"): void {
+  const x = side === "left" ? 0 : 49;
+
+  for (let y = 0; y < 50; y += 1) {
+    blockedPortalEndpoints.add(portalEndpointKey(room.room, x, y));
+  }
+}
+
+function isBlockedPortalEndpoint(blockedPortalEndpoints: Set<string>, room: MapRoom, x: number, y: number): boolean {
+  return blockedPortalEndpoints.has(portalEndpointKey(room.room, x, y));
+}
+
+function portalEndpointKey(room: string, x: number, y: number): string {
+  return `${room}:${x}:${y}`;
+}
+
+function addPortalPair(
+  firstRoom: MapRoom,
+  firstX: number,
+  firstY: number,
+  secondRoom: MapRoom,
+  secondX: number,
+  secondY: number,
+  config: HighwayPortalConfig,
+  blockedPortalEndpoints: Set<string>
+): void {
+  addPortal(firstRoom, firstX, firstY, secondRoom, secondX, secondY, config, blockedPortalEndpoints);
+  addPortal(secondRoom, secondX, secondY, firstRoom, firstX, firstY, config, blockedPortalEndpoints);
+}
+
+function addPortal(
+  originRoom: MapRoom,
+  originX: number,
+  originY: number,
+  destinationRoom: MapRoom,
+  destinationX: number,
+  destinationY: number,
+  config: HighwayPortalConfig,
+  blockedPortalEndpoints: Set<string>
+): void {
+  if (config.forcePlainEndpoints && !isBlockedPortalEndpoint(blockedPortalEndpoints, originRoom, originX, originY)) {
+    originRoom.terrain = setPlainTerrain(originRoom.terrain, originX, originY);
+  }
+
+  originRoom.objects.push({
+    type: "portal",
+    room: originRoom.room,
+    x: originX,
+    y: originY,
+    destination: { x: destinationX, y: destinationY, room: destinationRoom.room }
+  });
+}
+
+function setPlainTerrain(terrain: string, x: number, y: number): string {
+  const chars = terrain.split("");
+  chars[y * 50 + x] = "0";
+  return chars.join("");
 }
 
 function cloneRoom(room: MapRoom, deltaX: number, deltaY: number): MapRoom {
@@ -330,6 +524,28 @@ function roomNameToXY(name: string): [number, number] {
   const x = horizontal === "W" ? -Number(rawX) - 1 : Number(rawX);
   const y = vertical === "N" ? -Number(rawY) - 1 : Number(rawY);
   return [x, y];
+}
+
+function isHighwayRoom(name: string): boolean {
+  const match = name.toUpperCase().match(/^(\w)(\d+)(\w)(\d+)$/);
+  if (!match) {
+    throw new Error(`Invalid room name '${name}'.`);
+  }
+
+  const [, , rawX, , rawY] = match;
+  return Number(rawX) % 10 === 0 || Number(rawY) % 10 === 0;
+}
+
+function isHighwayRow(y: number): boolean {
+  return roomCoordinateToSectorIndex(y) % 10 === 0;
+}
+
+function isHighwayColumn(x: number): boolean {
+  return roomCoordinateToSectorIndex(x) % 10 === 0;
+}
+
+function roomCoordinateToSectorIndex(coordinate: number): number {
+  return coordinate < 0 ? -coordinate - 1 : coordinate;
 }
 
 function roomNameFromXY(x: number, y: number): string {
