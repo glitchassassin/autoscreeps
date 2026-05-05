@@ -5,6 +5,7 @@ const appRoot = import.meta.dirname;
 
 export default {
   root: appRoot,
+  base: process.env.BASE_PATH ?? "/",
   plugins: [tailwindcss()],
   server: {
     port: 5175,

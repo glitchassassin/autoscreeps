@@ -1,0 +1,67 @@
+name: Publish theorycrafting
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/theorycrafting-pages.yml
+      - theorycrafting/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: theorycrafting/package-lock.json
+
+      - name: Install dependencies
+        working-directory: theorycrafting
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: theorycrafting
+        run: npm run typecheck
+
+      - name: Build
+        working-directory: theorycrafting
+        env:
+          BASE_PATH: /autoscreeps/
+        run: npm run build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: theorycrafting/dist
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
