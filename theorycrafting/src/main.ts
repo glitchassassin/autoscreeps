@@ -3,7 +3,7 @@ import "./styles.css";
 type PartType = "attack" | "ranged_attack" | "heal" | "move" | "tough" | "work" | "carry" | "claim";
 type MeleeAction = "attack" | "heal";
 type Outcome = "running" | "win" | "loss" | "stalled" | "timeout";
-type Formation = "stacked" | "quad";
+type Formation = "stacked" | "duo" | "quad";
 
 type Position = {
   x: number;
@@ -58,6 +58,7 @@ type SimulationOptions = {
 type SimulationResult = {
   frames: Frame[];
   outcome: Outcome;
+  formation: Formation;
   killTick?: number;
   fullHealTick?: number;
   friendlyDamageTaken: number;
@@ -193,6 +194,29 @@ const presets: Preset[] = [
     maxTicks: 500,
     formation: "stacked",
     creeps: [{ name: "guard", body: parseBodySpec("2t,25m,13a,10h") }]
+  },
+  {
+    id: "rcl6-ranged-duo",
+    label: "RCL6 ranged duo",
+    meleeAction: "attack",
+    preferredRange: 2,
+    startRange: 2,
+    maxTicks: 500,
+    formation: "duo",
+    creeps: [
+      { name: "point", body: parseBodySpec("9m,5ra,4h") },
+      { name: "support", body: parseBodySpec("7m,7h") }
+    ]
+  },
+  {
+    id: "rcl6-cat-duo",
+    label: "rcl6 cat duo",
+    meleeAction: "attack",
+    preferredRange: 2,
+    startRange: 2,
+    maxTicks: 500,
+    formation: "duo",
+    creeps: [1, 2].map((index) => ({ name: `cat${index}`, body: parseBodySpec("6m,10ra,4h") }))
   },
   {
     id: "rcl6-quad",
@@ -345,6 +369,7 @@ const presetSelect = getElement<HTMLSelectElement>("preset-select");
 const directoryShell = getElement<HTMLElement>("directory-shell");
 const combatShell = getElement<HTMLElement>("combat-shell");
 const meleeActionSelect = getElement<HTMLSelectElement>("melee-action-select");
+const formationSelect = getElement<HTMLSelectElement>("formation-select");
 const startRangeInput = getElement<HTMLInputElement>("start-range-input");
 const preferredRangeInput = getElement<HTMLInputElement>("preferred-range-input");
 const maxTicksInput = getElement<HTMLInputElement>("max-ticks-input");
@@ -425,6 +450,7 @@ function loadPreset(id: string): void {
   startRangeInput.value = String(preset.startRange);
   preferredRangeInput.value = String(preset.preferredRange);
   maxTicksInput.value = String(preset.maxTicks);
+  formationSelect.value = preset.formation;
   creepSpecsInput.value = preset.creeps.map((creep) => `${creep.name}=${formatBody(creep.body)}`).join("\n");
   runSimulation();
 }
@@ -438,7 +464,7 @@ function runSimulation(): void {
       maxTicks: clampInt(Number(maxTicksInput.value), 1, 5000),
       startRange: clampInt(Number(startRangeInput.value), 1, 50),
       preferredRange: clampInt(Number(preferredRangeInput.value), 1, 3),
-      formation: selectedPresetFormation(),
+      formation: parseFormation(formationSelect.value),
       keeperBody: parseBodySpec(keeperSpecInput.value)
     };
     result = simulate(creeps, options);
@@ -583,7 +609,7 @@ function simulate(creeps: CreepSpec[], options: SimulationOptions): SimulationRe
       if (friendlies.every((creep) => !creep.alive)) {
         outcome = "loss";
         addFrame(tick, events, outcome);
-        return finishResult(frames, outcome, killTick, fullHealTick, friendlies, keeper);
+        return finishResult(frames, outcome, killTick, fullHealTick, friendlies, keeper, formation);
       }
     } else {
       const healEffects = new Map<SimCreep, { damage: number; heal: number }>();
@@ -605,7 +631,7 @@ function simulate(creeps: CreepSpec[], options: SimulationOptions): SimulationRe
         outcome = "win";
         fullHealTick = tick;
         addFrame(tick, events.length ? events : ["fully healed"], outcome);
-        return finishResult(frames, outcome, killTick, fullHealTick, friendlies, keeper);
+        return finishResult(frames, outcome, killTick, fullHealTick, friendlies, keeper, formation);
       }
     }
 
@@ -655,7 +681,7 @@ function simulate(creeps: CreepSpec[], options: SimulationOptions): SimulationRe
         outcome = "stalled";
         events.push(`combat state repeated from tick ${previousTick}`);
         addFrame(tick, events, outcome);
-        return finishResult(frames, outcome, killTick, fullHealTick, friendlies, keeper);
+        return finishResult(frames, outcome, killTick, fullHealTick, friendlies, keeper, formation);
       }
       seenStates.set(signature, tick);
     }
@@ -665,7 +691,7 @@ function simulate(creeps: CreepSpec[], options: SimulationOptions): SimulationRe
 
   outcome = "timeout";
   frames[frames.length - 1] = { ...frames[frames.length - 1]!, outcome };
-  return finishResult(frames, outcome, killTick, fullHealTick, friendlies, keeper);
+  return finishResult(frames, outcome, killTick, fullHealTick, friendlies, keeper, formation);
 }
 
 function renderFrame(): void {
@@ -688,6 +714,7 @@ function renderScenarioFacts(): void {
   const spawnCost = initial.friendlies.reduce((sum, creep) => sum + creep.cost, 0);
   scenarioFacts.innerHTML = [
     fact("Creeps", String(creepCount)),
+    fact("Formation", formatFormation(result.formation)),
     fact("Total spawn cost", `${spawnCost}e`),
     fact("Keeper body", `${initial.keeper.body.length} parts`),
     fact("Outcome", formatOutcome(result))
@@ -706,7 +733,8 @@ function renderCombatSvg(frame: Frame): void {
   const minY = Math.min(...framePositions.map((position) => position.y));
   const maxY = Math.max(...framePositions.map((position) => position.y));
   const height = Math.max(10, 6 + maxY - minY + 1);
-  const yOffset = Math.floor(height / 2) - (minY + maxY) / 2;
+  const rowCount = maxY - minY + 1;
+  const yOffset = Math.ceil((height - rowCount) / 2) - minY;
   const displayPosition = (position: Position) => ({
     x: position.x + 0.5,
     y: position.y + yOffset + 0.5
@@ -841,11 +869,13 @@ function finishResult(
   killTick: number | undefined,
   fullHealTick: number | undefined,
   friendlies: SimCreep[],
-  keeper: SimCreep
+  keeper: SimCreep,
+  formation: Formation
 ): SimulationResult {
   return {
     frames,
     outcome,
+    formation,
     killTick,
     fullHealTick,
     friendlyDamageTaken: friendlies.reduce((sum, creep) => sum + creep.totalDamageTaken, 0),
@@ -853,15 +883,29 @@ function finishResult(
   };
 }
 
-function selectedPresetFormation(): Formation {
-  return presets.find((preset) => preset.id === presetSelect.value)?.formation ?? "stacked";
-}
-
 function effectiveFormation(formation: Formation, creepCount: number): Formation {
-  return formation === "quad" && creepCount === 4 ? "quad" : "stacked";
+  if (formation === "duo") {
+    if (creepCount !== 2) {
+      throw new Error("Duo formation requires exactly 2 creeps.");
+    }
+    return "duo";
+  }
+  if (formation === "quad") {
+    if (creepCount !== 4) {
+      throw new Error("Quad formation requires exactly 4 creeps.");
+    }
+    return "quad";
+  }
+  return "stacked";
 }
 
 function formationPositions(anchorX: number, creepCount: number, formation: Formation): Position[] {
+  if (formation === "duo") {
+    return [
+      { x: anchorX, y: 0 },
+      { x: anchorX, y: 1 }
+    ];
+  }
   if (formation === "quad") {
     return [
       { x: anchorX, y: 0 },
@@ -1027,6 +1071,13 @@ function parseMeleeAction(value: string): MeleeAction {
   return value;
 }
 
+function parseFormation(value: string): Formation {
+  if (value !== "stacked" && value !== "duo" && value !== "quad") {
+    throw new Error(`Invalid formation "${value}".`);
+  }
+  return value;
+}
+
 function repeat(part: PartType, count: number): PartType[] {
   return Array.from({ length: count }, () => part);
 }
@@ -1084,6 +1135,13 @@ function formatOutcome(simulation: SimulationResult): string {
     return "timeout";
   }
   return "running";
+}
+
+function formatFormation(formation: Formation): string {
+  if (formation === "stacked") {
+    return "solo / stacked";
+  }
+  return formation;
 }
 
 function closestFriendlyIndex(frame: Frame): number {
