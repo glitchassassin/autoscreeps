@@ -1,7 +1,6 @@
 import "./styles.css";
 
 type PartType = "attack" | "ranged_attack" | "heal" | "move" | "tough" | "work" | "carry" | "claim";
-type Mode = "fleeing" | "stationary";
 type MeleeAction = "attack" | "heal";
 type Outcome = "running" | "win" | "loss" | "stalled" | "timeout";
 type Formation = "stacked" | "quad";
@@ -48,7 +47,6 @@ type Frame = {
 };
 
 type SimulationOptions = {
-  mode: Mode;
   meleeAction: MeleeAction;
   maxTicks: number;
   startRange: number;
@@ -69,7 +67,6 @@ type SimulationResult = {
 type Preset = {
   id: string;
   label: string;
-  mode: Mode;
   meleeAction: MeleeAction;
   preferredRange: number;
   startRange: number;
@@ -180,7 +177,6 @@ const presets: Preset[] = [
   {
     id: "rcl7-ranged",
     label: "RCL7 ranged solo",
-    mode: "fleeing",
     meleeAction: "attack",
     preferredRange: 3,
     startRange: 3,
@@ -191,7 +187,6 @@ const presets: Preset[] = [
   {
     id: "rcl7-passive-melee",
     label: "RCL7 passive melee",
-    mode: "fleeing",
     meleeAction: "heal",
     preferredRange: 1,
     startRange: 3,
@@ -202,7 +197,6 @@ const presets: Preset[] = [
   {
     id: "rcl6-quad",
     label: "RCL6 ranged quad",
-    mode: "fleeing",
     meleeAction: "attack",
     preferredRange: 3,
     startRange: 3,
@@ -213,7 +207,6 @@ const presets: Preset[] = [
   {
     id: "rcl6-passive-melee",
     label: "RCL6 passive melee",
-    mode: "fleeing",
     meleeAction: "heal",
     preferredRange: 1,
     startRange: 3,
@@ -224,7 +217,6 @@ const presets: Preset[] = [
   {
     id: "rcl8-ranged",
     label: "RCL8 ranged solo",
-    mode: "fleeing",
     meleeAction: "attack",
     preferredRange: 3,
     startRange: 3,
@@ -235,7 +227,6 @@ const presets: Preset[] = [
   {
     id: "rcl8-passive-melee",
     label: "RCL8 passive melee",
-    mode: "fleeing",
     meleeAction: "heal",
     preferredRange: 1,
     startRange: 3,
@@ -353,7 +344,6 @@ class SimCreep {
 const presetSelect = getElement<HTMLSelectElement>("preset-select");
 const directoryShell = getElement<HTMLElement>("directory-shell");
 const combatShell = getElement<HTMLElement>("combat-shell");
-const modeSelect = getElement<HTMLSelectElement>("mode-select");
 const meleeActionSelect = getElement<HTMLSelectElement>("melee-action-select");
 const startRangeInput = getElement<HTMLInputElement>("start-range-input");
 const preferredRangeInput = getElement<HTMLInputElement>("preferred-range-input");
@@ -375,7 +365,6 @@ const bodyList = getElement<HTMLElement>("body-list");
 let result: SimulationResult = simulate(
   presets[0]!.creeps,
   {
-    mode: presets[0]!.mode,
     meleeAction: presets[0]!.meleeAction,
     maxTicks: presets[0]!.maxTicks,
     startRange: presets[0]!.startRange,
@@ -432,7 +421,6 @@ function renderRoute(): void {
 function loadPreset(id: string): void {
   const preset = presets.find((candidate) => candidate.id === id) ?? presets[0]!;
   presetSelect.value = preset.id;
-  modeSelect.value = preset.mode;
   meleeActionSelect.value = preset.meleeAction;
   startRangeInput.value = String(preset.startRange);
   preferredRangeInput.value = String(preset.preferredRange);
@@ -446,7 +434,6 @@ function runSimulation(): void {
     stopPlayback();
     const creeps = parseCreepSpecs(creepSpecsInput.value);
     const options: SimulationOptions = {
-      mode: parseMode(modeSelect.value),
       meleeAction: parseMeleeAction(meleeActionSelect.value),
       maxTicks: clampInt(Number(maxTicksInput.value), 1, 5000),
       startRange: clampInt(Number(startRangeInput.value), 1, 50),
@@ -623,7 +610,7 @@ function simulate(creeps: CreepSpec[], options: SimulationOptions): SimulationRe
     }
 
     if (keeper.alive) {
-      const keeperMoved = options.mode === "fleeing" && keeper.canMove();
+      const keeperMoved = keeper.canMove();
       const aliveFriendlies = friendlies.filter((creep) => creep.alive);
       if (keeperMoved) {
         keeper.movePlain();
@@ -1031,13 +1018,6 @@ function parseBodySpec(spec: string): PartType[] {
     throw new Error(`Body spec "${spec}" has ${parts.length} parts; max is 50.`);
   }
   return parts;
-}
-
-function parseMode(value: string): Mode {
-  if (value !== "fleeing" && value !== "stationary") {
-    throw new Error(`Invalid mode "${value}".`);
-  }
-  return value;
 }
 
 function parseMeleeAction(value: string): MeleeAction {
