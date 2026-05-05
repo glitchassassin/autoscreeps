@@ -59,10 +59,22 @@ type SimulationResult = {
   frames: Frame[];
   outcome: Outcome;
   formation: Formation;
+  lairTravel: LairTravelResult;
   killTick?: number;
   fullHealTick?: number;
   friendlyDamageTaken: number;
   keeperDamageTaken: number;
+};
+
+type LairTravelResult = {
+  windowTicks: number;
+  firstDamageTick?: number;
+  killTick?: number;
+  combatTicksUsed: number;
+  travelTicks: number;
+  distance: number;
+  fullHealTravelTick?: number;
+  remainingDamage: number;
 };
 
 type Preset = {
@@ -84,6 +96,9 @@ const rangedHealPerPart = 4;
 const plainFatigue = 2;
 const moveFatigueReduction = 2;
 const friendlyStartX = 1;
+const keeperRespawnTicks = 300;
+const keeperLairCount = 4;
+const nextLairWindowTicks = keeperRespawnTicks / keeperLairCount;
 
 const partCost: Record<PartType, number> = {
   attack: 80,
@@ -491,6 +506,8 @@ function simulate(creeps: CreepSpec[], options: SimulationOptions): SimulationRe
   let range = closestRange(keeperPosition, friendlyPositions);
   let killTick: number | undefined;
   let fullHealTick: number | undefined;
+  let firstKeeperDamageTick: number | undefined;
+  let lairTravel: LairTravelResult | undefined;
   let outcome: Outcome = "running";
   let lastKeeperHits = keeper.hits;
   let stalledTicks = 0;
@@ -601,6 +618,11 @@ function simulate(creeps: CreepSpec[], options: SimulationOptions): SimulationRe
         applyNetEffects(rangedEffects);
       }
 
+      if (keeper.hits < keeper.hitsMax && firstKeeperDamageTick === undefined) {
+        firstKeeperDamageTick = tick;
+        events.push("75t next-lair window starts");
+      }
+
       if (!keeper.alive && killTick === undefined) {
         killTick = tick;
         events.push("keeper killed");
@@ -609,7 +631,17 @@ function simulate(creeps: CreepSpec[], options: SimulationOptions): SimulationRe
       if (friendlies.every((creep) => !creep.alive)) {
         outcome = "loss";
         addFrame(tick, events, outcome);
-        return finishResult(frames, outcome, killTick, fullHealTick, friendlies, keeper, formation);
+        return finishResult(
+          frames,
+          outcome,
+          killTick,
+          fullHealTick,
+          friendlies,
+          keeper,
+          formation,
+          firstKeeperDamageTick,
+          lairTravel
+        );
       }
     } else {
       const healEffects = new Map<SimCreep, { damage: number; heal: number }>();
@@ -631,7 +663,17 @@ function simulate(creeps: CreepSpec[], options: SimulationOptions): SimulationRe
         outcome = "win";
         fullHealTick = tick;
         addFrame(tick, events.length ? events : ["fully healed"], outcome);
-        return finishResult(frames, outcome, killTick, fullHealTick, friendlies, keeper, formation);
+        return finishResult(
+          frames,
+          outcome,
+          killTick,
+          fullHealTick,
+          friendlies,
+          keeper,
+          formation,
+          firstKeeperDamageTick,
+          lairTravel
+        );
       }
     }
 
@@ -663,6 +705,11 @@ function simulate(creeps: CreepSpec[], options: SimulationOptions): SimulationRe
     }
     keeper.recoverFatigue();
 
+    if (killTick === tick && firstKeeperDamageTick !== undefined && lairTravel === undefined) {
+      lairTravel = simulateLairTravel(friendlies, formation, firstKeeperDamageTick, killTick);
+      events.push(`next-lair travel: ${lairTravel.distance} tiles in ${lairTravel.travelTicks}t`);
+    }
+
     if (keeper.hits === lastKeeperHits) {
       stalledTicks += 1;
       if (stalledTicks === 100 && range > 3) {
@@ -681,7 +728,17 @@ function simulate(creeps: CreepSpec[], options: SimulationOptions): SimulationRe
         outcome = "stalled";
         events.push(`combat state repeated from tick ${previousTick}`);
         addFrame(tick, events, outcome);
-        return finishResult(frames, outcome, killTick, fullHealTick, friendlies, keeper, formation);
+        return finishResult(
+          frames,
+          outcome,
+          killTick,
+          fullHealTick,
+          friendlies,
+          keeper,
+          formation,
+          firstKeeperDamageTick,
+          lairTravel
+        );
       }
       seenStates.set(signature, tick);
     }
@@ -691,7 +748,17 @@ function simulate(creeps: CreepSpec[], options: SimulationOptions): SimulationRe
 
   outcome = "timeout";
   frames[frames.length - 1] = { ...frames[frames.length - 1]!, outcome };
-  return finishResult(frames, outcome, killTick, fullHealTick, friendlies, keeper, formation);
+  return finishResult(
+    frames,
+    outcome,
+    killTick,
+    fullHealTick,
+    friendlies,
+    keeper,
+    formation,
+    firstKeeperDamageTick,
+    lairTravel
+  );
 }
 
 function renderFrame(): void {
@@ -709,14 +776,8 @@ function renderFrame(): void {
 }
 
 function renderScenarioFacts(): void {
-  const initial = result.frames[0]!;
-  const creepCount = initial.friendlies.length;
-  const spawnCost = initial.friendlies.reduce((sum, creep) => sum + creep.cost, 0);
   scenarioFacts.innerHTML = [
-    fact("Creeps", String(creepCount)),
-    fact("Formation", formatFormation(result.formation)),
-    fact("Total spawn cost", `${spawnCost}e`),
-    fact("Keeper body", `${initial.keeper.body.length} parts`),
+    fact("Next-lair travel", formatLairTravel(result.lairTravel)),
     fact("Outcome", formatOutcome(result))
   ].join("");
 }
@@ -870,17 +931,111 @@ function finishResult(
   fullHealTick: number | undefined,
   friendlies: SimCreep[],
   keeper: SimCreep,
-  formation: Formation
+  formation: Formation,
+  firstDamageTick: number | undefined,
+  lairTravel: LairTravelResult | undefined
 ): SimulationResult {
   return {
     frames,
     outcome,
     formation,
+    lairTravel: lairTravel ?? emptyLairTravelResult(firstDamageTick, killTick, friendlies),
     killTick,
     fullHealTick,
     friendlyDamageTaken: friendlies.reduce((sum, creep) => sum + creep.totalDamageTaken, 0),
     keeperDamageTaken: keeper.totalDamageTaken
   };
+}
+
+function simulateLairTravel(
+  creeps: SimCreep[],
+  formation: Formation,
+  firstDamageTick: number,
+  killTick: number
+): LairTravelResult {
+  const combatTicksUsed = Math.max(0, killTick - firstDamageTick);
+  const travelTicks = Math.max(0, nextLairWindowTicks - combatTicksUsed);
+  const travelers = cloneCreeps(creeps);
+  let distance = 0;
+  let fullHealTravelTick = travelers.every((creep) => !creep.alive || !creep.damaged) ? 0 : undefined;
+  let positions = formationPositions(0, travelers.length, formation);
+
+  for (let tick = 1; tick <= travelTicks; tick += 1) {
+    const healEffects = new Map<SimCreep, { damage: number; heal: number }>();
+    for (const [index, creep] of travelers.entries()) {
+      if (!creep.alive || creep.active("heal") === 0) {
+        continue;
+      }
+      const target = chooseHealTarget(travelers, positions, positions[index]!, 1);
+      if (target) {
+        addEffect(healEffects, target, { heal: creep.active("heal") * adjacentHealPerPart });
+      }
+    }
+    applyNetEffects(healEffects);
+
+    if (fullHealTravelTick === undefined && travelers.every((creep) => !creep.alive || !creep.damaged)) {
+      fullHealTravelTick = tick;
+    }
+
+    const aliveTravelers = travelers.filter((creep) => creep.alive);
+    if (aliveTravelers.length > 0 && aliveTravelers.every((creep) => creep.canMove())) {
+      for (const creep of aliveTravelers) {
+        creep.movePlain();
+      }
+      distance += 1;
+      positions = formationPositions(distance, travelers.length, formation);
+    }
+
+    for (const creep of travelers) {
+      creep.recoverFatigue();
+    }
+  }
+
+  return {
+    windowTicks: nextLairWindowTicks,
+    firstDamageTick,
+    killTick,
+    combatTicksUsed,
+    travelTicks,
+    distance,
+    fullHealTravelTick,
+    remainingDamage: remainingFriendlyDamage(travelers)
+  };
+}
+
+function emptyLairTravelResult(
+  firstDamageTick: number | undefined,
+  killTick: number | undefined,
+  creeps: SimCreep[]
+): LairTravelResult {
+  return {
+    windowTicks: nextLairWindowTicks,
+    firstDamageTick,
+    killTick,
+    combatTicksUsed: firstDamageTick !== undefined && killTick !== undefined ? Math.max(0, killTick - firstDamageTick) : 0,
+    travelTicks: 0,
+    distance: 0,
+    remainingDamage: remainingFriendlyDamage(creeps)
+  };
+}
+
+function cloneCreeps(creeps: SimCreep[]): SimCreep[] {
+  return creeps.map((creep) => {
+    const clone = new SimCreep(
+      creep.name,
+      creep.body.map((part) => part.type)
+    );
+    clone.fatigue = creep.fatigue;
+    clone.totalDamageTaken = creep.totalDamageTaken;
+    for (const [index, part] of creep.body.entries()) {
+      clone.body[index]!.hits = part.hits;
+    }
+    return clone;
+  });
+}
+
+function remainingFriendlyDamage(creeps: SimCreep[]): number {
+  return creeps.reduce((sum, creep) => sum + (creep.alive ? creep.hitsMax - creep.hits : 0), 0);
 }
 
 function effectiveFormation(formation: Formation, creepCount: number): Formation {
@@ -1123,7 +1278,7 @@ function formatPart(part: PartType): string {
 
 function formatOutcome(simulation: SimulationResult): string {
   if (simulation.outcome === "win") {
-    return `win: kill ${simulation.killTick}, full ${simulation.fullHealTick}`;
+    return `win: kill ${formatTick(simulation.killTick)}, full ${formatTick(simulation.fullHealTick)}`;
   }
   if (simulation.outcome === "loss") {
     return "loss";
@@ -1137,11 +1292,15 @@ function formatOutcome(simulation: SimulationResult): string {
   return "running";
 }
 
-function formatFormation(formation: Formation): string {
-  if (formation === "stacked") {
-    return "solo / stacked";
+function formatLairTravel(lairTravel: LairTravelResult): string {
+  if (lairTravel.firstDamageTick === undefined || lairTravel.killTick === undefined) {
+    return "0 tiles";
   }
-  return formation;
+  return `${lairTravel.distance} tiles`;
+}
+
+function formatTick(tick: number | undefined): string {
+  return tick === undefined ? "?" : `${tick}t`;
 }
 
 function closestFriendlyIndex(frame: Frame): number {
