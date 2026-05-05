@@ -1,0 +1,16 @@
+{
+  "name": "autoscreeps-theorycrafting",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node ../bots/basic/node_modules/vite/bin/vite.js --host 0.0.0.0",
+    "build": "node ../bots/basic/node_modules/vite/bin/vite.js build",
+    "typecheck": "node ../bots/basic/node_modules/typescript/bin/tsc --noEmit",
+    "preview": "node ../bots/basic/node_modules/vite/bin/vite.js preview --host 0.0.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.18",
+    "tailwindcss": "^4.1.18"
+  }
+}

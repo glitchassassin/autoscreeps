@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en" class="h-full max-[1100px]:overflow-auto">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#f59e0b" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#18181b" media="(prefers-color-scheme: dark)">
+    <link rel="icon" href="data:,">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+      (() => {
+        const preference = window.matchMedia("(prefers-color-scheme: dark)");
+        const applyTheme = () => {
+          const isDark = preference.matches;
+          document.documentElement.classList.toggle("dark", isDark);
+          document.documentElement.classList.toggle("light", !isDark);
+        };
+        applyTheme();
+        if (preference.addEventListener) {
+          preference.addEventListener("change", applyTheme);
+        } else {
+          preference.addListener(applyTheme);
+        }
+      })();
+    </script>
+    <title>Autoscreeps Theorycrafting</title>
+  </head>
+  <body class="min-h-full overflow-auto bg-amber-50 font-sans text-stone-900 dark:bg-zinc-900 dark:text-stone-100">
+    <div aria-hidden="true" class="pointer-events-none fixed inset-0 bg-amber-50 dark:bg-zinc-900"></div>
+    <div aria-hidden="true" class="pointer-events-none fixed inset-0 opacity-10 dark:hidden [background-image:url('https://jonwinsley.com/assets/images/botany.png')] [background-position:top] [background-size:100%_auto]"></div>
+    <div aria-hidden="true" class="pointer-events-none fixed inset-0 hidden opacity-10 dark:block [background-image:url('https://jonwinsley.com/assets/images/botany-dark.png')] [background-position:top] [background-size:100%_auto]"></div>
+    <div aria-hidden="true" class="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_right,rgba(245,158,11,0.12),transparent_32rem)] dark:bg-[radial-gradient(circle_at_top_right,rgba(251,191,36,0.08),transparent_32rem)]"></div>
+
+    <main id="directory-shell" class="relative z-10 grid min-h-screen grid-rows-[auto_minmax(0,1fr)]">
+      <header class="mx-auto flex min-h-24 w-[min(920px,calc(100vw-48px))] items-end border-b border-amber-300 pt-[34px] pb-[22px] dark:border-zinc-700 max-sm:w-[min(calc(100vw-28px),920px)]">
+        <div>
+          <h1 class="mb-2 font-serif text-[clamp(34px,5vw,54px)] leading-[1.08] font-bold tracking-normal text-amber-900 dark:text-stone-100">Autoscreeps Theorycrafting</h1>
+          <span class="text-base leading-[1.45] text-amber-700 italic dark:font-light dark:text-stone-200">Visual models for Screeps mechanics</span>
+        </div>
+      </header>
+      <section class="mx-auto w-[min(920px,calc(100vw-48px))] py-[34px] max-sm:w-[min(calc(100vw-28px),920px)]" aria-labelledby="visualization-list-title">
+        <h2 id="visualization-list-title" class="mb-4 font-mono text-xs font-bold text-amber-900 uppercase dark:text-amber-300">Visualizations</h2>
+        <a class="grid min-h-[92px] grid-cols-[minmax(0,1fr)_auto] items-center gap-[18px] border-l-2 border-amber-300 bg-amber-50/50 py-[18px] pl-5 text-stone-900 no-underline transition-colors hover:border-amber-500 hover:bg-amber-100/50 focus-visible:border-amber-500 focus-visible:bg-amber-100/50 focus-visible:ring-3 focus-visible:ring-amber-500/20 focus-visible:outline-none dark:border-zinc-700 dark:bg-zinc-800/40 dark:text-stone-100 dark:hover:border-amber-400 dark:hover:bg-zinc-700/50 dark:focus-visible:ring-amber-400/25 max-sm:grid-cols-1" href="#source-keeper-combat">
+          <span>
+            <strong class="mb-[7px] block font-serif text-[22px] leading-[1.1] font-bold">Source Keeper Combat</strong>
+            <small class="block text-sm leading-6 text-stone-600 dark:text-stone-300">Step through movement, fatigue, damage, healing, and body-part disablement.</small>
+          </span>
+          <span class="inline-grid min-h-[34px] place-items-center rounded-md border border-amber-300 bg-amber-100 px-3 font-mono text-xs text-amber-900 dark:border-zinc-600 dark:bg-zinc-700 dark:text-amber-100 max-sm:justify-self-start">Open</span>
+        </a>
+      </section>
+    </main>
+
+    <main id="combat-shell" class="relative z-10 min-h-screen overflow-visible" hidden>
+      <header class="flex items-center justify-between gap-[18px] border-b border-amber-300 bg-amber-50/95 px-[22px] py-2.5 backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95 max-[1240px]:flex-col max-[1240px]:items-start max-[1240px]:justify-start max-[1240px]:gap-2.5">
+        <div class="flex min-w-0 items-baseline gap-3.5 whitespace-nowrap max-[1240px]:flex-wrap max-[1240px]:whitespace-normal">
+          <a class="font-mono text-xs text-amber-700 uppercase no-underline hover:text-amber-900 focus-visible:ring-3 focus-visible:ring-amber-500/20 focus-visible:outline-none dark:text-amber-300 dark:hover:text-amber-100 dark:focus-visible:ring-amber-400/25" href="#">Index</a>
+          <h1 class="m-0 font-serif text-[23px] leading-[1.08] font-bold tracking-normal text-stone-950 dark:text-stone-50">Source Keeper Combat</h1>
+          <span id="status-text" class="shrink-0 text-[13px] text-stone-500 dark:text-stone-400">Ready</span>
+        </div>
+        <div class="flex shrink-0 flex-nowrap items-end justify-end gap-2.5 max-[1240px]:flex-wrap max-[1240px]:justify-start max-sm:w-full">
+          <label class="grid shrink-0 gap-1 font-mono text-[11px] text-stone-500 uppercase dark:text-stone-400 max-sm:w-full">
+            <span>Preset</span>
+            <select id="preset-select" class="h-[34px] w-[162px] rounded-md border border-amber-200 bg-orange-50/85 px-2.5 text-stone-900 transition-colors hover:border-amber-300 focus-visible:ring-3 focus-visible:ring-amber-500/20 focus-visible:outline-none dark:border-zinc-600 dark:bg-zinc-800/90 dark:text-stone-100 dark:hover:border-zinc-500 dark:focus-visible:ring-amber-400/25 max-sm:w-full"></select>
+          </label>
+          <label class="grid shrink-0 gap-1 font-mono text-[11px] text-stone-500 uppercase dark:text-stone-400 max-sm:w-full">
+            <span>Mode</span>
+            <select id="mode-select" class="h-[34px] w-[110px] rounded-md border border-amber-200 bg-orange-50/85 px-2.5 text-stone-900 transition-colors hover:border-amber-300 focus-visible:ring-3 focus-visible:ring-amber-500/20 focus-visible:outline-none dark:border-zinc-600 dark:bg-zinc-800/90 dark:text-stone-100 dark:hover:border-zinc-500 dark:focus-visible:ring-amber-400/25 max-sm:w-full">
+              <option value="fleeing">fleeing</option>
+              <option value="stationary">stationary</option>
+            </select>
+          </label>
+          <label class="grid shrink-0 gap-1 font-mono text-[11px] text-stone-500 uppercase dark:text-stone-400 max-sm:w-full">
+            <span>Melee</span>
+            <select id="melee-action-select" class="h-[34px] w-[180px] rounded-md border border-amber-200 bg-orange-50/85 px-2.5 text-stone-900 transition-colors hover:border-amber-300 focus-visible:ring-3 focus-visible:ring-amber-500/20 focus-visible:outline-none dark:border-zinc-600 dark:bg-zinc-800/90 dark:text-stone-100 dark:hover:border-zinc-500 dark:focus-visible:ring-amber-400/25 max-sm:w-full">
+              <option value="attack">attack</option>
+              <option value="heal">heal, fallback attack</option>
+            </select>
+          </label>
+          <label class="grid shrink-0 gap-1 font-mono text-[11px] text-stone-500 uppercase dark:text-stone-400">
+            <span>Start range</span>
+            <input id="start-range-input" class="h-[34px] w-[76px] rounded-md border border-amber-200 bg-orange-50/85 px-2.5 text-stone-900 transition-colors hover:border-amber-300 focus-visible:ring-3 focus-visible:ring-amber-500/20 focus-visible:outline-none dark:border-zinc-600 dark:bg-zinc-800/90 dark:text-stone-100 dark:hover:border-zinc-500 dark:focus-visible:ring-amber-400/25" type="number" min="1" max="20" step="1" value="3">
+          </label>
+          <label class="grid shrink-0 gap-1 font-mono text-[11px] text-stone-500 uppercase dark:text-stone-400">
+            <span>Hold range</span>
+            <input id="preferred-range-input" class="h-[34px] w-[76px] rounded-md border border-amber-200 bg-orange-50/85 px-2.5 text-stone-900 transition-colors hover:border-amber-300 focus-visible:ring-3 focus-visible:ring-amber-500/20 focus-visible:outline-none dark:border-zinc-600 dark:bg-zinc-800/90 dark:text-stone-100 dark:hover:border-zinc-500 dark:focus-visible:ring-amber-400/25" type="number" min="1" max="3" step="1" value="3">
+          </label>
+          <button id="run-button" class="h-[34px] min-w-[52px] shrink-0 cursor-pointer rounded-md border border-amber-700 bg-transparent px-2.5 font-semibold text-amber-700 transition-colors hover:border-amber-800 hover:bg-amber-100/50 hover:text-amber-800 focus-visible:ring-3 focus-visible:ring-amber-500/20 focus-visible:outline-none dark:border-amber-400 dark:bg-transparent dark:text-amber-300 dark:hover:border-amber-300 dark:hover:bg-amber-400/10 dark:hover:text-amber-200 dark:focus-visible:ring-amber-400/25" type="button">Run</button>
+        </div>
+      </header>
+
+      <section class="grid grid-cols-[300px_minmax(560px,1fr)_390px] gap-3.5 overflow-visible p-3.5 max-[1100px]:grid-cols-1">
+        <aside class="min-h-0 space-y-[18px] overflow-auto rounded-lg border border-amber-200 bg-amber-50/90 p-3.5 shadow-[0_18px_44px_rgba(120,53,15,0.09)] overscroll-contain dark:border-zinc-600 dark:bg-zinc-800/90 dark:shadow-[0_18px_44px_rgba(0,0,0,0.22)] max-[1100px]:overflow-visible">
+          <section>
+            <h2 class="mb-2.5 font-mono text-xs leading-tight font-bold text-amber-900 uppercase dark:text-amber-300">Creeps</h2>
+            <textarea id="creep-specs" class="block h-[190px] w-full resize-y rounded-md border border-amber-200 bg-orange-50/85 p-2.5 font-mono text-xs leading-[1.45] text-stone-900 transition-colors hover:border-amber-300 focus-visible:ring-3 focus-visible:ring-amber-500/20 focus-visible:outline-none dark:border-zinc-600 dark:bg-zinc-800/90 dark:text-stone-100 dark:hover:border-zinc-500 dark:focus-visible:ring-amber-400/25" spellcheck="false"></textarea>
+          </section>
+          <section>
+            <h2 class="mb-2.5 font-mono text-xs leading-tight font-bold text-amber-900 uppercase dark:text-amber-300">Keeper</h2>
+            <input id="keeper-spec" class="h-[34px] w-full rounded-md border border-amber-200 bg-orange-50/85 px-2.5 font-mono text-xs text-stone-900 transition-colors hover:border-amber-300 focus-visible:ring-3 focus-visible:ring-amber-500/20 focus-visible:outline-none dark:border-zinc-600 dark:bg-zinc-800/90 dark:text-stone-100 dark:hover:border-zinc-500 dark:focus-visible:ring-amber-400/25" type="text" spellcheck="false">
+          </section>
+          <section>
+            <h2 class="mb-2.5 font-mono text-xs leading-tight font-bold text-amber-900 uppercase dark:text-amber-300">Simulation</h2>
+            <label class="grid gap-1 font-mono text-[11px] text-stone-500 uppercase dark:text-stone-400">
+              <span>Max ticks</span>
+              <input id="max-ticks-input" class="h-[34px] w-full rounded-md border border-amber-200 bg-orange-50/85 px-2.5 font-mono text-xs text-stone-900 transition-colors hover:border-amber-300 focus-visible:ring-3 focus-visible:ring-amber-500/20 focus-visible:outline-none dark:border-zinc-600 dark:bg-zinc-800/90 dark:text-stone-100 dark:hover:border-zinc-500 dark:focus-visible:ring-amber-400/25" type="number" min="1" max="5000" step="1" value="500">
+            </label>
+            <div id="scenario-facts" class="mt-2 grid gap-2"></div>
+          </section>
+        </aside>
+
+        <section class="grid min-w-0 grid-rows-[minmax(520px,1fr)_auto_auto] gap-2.5">
+          <div class="min-h-[420px] overflow-hidden rounded-lg border border-[#d6a640] bg-[#19130d] shadow-[0_18px_44px_rgba(120,53,15,0.09)] dark:border-zinc-600 dark:bg-[#111113] dark:shadow-[0_18px_44px_rgba(0,0,0,0.22)]">
+            <svg id="combat-svg" class="block h-full w-full bg-[#19130d] dark:bg-[#111113]" viewBox="0 0 16 10" role="img" aria-label="Source Keeper combat timeline"></svg>
+          </div>
+          <div class="grid min-h-[46px] grid-cols-[auto_auto_auto_minmax(0,1fr)_86px] items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/90 p-2 shadow-[0_18px_44px_rgba(120,53,15,0.09)] dark:border-zinc-600 dark:bg-zinc-800/90 dark:shadow-[0_18px_44px_rgba(0,0,0,0.22)] max-sm:grid-cols-3">
+            <button id="previous-button" class="h-[34px] min-w-[52px] cursor-pointer rounded-md border border-amber-700 bg-transparent px-2.5 font-semibold text-amber-700 transition-colors hover:border-amber-800 hover:bg-amber-100/50 hover:text-amber-800 focus-visible:ring-3 focus-visible:ring-amber-500/20 focus-visible:outline-none disabled:cursor-default disabled:opacity-50 dark:border-amber-400 dark:bg-transparent dark:text-amber-300 dark:hover:border-amber-300 dark:hover:bg-amber-400/10 dark:hover:text-amber-200 dark:focus-visible:ring-amber-400/25" type="button" aria-label="Previous tick">&lt;</button>
+            <button id="play-button" class="h-[34px] min-w-[52px] cursor-pointer rounded-md border border-amber-700 bg-transparent px-2.5 font-semibold text-amber-700 transition-colors hover:border-amber-800 hover:bg-amber-100/50 hover:text-amber-800 focus-visible:ring-3 focus-visible:ring-amber-500/20 focus-visible:outline-none disabled:cursor-default disabled:opacity-50 dark:border-amber-400 dark:bg-transparent dark:text-amber-300 dark:hover:border-amber-300 dark:hover:bg-amber-400/10 dark:hover:text-amber-200 dark:focus-visible:ring-amber-400/25" type="button" aria-label="Play">Play</button>
+            <button id="next-button" class="h-[34px] min-w-[52px] cursor-pointer rounded-md border border-amber-700 bg-transparent px-2.5 font-semibold text-amber-700 transition-colors hover:border-amber-800 hover:bg-amber-100/50 hover:text-amber-800 focus-visible:ring-3 focus-visible:ring-amber-500/20 focus-visible:outline-none disabled:cursor-default disabled:opacity-50 dark:border-amber-400 dark:bg-transparent dark:text-amber-300 dark:hover:border-amber-300 dark:hover:bg-amber-400/10 dark:hover:text-amber-200 dark:focus-visible:ring-amber-400/25" type="button" aria-label="Next tick">&gt;</button>
+            <input id="tick-slider" class="w-full accent-amber-700 dark:accent-amber-400 max-sm:col-span-full" type="range" min="0" max="0" value="0">
+            <span id="tick-label" class="text-right font-mono text-xs text-stone-500 dark:text-stone-400 max-sm:col-span-full">tick 0</span>
+          </div>
+          <section class="rounded-lg border border-amber-200 bg-amber-50/90 p-3.5 shadow-[0_18px_44px_rgba(120,53,15,0.09)] dark:border-zinc-600 dark:bg-zinc-800/90 dark:shadow-[0_18px_44px_rgba(0,0,0,0.22)]">
+            <h2 class="mb-2.5 font-mono text-xs leading-tight font-bold text-amber-900 uppercase dark:text-amber-300">Bodies</h2>
+            <div id="body-list" class="grid grid-cols-[repeat(auto-fit,minmax(296px,1fr))] gap-3"></div>
+          </section>
+        </section>
+
+        <aside class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-amber-200 bg-amber-50/90 p-3.5 shadow-[0_18px_44px_rgba(120,53,15,0.09)] dark:border-zinc-600 dark:bg-zinc-800/90 dark:shadow-[0_18px_44px_rgba(0,0,0,0.22)] max-[1100px]:min-h-[180px]">
+          <h2 class="mb-2.5 font-mono text-xs leading-tight font-bold text-amber-900 uppercase dark:text-amber-300">Log</h2>
+          <div id="event-log" class="flex min-h-0 flex-1 content-start items-start flex-wrap gap-[7px] overflow-auto overscroll-contain"></div>
+        </aside>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
