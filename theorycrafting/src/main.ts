@@ -99,6 +99,16 @@ const friendlyStartX = 1;
 const keeperRespawnTicks = 300;
 const keeperLairCount = 4;
 const nextLairWindowTicks = keeperRespawnTicks / keeperLairCount;
+const spawnEnergyCapacityByRcl = [
+  { rcl: 1, energy: 300 },
+  { rcl: 2, energy: 550 },
+  { rcl: 3, energy: 800 },
+  { rcl: 4, energy: 1300 },
+  { rcl: 5, energy: 1800 },
+  { rcl: 6, energy: 2300 },
+  { rcl: 7, energy: 5600 },
+  { rcl: 8, energy: 12900 }
+] as const;
 
 const partCost: Record<PartType, number> = {
   attack: 80,
@@ -261,7 +271,7 @@ const presets: Preset[] = [
     startRange: 3,
     maxTicks: 300,
     formation: "stacked",
-    creeps: [{ name: "ranger", body: parseBodySpec("25m,20ra,5h") }]
+    creeps: [{ name: "ranger", body: parseBodySpec("25m,18ra,7h") }]
   },
   {
     id: "rcl8-passive-melee",
@@ -271,7 +281,7 @@ const presets: Preset[] = [
     startRange: 3,
     maxTicks: 300,
     formation: "stacked",
-    creeps: [{ name: "guard", body: parseBodySpec("25m,17a,8h") }]
+    creeps: [{ name: "guard", body: parseBodySpec("2t,25m,13a,10h") }]
   }
 ];
 
@@ -866,13 +876,14 @@ function renderBodies(frame: Frame): void {
 
 function renderBodyPanel(creep: CombatantSnapshot): string {
   const partHtml = creep.body.map(renderBodyPart).join("");
+  const spawnCost = formatSpawnCost(creep.cost);
   return `
     <section class="${bodyPanelClass}">
       <div class="${bodyHeadingClass}">
         <strong class="${bodyNameClass}">${escapeHtml(creep.name)}</strong>
         <span class="${bodyHitsClass}">${creep.hits}/${creep.hitsMax} hits</span>
       </div>
-      <div class="${bodySubtitleClass}">${creep.body.length} parts / ${creep.cost}e / fatigue ${creep.fatigue}</div>
+      <div class="${bodySubtitleClass}">${creep.body.length} parts / ${spawnCost} / fatigue ${creep.fatigue}</div>
       <div class="${bodyGridClass}">${partHtml}</div>
     </section>
   `;
@@ -1276,6 +1287,15 @@ function formatPart(part: PartType): string {
     claim: "cl"
   };
   return reverseAlias[part];
+}
+
+function formatSpawnCost(cost: number): string {
+  return `${cost}e (${formatSpawnRcl(cost)})`;
+}
+
+function formatSpawnRcl(cost: number): string {
+  const minimum = spawnEnergyCapacityByRcl.find(({ energy }) => cost <= energy);
+  return minimum ? `RCL${minimum.rcl}` : ">RCL8";
 }
 
 function formatOutcome(simulation: SimulationResult): string {
