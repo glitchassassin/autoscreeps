@@ -196,7 +196,7 @@ const presets: Preset[] = [
     meleeAction: "attack",
     preferredRange: 3,
     startRange: 3,
-    maxTicks: 500,
+    maxTicks: 300,
     formation: "stacked",
     creeps: [{ name: "ranger", body: parseBodySpec("25m,19ra,6h") }]
   },
@@ -206,7 +206,7 @@ const presets: Preset[] = [
     meleeAction: "heal",
     preferredRange: 1,
     startRange: 3,
-    maxTicks: 500,
+    maxTicks: 300,
     formation: "stacked",
     creeps: [{ name: "guard", body: parseBodySpec("2t,25m,13a,10h") }]
   },
@@ -216,7 +216,7 @@ const presets: Preset[] = [
     meleeAction: "attack",
     preferredRange: 2,
     startRange: 2,
-    maxTicks: 500,
+    maxTicks: 300,
     formation: "duo",
     creeps: [
       { name: "point", body: parseBodySpec("9m,5ra,4h") },
@@ -229,7 +229,7 @@ const presets: Preset[] = [
     meleeAction: "attack",
     preferredRange: 2,
     startRange: 2,
-    maxTicks: 500,
+    maxTicks: 300,
     formation: "duo",
     creeps: [1, 2].map((index) => ({ name: `cat${index}`, body: parseBodySpec("6m,10ra,4h") }))
   },
@@ -239,7 +239,7 @@ const presets: Preset[] = [
     meleeAction: "attack",
     preferredRange: 3,
     startRange: 3,
-    maxTicks: 500,
+    maxTicks: 300,
     formation: "quad",
     creeps: [0, 1, 2, 3].map((index) => ({ name: `q${index + 1}`, body: parseBodySpec("8ra,10m,2h") }))
   },
@@ -249,7 +249,7 @@ const presets: Preset[] = [
     meleeAction: "heal",
     preferredRange: 1,
     startRange: 3,
-    maxTicks: 500,
+    maxTicks: 300,
     formation: "stacked",
     creeps: [{ name: "probe", body: parseBodySpec("11m,6a,5h") }]
   },
@@ -259,7 +259,7 @@ const presets: Preset[] = [
     meleeAction: "attack",
     preferredRange: 3,
     startRange: 3,
-    maxTicks: 500,
+    maxTicks: 300,
     formation: "stacked",
     creeps: [{ name: "ranger", body: parseBodySpec("25m,20ra,5h") }]
   },
@@ -269,7 +269,7 @@ const presets: Preset[] = [
     meleeAction: "heal",
     preferredRange: 1,
     startRange: 3,
-    maxTicks: 500,
+    maxTicks: 300,
     formation: "stacked",
     creeps: [{ name: "guard", body: parseBodySpec("25m,17a,8h") }]
   }
@@ -390,7 +390,6 @@ const preferredRangeInput = getElement<HTMLInputElement>("preferred-range-input"
 const maxTicksInput = getElement<HTMLInputElement>("max-ticks-input");
 const creepSpecsInput = getElement<HTMLTextAreaElement>("creep-specs");
 const keeperSpecInput = getElement<HTMLInputElement>("keeper-spec");
-const runButton = getElement<HTMLButtonElement>("run-button");
 const statusText = getElement<HTMLElement>("status-text");
 const scenarioFacts = getElement<HTMLElement>("scenario-facts");
 const combatSvg = getElement<SVGSVGElement>("combat-svg");
@@ -428,9 +427,12 @@ function init(): void {
   presetSelect.addEventListener("change", () => {
     loadPreset(presetSelect.value);
   });
-  runButton.addEventListener("click", () => {
-    runSimulation();
-  });
+  for (const input of [meleeActionSelect, formationSelect]) {
+    input.addEventListener("change", runSimulation);
+  }
+  for (const input of [startRangeInput, preferredRangeInput, maxTicksInput, creepSpecsInput, keeperSpecInput]) {
+    input.addEventListener("input", runSimulation);
+  }
   previousButton.addEventListener("click", () => {
     setFrame(activeFrameIndex - 1);
   });
