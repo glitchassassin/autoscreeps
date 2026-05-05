@@ -218,7 +218,7 @@ const presets: Preset[] = [
     startRange: 3,
     maxTicks: 300,
     formation: "stacked",
-    creeps: [{ name: "guard", body: parseBodySpec("2t,25m,13a,10h") }]
+    creeps: [{ name: "guard", body: parseBodySpec("25m,16a,9h") }]
   },
   {
     id: "rcl6-ranged-duo",
@@ -281,7 +281,7 @@ const presets: Preset[] = [
     startRange: 3,
     maxTicks: 300,
     formation: "stacked",
-    creeps: [{ name: "guard", body: parseBodySpec("2t,25m,13a,10h") }]
+    creeps: [{ name: "guard", body: parseBodySpec("25m,16a,9h") }]
   }
 ];
 
@@ -788,7 +788,9 @@ function renderFrame(): void {
 }
 
 function renderScenarioFacts(): void {
+  const initial = result.frames[0]!;
   scenarioFacts.innerHTML = [
+    fact("Total body cost", formatTotalBodyCost(initial.friendlies)),
     fact("Next-lair travel", formatLairTravel(result.lairTravel)),
     fact("Outcome", formatOutcome(result))
   ].join("");
@@ -1291,6 +1293,12 @@ function formatPart(part: PartType): string {
 
 function formatSpawnCost(cost: number): string {
   return `${cost}e (${formatSpawnRcl(cost)})`;
+}
+
+function formatTotalBodyCost(creeps: CombatantSnapshot[]): string {
+  const totalCost = creeps.reduce((sum, creep) => sum + creep.cost, 0);
+  const maxCreepCost = Math.max(...creeps.map((creep) => creep.cost));
+  return `${totalCost}e (${formatSpawnRcl(maxCreepCost)})`;
 }
 
 function formatSpawnRcl(cost: number): string {
